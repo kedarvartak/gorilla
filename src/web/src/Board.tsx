@@ -42,11 +42,17 @@ function unseenSince(card: Card): boolean {
 function ColumnView({
   column,
   cards,
+  runnable,
   onOpen,
+  onRun,
+  onCancel,
 }: {
   column: Column;
   cards: Card[];
+  runnable: ReadonlySet<string>;
   onOpen: (card: Card) => void;
+  onRun: (card: Card) => void;
+  onCancel: (card: Card) => void;
 }): ReactElement {
   const { setNodeRef, isOver } = useDroppable({ id: `column:${column.id}` });
 
@@ -67,7 +73,15 @@ function ColumnView({
           className={`mt-2 flex min-h-24 flex-col gap-2 rounded p-1 ${isOver ? 'bg-panel-2' : ''}`}
         >
           {cards.map((card) => (
-            <CardTile key={card.id} card={card} unseen={unseenSince(card)} onOpen={onOpen} />
+            <CardTile
+              key={card.id}
+              card={card}
+              unseen={unseenSince(card)}
+              runnable={runnable.has(card.id)}
+              onOpen={onOpen}
+              onRun={onRun}
+              onCancel={onCancel}
+            />
           ))}
         </ul>
       </SortableContext>
@@ -84,6 +98,7 @@ export function Board(): ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [openCardId, setOpenCardId] = useState<string | null>(null);
+  const [runnable, setRunnable] = useState<ReadonlySet<string>>(new Set());
 
   const load = useCallback(async () => {
     try {
@@ -95,15 +110,19 @@ export function Board(): ReactElement {
       }
 
       setBoard(first);
-      const [nextColumns, nextCards, state] = await Promise.all([
+      const [nextColumns, nextCards, state, eligible] = await Promise.all([
         api.columns(first.id),
         api.cards(first.id),
         api.dispatchState(first.id),
+        // Eligibility is the server's rule - ready column, idle, unblocked -
+        // so the button cannot disagree with what dispatch would actually do.
+        api.dispatchable(first.id),
       ]);
 
       setColumns(nextColumns);
       setCards(nextCards);
       setDispatch(state);
+      setRunnable(new Set(eligible.map((card) => card.id)));
       setError(null);
     } catch (cause) {
       setError((cause as Error).message);
@@ -158,6 +177,27 @@ export function Board(): ReactElement {
     } catch (cause) {
       // A refused move is usually a dependency guard, and the reason is the
       // useful part - so it is shown rather than swallowed.
+      setError((cause as Error).message);
+    }
+    await load();
+  }
+
+  async function run(card: Card): Promise<void> {
+    if (board === null) return;
+    try {
+      setDispatch(await api.dispatchCard(board.id, card.id));
+      setError(null);
+    } catch (cause) {
+      setError((cause as Error).message);
+    }
+    await load();
+  }
+
+  async function cancel(card: Card): Promise<void> {
+    if (board === null) return;
+    try {
+      await api.cancelCard(board.id, card.id);
+    } catch (cause) {
       setError((cause as Error).message);
     }
     await load();
@@ -273,7 +313,10 @@ export function Board(): ReactElement {
               key={column.id}
               column={column}
               cards={byColumn.get(column.id) ?? []}
+              runnable={runnable}
               onOpen={(card) => setOpenCardId(card.id)}
+              onRun={(card) => void run(card)}
+              onCancel={(card) => void cancel(card)}
             />
           ))}
         </div>
