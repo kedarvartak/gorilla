@@ -7,6 +7,7 @@ import { registerIngestRoutes, recordedLatencies } from './ingest/routes.js';
 import { Broadcaster } from './stream/broadcaster.js';
 import { registerStreamRoutes } from './stream/routes.js';
 import { registerWebRoutes } from './web/routes.js';
+import { registerApiRoutes } from './api/routes.js';
 
 export interface AppOptions {
   readonly database: DatabaseHandle;
@@ -65,6 +66,7 @@ export function buildApp(options: AppOptions): FastifyInstance {
 
   registerIngestRoutes(app, context);
   registerStreamRoutes(app, context);
+  registerApiRoutes(app, context);
   registerWebRoutes(app);
 
   return app;
