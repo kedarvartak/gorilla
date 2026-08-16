@@ -33,6 +33,11 @@ export interface SettingsDocument {
 
 export interface MergeOptions {
   readonly baseUrl?: string;
+  /**
+   * Absolute path to the bridge script, required when any definition uses the
+   * `bridge` transport. `init` writes the script and passes its path.
+   */
+  readonly bridgePath?: string;
 }
 
 export interface MergeResult {
@@ -43,13 +48,22 @@ export interface MergeResult {
   readonly preserved: number;
 }
 
-function gorillaGroupFor(event: string, baseUrl: string): HookGroup {
+function gorillaGroupFor(event: string, baseUrl: string, bridgePath?: string): HookGroup {
   const definition = HOOK_DEFINITIONS.find((d) => d.event === event);
-  const handler: HookHandler = {
-    type: 'http',
-    url: hookUrl(baseUrl, event),
-    ...(definition?.timeout === undefined ? {} : { timeout: definition.timeout }),
-  };
+  const timeout = definition?.timeout === undefined ? {} : { timeout: definition.timeout };
+
+  // A bridged event goes through a command hook that forwards to the same
+  // endpoint, because HTTP hooks do not receive it (doc 14). The URL is still
+  // ours, which is what lets the merge recognise and replace its own entries.
+  const handler: HookHandler =
+    definition?.transport === 'bridge' && bridgePath !== undefined
+      ? {
+          type: 'command',
+          command: `${bridgePath} ${event}`,
+          ...timeout,
+          gorillaUrl: hookUrl(baseUrl, event),
+        }
+      : { type: 'http', url: hookUrl(baseUrl, event), ...timeout };
 
   return {
     ...(definition?.matcher === undefined ? {} : { matcher: definition.matcher }),
@@ -58,7 +72,12 @@ function gorillaGroupFor(event: string, baseUrl: string): HookGroup {
 }
 
 function groupIsOurs(group: HookGroup, baseUrl: string): boolean {
-  return Array.isArray(group.hooks) && group.hooks.some((h) => isGorillaHookUrl(h?.url, baseUrl));
+  return (
+    Array.isArray(group.hooks) &&
+    group.hooks.some(
+      (h) => isGorillaHookUrl(h?.url, baseUrl) || isGorillaHookUrl(h?.['gorillaUrl'], baseUrl),
+    )
+  );
 }
 
 /**
@@ -67,6 +86,15 @@ function groupIsOurs(group: HookGroup, baseUrl: string): boolean {
  * Never mutates the input, never drops a group it does not own, and replaces
  * rather than appends its own groups so that running twice is a no-op.
  */
+/** True when any registered event needs the command bridge. */
+export function requiresBridge(): boolean {
+  return HOOK_DEFINITIONS.some((definition) => definition.transport === 'bridge');
+}
+
+export function bridgedEvents(): readonly string[] {
+  return HOOK_DEFINITIONS.filter((d) => d.transport === 'bridge').map((d) => d.event);
+}
+
 export function mergeHookSettings(
   existing: SettingsDocument,
   options: MergeOptions = {},
@@ -91,7 +119,7 @@ export function mergeHookSettings(
     if (ours.length > 0) replaced.push(event);
     else added.push(event);
 
-    hooks[event] = [...foreign, gorillaGroupFor(event, baseUrl)];
+    hooks[event] = [...foreign, gorillaGroupFor(event, baseUrl, options.bridgePath)];
   }
 
   // Events Gorilla does not subscribe to are copied through untouched by the

@@ -195,3 +195,75 @@ describe('renderReport', () => {
     expect(output).toContain('Hooks that never fired');
   });
 });
+
+describe('unresolved tool intents', () => {
+  function seedTools(rows: readonly { event: string; tool: string; seq: number }[]): void {
+    const handle = openDatabase({ path: dbPath });
+    handle.sqlite
+      .prepare('INSERT OR IGNORE INTO boards (id, name, cwd, created_at) VALUES (?, ?, ?, ?)')
+      .run('b1', 'test', '/p', NOW);
+    handle.sqlite
+      .prepare(
+        'INSERT OR IGNORE INTO runs (id, board_id, session_id, cwd, started_at) VALUES (?, ?, ?, ?, ?)',
+      )
+      .run('r1', 'b1', 'session-r1', '/p', NOW);
+
+    for (const row of rows) {
+      handle.sqlite
+        .prepare(
+          'INSERT INTO events (run_id, session_id, seq, event_name, received_at, payload) VALUES (?, ?, ?, ?, ?, ?)',
+        )
+        .run(
+          'r1',
+          'session-r1',
+          row.seq,
+          row.event,
+          NOW + row.seq,
+          JSON.stringify({ tool_name: row.tool }),
+        );
+    }
+    handle.close();
+  }
+
+  it('counts a denied call, which emits no event of its own', () => {
+    // The measured shape of a denial under dontAsk: intent, no outcome.
+    seedTools([
+      { event: 'PreToolUse', tool: 'Write', seq: 1 },
+      { event: 'PostToolUse', tool: 'Write', seq: 2 },
+      { event: 'PreToolUse', tool: 'Bash', seq: 3 },
+      { event: 'PreToolUse', tool: 'Bash', seq: 4 },
+    ]);
+
+    const stats = collectStats(dbPath);
+
+    expect(stats.unresolvedTotal).toBe(2);
+    expect(stats.unresolvedIntents).toEqual([{ toolName: 'Bash', count: 2 }]);
+  });
+
+  it('treats a failure as an outcome', () => {
+    seedTools([
+      { event: 'PreToolUse', tool: 'Bash', seq: 1 },
+      { event: 'PostToolUseFailure', tool: 'Bash', seq: 2 },
+    ]);
+
+    expect(collectStats(dbPath).unresolvedTotal).toBe(0);
+  });
+
+  it('reports nothing unresolved when every call completed', () => {
+    seedTools([
+      { event: 'PreToolUse', tool: 'Edit', seq: 1 },
+      { event: 'PostToolUse', tool: 'Edit', seq: 2 },
+    ]);
+
+    const output = renderReport(collectStats(dbPath), null, NOW);
+    expect(output).toContain('Every announced tool call reported an outcome');
+  });
+
+  it('names the tool in the report', () => {
+    seedTools([{ event: 'PreToolUse', tool: 'Bash', seq: 1 }]);
+
+    const output = renderReport(collectStats(dbPath), null, NOW);
+    expect(output).toContain('Tool intents with no outcome');
+    expect(output).toContain('| `Bash` | 1 |');
+  });
+});

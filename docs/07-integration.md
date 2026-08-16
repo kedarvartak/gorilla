@@ -10,12 +10,13 @@ default, since the board is a personal instrument), merging rather than replacin
 existing hook configuration. It never touches `.claude/settings.json` unless asked with
 `--shared`.
 
-The configuration registers HTTP hooks pointing at the local board:
+The configuration registers hooks pointing at the local board. Most are HTTP; one is
+bridged through a command hook, for the reason given below the table:
 
 ```json
 {
   "hooks": {
-    "SessionStart":   [{ "hooks": [{ "type": "http", "url": "http://127.0.0.1:4300/hooks/SessionStart" }] }],
+    "SessionStart":   [{ "hooks": [{ "type": "command", "command": "${CLAUDE_PROJECT_DIR}/.claude/gorilla-bridge.sh SessionStart" }] }],
     "UserPromptSubmit":[{ "hooks": [{ "type": "http", "url": "http://127.0.0.1:4300/hooks/UserPromptSubmit" }] }],
     "PreToolUse":     [{ "matcher": "Edit|Write|NotebookEdit|Bash", "hooks": [{ "type": "http", "url": "http://127.0.0.1:4300/hooks/PreToolUse" }] }],
     "PostToolUse":    [{ "matcher": "Edit|Write|NotebookEdit|Bash", "hooks": [{ "type": "http", "url": "http://127.0.0.1:4300/hooks/PostToolUse" }] }],
@@ -26,6 +27,8 @@ The configuration registers HTTP hooks pointing at the local board:
     "SubagentStop":   [{ "hooks": [{ "type": "http", "url": "http://127.0.0.1:4300/hooks/SubagentStop" }] }],
     "TaskCreated":    [{ "hooks": [{ "type": "http", "url": "http://127.0.0.1:4300/hooks/TaskCreated" }] }],
     "TaskCompleted":  [{ "hooks": [{ "type": "http", "url": "http://127.0.0.1:4300/hooks/TaskCompleted" }] }],
+    "PermissionRequest": [{ "hooks": [{ "type": "http", "url": "http://127.0.0.1:4300/hooks/PermissionRequest" }] }],
+    "PermissionDenied":  [{ "hooks": [{ "type": "http", "url": "http://127.0.0.1:4300/hooks/PermissionDenied" }] }],
     "Notification":   [{ "hooks": [{ "type": "http", "url": "http://127.0.0.1:4300/hooks/Notification" }] }],
     "Stop":           [{ "hooks": [{ "type": "http", "url": "http://127.0.0.1:4300/hooks/Stop" }] }],
     "StopFailure":    [{ "hooks": [{ "type": "http", "url": "http://127.0.0.1:4300/hooks/StopFailure" }] }],
@@ -34,8 +37,29 @@ The configuration registers HTTP hooks pointing at the local board:
 }
 ```
 
+**`SessionStart` is a command hook, and that is not a style choice.** Measured on
+Claude Code 2.1.233: an HTTP hook registered for `SessionStart` never fires,
+while a command hook in the same settings file does (doc 14, confirmed again in
+doc 15). Session binding and compaction repair both depend on that event, so
+`init` writes a small bridge script that forwards the payload to the same
+endpoint with `curl` and relays the board's JSON reply on stdout - which is
+where Claude Code reads a command hook's decision, so context injection still
+works.
+
+The bridge exits 0 unconditionally. A board that is down or slow must never be
+the reason a session fails to start.
+
+Every other event was checked across both transports and arrives over HTTP,
+including `SubagentStart` - an earlier guess that it needed the same treatment
+was tested and disproved (doc 15).
+
 Notes on specific choices:
 
+- `PermissionRequest` and `PermissionDenied` are registered, but they do not
+  fire in every permission mode: under `dontAsk` a refused call emits neither,
+  and shows up only as a `PreToolUse` with no outcome. The board therefore
+  detects unresolved tool intents directly rather than relying on these events
+  (doc 15).
 - `PreToolUse` and `PostToolUse` are matched to mutating tools plus `Bash`. Matching
   everything would multiply event volume by an order of magnitude for Read and Grep
   calls that tell the operator nothing. Read-tool events can be enabled per board for

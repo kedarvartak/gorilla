@@ -1,8 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
-import { DEFAULT_HOOK_BASE_URL } from '../../hooks/definitions.js';
-import { mergeHookSettings, type SettingsDocument } from '../../hooks/settings.js';
+import {
+  BRIDGE_SCRIPT_NAME,
+  DEFAULT_HOOK_BASE_URL,
+  bridgeScript,
+} from '../../hooks/definitions.js';
+import { mergeHookSettings, requiresBridge, type SettingsDocument } from '../../hooks/settings.js';
 import type { Command, CommandResult } from '../cli.js';
 
 export interface InitOptions {
@@ -18,6 +22,9 @@ export interface InitOptions {
 
 export interface InitOutcome {
   readonly path: string;
+  /** Path to the bridge script, when one was needed. */
+  readonly bridgePath: string | null;
+  readonly bridgeWritten: boolean;
   readonly contents: string;
   /** True when this call changed the file on disk. */
   readonly written: boolean;
@@ -80,18 +87,42 @@ export function runInit(options: InitOptions): InitOutcome {
 
   const path = settingsPathFor(cwd, options.shared);
   const existing = readSettings(path);
-  const result = mergeHookSettings(existing, { baseUrl: options.baseUrl });
+
+  // Some events never reach an HTTP hook, so they go through a small command
+  // hook that forwards to the same endpoint (doc 14).
+  const needsBridge = requiresBridge();
+  const bridgePath = needsBridge ? join(cwd, '.claude', BRIDGE_SCRIPT_NAME) : null;
+
+  const result = mergeHookSettings(existing, {
+    baseUrl: options.baseUrl,
+    ...(bridgePath === null ? {} : { bridgePath }),
+  });
   const contents = `${JSON.stringify(result.settings, null, 2)}\n`;
 
-  const unchanged = existsSync(path) && readFileSync(path, 'utf8') === contents;
+  const desiredBridge = bridgePath === null ? null : bridgeScript(options.baseUrl);
+  const bridgeCurrent =
+    bridgePath === null ||
+    (existsSync(bridgePath) && readFileSync(bridgePath, 'utf8') === desiredBridge);
+
+  const unchanged = existsSync(path) && readFileSync(path, 'utf8') === contents && bridgeCurrent;
+
+  let bridgeWritten = false;
 
   if (!options.dryRun && !unchanged) {
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, contents, 'utf8');
+
+    if (bridgePath !== null && desiredBridge !== null && !bridgeCurrent) {
+      writeFileSync(bridgePath, desiredBridge, 'utf8');
+      chmodSync(bridgePath, 0o755);
+      bridgeWritten = true;
+    }
   }
 
   return {
     path,
+    bridgePath,
+    bridgeWritten,
     contents,
     written: !options.dryRun && !unchanged,
     unchanged,
@@ -161,10 +192,15 @@ export const initCommand: Command = {
       `${outcome.added.length} added, ${outcome.replaced.length} updated, ` +
       `${outcome.preserved} existing entr(ies) preserved`;
 
+    const bridgeNote =
+      outcome.bridgePath === null
+        ? ''
+        : `\n  Bridge script: ${outcome.bridgePath} (forwards events the HTTP transport does not receive)`;
+
     if (outcome.dryRun) {
       return {
         exitCode: 0,
-        stdout: `Would write ${outcome.path}:\n\n${outcome.contents.trimEnd()}\n\n${counts}.`,
+        stdout: `Would write ${outcome.path}:\n\n${outcome.contents.trimEnd()}\n\n${counts}.${bridgeNote}`,
         stderr: '',
       };
     }
@@ -179,7 +215,7 @@ export const initCommand: Command = {
 
     return {
       exitCode: 0,
-      stdout: `Wrote ${outcome.path}\n  ${counts}.`,
+      stdout: `Wrote ${outcome.path}\n  ${counts}.${bridgeNote}`,
       stderr: '',
     };
   },

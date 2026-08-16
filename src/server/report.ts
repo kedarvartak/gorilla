@@ -33,6 +33,11 @@ export interface RunSummary {
   readonly seqMax: number;
 }
 
+export interface UnresolvedIntent {
+  readonly toolName: string;
+  readonly count: number;
+}
+
 export interface VerificationStats {
   readonly databasePath: string;
   readonly totalEvents: number;
@@ -44,6 +49,19 @@ export interface VerificationStats {
   readonly compactions: number;
   readonly orderingIntact: boolean;
   readonly wallClockMs: number;
+  /**
+   * Tool calls announced by PreToolUse with no PostToolUse and no
+   * PostToolUseFailure.
+   *
+   * This is how a denial looks to the board. Measured on 2.1.233: under
+   * `dontAsk` a refused call emits neither PermissionDenied nor
+   * PostToolUseFailure, so the absence is the only signal there is (doc 15).
+   * An intent with no outcome is exactly the kind of thing the operator should
+   * hear about, so it is counted rather than left to be inferred from a
+   * mismatch between two totals.
+   */
+  readonly unresolvedIntents: readonly UnresolvedIntent[];
+  readonly unresolvedTotal: number;
 }
 
 interface CountRow {
@@ -120,6 +138,24 @@ export function collectStats(databasePath: string): VerificationStats {
       };
     });
 
+    // Per tool: intents minus outcomes. Counted by tool rather than in
+    // aggregate so the report can name what was refused.
+    const unresolvedRows = handle.sqlite
+      .prepare(
+        `SELECT tool_name AS tool,
+                SUM(CASE WHEN event_name = 'PreToolUse' THEN 1 ELSE 0 END) AS intents,
+                SUM(CASE WHEN event_name IN ('PostToolUse', 'PostToolUseFailure') THEN 1 ELSE 0 END) AS outcomes
+         FROM events
+         WHERE tool_name IS NOT NULL
+         GROUP BY tool_name`,
+      )
+      .all() as { tool: string; intents: number; outcomes: number }[];
+
+    const unresolvedIntents = unresolvedRows
+      .map((row) => ({ toolName: row.tool, count: row.intents - row.outcomes }))
+      .filter((row) => row.count > 0)
+      .sort((a, b) => b.count - a.count);
+
     const totals = handle.sqlite
       .prepare('SELECT COUNT(*) AS n, MIN(received_at) AS a, MAX(received_at) AS b FROM events')
       .get() as { n: number; a: number | null; b: number | null };
@@ -139,6 +175,8 @@ export function collectStats(databasePath: string): VerificationStats {
       compactions: byType.find((row) => row.event === 'PreCompact')?.count ?? 0,
       orderingIntact: runs.every((run) => run.orderingIntact),
       wallClockMs: totals.a === null || totals.b === null ? 0 : totals.b - totals.a,
+      unresolvedIntents,
+      unresolvedTotal: unresolvedIntents.reduce((sum, row) => sum + row.count, 0),
     };
   } finally {
     handle.close();
@@ -255,6 +293,25 @@ export function renderReport(
         ? `Inside the 25 ms p99 budget from doc 06.`
         : `**Outside** the 25 ms p99 budget from doc 06.`,
     );
+  }
+  lines.push('');
+
+  lines.push('## Tool intents with no outcome');
+  lines.push('');
+  if (stats.unresolvedTotal === 0) {
+    lines.push('None. Every announced tool call reported an outcome.');
+  } else {
+    lines.push(
+      `**${stats.unresolvedTotal}** tool call(s) were announced by \`PreToolUse\` and never ` +
+        'reported an outcome. The usual cause is a denied permission, which on this Claude Code ' +
+        'version emits no event of its own.',
+    );
+    lines.push('');
+    lines.push('| Tool | Unresolved |');
+    lines.push('| --- | --- |');
+    for (const row of stats.unresolvedIntents) {
+      lines.push(`| \`${row.toolName}\` | ${row.count} |`);
+    }
   }
   lines.push('');
 

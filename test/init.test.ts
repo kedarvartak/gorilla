@@ -1,5 +1,13 @@
 import { execFile } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -268,5 +276,80 @@ describe('cli surface', () => {
     await expect(run(process.execPath, [builtCli, 'init', '--nope'])).rejects.toMatchObject({
       code: 1,
     });
+  });
+});
+
+describe('bridged hooks', () => {
+  it('writes an executable bridge script', () => {
+    const cwd = project();
+    const outcome = runInit({ ...base, cwd });
+
+    expect(outcome.bridgePath).not.toBeNull();
+    expect(outcome.bridgeWritten).toBe(true);
+
+    const script = readFileSync(outcome.bridgePath ?? '', 'utf8');
+    expect(script).toContain('#!/usr/bin/env bash');
+    expect(script).toContain('/hooks/$event');
+    // Must never be the reason a tool call fails.
+    expect(script).toContain('exit 0');
+
+    expect(statSync(outcome.bridgePath ?? '').mode & 0o111).toBeGreaterThan(0);
+  });
+
+  it('registers SessionStart as a command hook and the rest as http', () => {
+    const cwd = project();
+    const outcome = runInit({ ...base, cwd });
+    const settings = readSettings(outcome.path) as {
+      hooks: Record<string, { hooks: { type: string; command?: string; url?: string }[] }[]>;
+    };
+
+    const sessionStart = settings.hooks['SessionStart']?.[0]?.hooks[0];
+    expect(sessionStart?.type).toBe('command');
+    expect(sessionStart?.command).toContain('SessionStart');
+
+    // Everything HTTP does deliver stays on HTTP.
+    expect(settings.hooks['Stop']?.[0]?.hooks[0]?.type).toBe('http');
+    expect(settings.hooks['PreCompact']?.[0]?.hooks[0]?.type).toBe('http');
+  });
+
+  it('registers the permission events', () => {
+    const cwd = project();
+    const outcome = runInit({ ...base, cwd });
+    const settings = readSettings(outcome.path) as { hooks: Record<string, unknown[]> };
+
+    expect(settings.hooks['PermissionDenied']).toBeDefined();
+    expect(settings.hooks['PermissionRequest']).toBeDefined();
+  });
+
+  it('still recognises and replaces its own bridged entry', () => {
+    const cwd = project();
+    runInit({ ...base, cwd });
+    const second = runInit({ ...base, cwd });
+
+    expect(second.unchanged).toBe(true);
+
+    const settings = readSettings(settingsPathFor(cwd, false)) as {
+      hooks: Record<string, unknown[]>;
+    };
+    expect(settings.hooks['SessionStart']).toHaveLength(1);
+  });
+
+  it('rewrites the bridge when it has been altered', () => {
+    const cwd = project();
+    const first = runInit({ ...base, cwd });
+    writeFileSync(first.bridgePath ?? '', '#!/bin/sh\nexit 1\n', 'utf8');
+
+    const second = runInit({ ...base, cwd });
+
+    expect(second.bridgeWritten).toBe(true);
+    expect(readFileSync(second.bridgePath ?? '', 'utf8')).toContain('curl');
+  });
+
+  it('writes no bridge during a dry run', () => {
+    const cwd = project();
+    const outcome = runInit({ ...base, cwd, dryRun: true });
+
+    expect(outcome.bridgeWritten).toBe(false);
+    expect(existsSync(outcome.bridgePath ?? '')).toBe(false);
   });
 });

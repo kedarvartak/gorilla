@@ -1,9 +1,14 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { createConnection } from 'node:net';
+import { join } from 'node:path';
 
 import { settingsPathFor } from './init.js';
-import { DEFAULT_HOOK_BASE_URL, HOOK_DEFINITIONS } from '../../hooks/definitions.js';
-import { isUpToDate, type SettingsDocument } from '../../hooks/settings.js';
+import {
+  BRIDGE_SCRIPT_NAME,
+  DEFAULT_HOOK_BASE_URL,
+  HOOK_DEFINITIONS,
+} from '../../hooks/definitions.js';
+import { isUpToDate, requiresBridge, type SettingsDocument } from '../../hooks/settings.js';
 import { openDatabase, resolveDatabasePath } from '../../server/db/client.js';
 import { DEFAULT_PORT, DEFAULT_HOST } from '../../server/index.js';
 import { readTranscript } from '../../server/transcript/index.js';
@@ -84,6 +89,10 @@ async function probeGorilla(port: number, host: string): Promise<boolean> {
 function checkSettings(cwd: string): Check[] {
   const checks: Check[] = [];
 
+  // Must compute the expected document exactly as `init` writes it, bridge
+  // included, or every correctly configured project reports as out of date.
+  const bridgePath = requiresBridge() ? join(cwd, '.claude', BRIDGE_SCRIPT_NAME) : undefined;
+
   const localPath = settingsPathFor(cwd, false);
   const sharedPath = settingsPathFor(cwd, true);
 
@@ -115,7 +124,10 @@ function checkSettings(cwd: string): Check[] {
     }
     if (doc === 'missing') continue;
 
-    const current = isUpToDate(doc, { baseUrl: DEFAULT_HOOK_BASE_URL });
+    const current = isUpToDate(doc, {
+      baseUrl: DEFAULT_HOOK_BASE_URL,
+      ...(bridgePath === undefined ? {} : { bridgePath }),
+    });
     checks.push({
       name: 'hook configuration',
       status: current ? 'ok' : 'warn',
