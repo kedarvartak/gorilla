@@ -14,8 +14,6 @@
     "verbatimModuleSyntax": true,
     "declaration": true,
     "sourceMap": true,
-    "composite": true,
-    "incremental": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "esModuleInterop": true,

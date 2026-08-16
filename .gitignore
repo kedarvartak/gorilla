@@ -6,3 +6,4 @@ coverage/
 .env.*
 fixtures/
 .DS_Store
+*.tsbuildinfo

@@ -14,8 +14,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc --build",
-    "clean": "tsc --build --clean && rm -rf dist",
+    "build": "tsc",
+    "clean": "rm -rf dist",
     "dev": "tsx watch src/cli/index.ts",
     "pretest": "npm run build",
     "test": "vitest run",
