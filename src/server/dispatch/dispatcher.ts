@@ -7,6 +7,7 @@ import type { DatabaseHandle } from '../db/client.js';
 import { boards, cards, columns, runs } from '../db/schema.js';
 import type { PendingBindings } from '../binding/pending.js';
 import { describeVerify, runVerify, type VerifyResult } from '../verify/run.js';
+import { WorktreeManager } from '../worktree/manager.js';
 import {
   launch,
   LaunchRegistry,
@@ -39,7 +40,9 @@ export type HaltReason =
   | 'launch-error'
   | 'no-effect'
   // The board ran the card's verify command and it did not pass.
-  | 'verify-failed';
+  | 'verify-failed'
+  // The card could not be given an isolated worktree to work in.
+  | 'no-workspace';
 
 export interface HaltState {
   readonly reason: HaltReason;
@@ -76,10 +79,14 @@ export class Dispatcher {
   readonly #boards = new Map<string, BoardState>();
   readonly #registry = new LaunchRegistry();
   readonly #lastVerify = new Map<string, VerifyResult>();
+  readonly #worktrees = new Map<string, WorktreeManager>();
   #executable: string | undefined;
 
-  /** Set by U2 so verify runs in the card's worktree rather than the board directory. */
+  /** Overridden in tests; otherwise resolved from the card's worktree. */
   workspaceFor: ((cardId: string) => string | undefined) | undefined;
+
+  /** Worktree isolation. Off only where a board directory is not a repository. */
+  isolate = true;
 
   constructor(
     private readonly database: DatabaseHandle,
@@ -124,7 +131,7 @@ export class Dispatcher {
     this.#stateFor(boardId).mode = mode;
     this.#publish(boardId);
 
-    if (mode === 'automatic') this.pump(boardId);
+    if (mode === 'automatic') void this.pump(boardId);
     return this.state(boardId);
   }
 
@@ -142,7 +149,7 @@ export class Dispatcher {
     this.#stateFor(boardId).halted = null;
     this.#publish(boardId);
 
-    if (this.#stateFor(boardId).mode === 'automatic') this.pump(boardId);
+    if (this.#stateFor(boardId).mode === 'automatic') void this.pump(boardId);
     return this.state(boardId);
   }
 
@@ -156,7 +163,7 @@ export class Dispatcher {
   }
 
   /** Starts eligible cards up to the concurrency limit. */
-  pump(boardId: string): string[] {
+  async pump(boardId: string): Promise<string[]> {
     const state = this.#stateFor(boardId);
     if (state.halted !== null) return [];
     if (state.mode !== 'automatic') return [];
@@ -167,7 +174,7 @@ export class Dispatcher {
       const next = dispatchableCards(this.database.db, boardId)[0];
       if (next === undefined) break;
 
-      const launched = this.dispatch(boardId, next.id);
+      const launched = await this.dispatchIsolated(boardId, next.id);
       if (launched === null) break;
       started.push(next.id);
     }
@@ -179,6 +186,75 @@ export class Dispatcher {
    * Dispatches one card. Returns null when it could not start, having recorded
    * why - a card that silently fails to launch is worse than one that fails.
    */
+  #worktreesFor(boardCwd: string): WorktreeManager {
+    const existing = this.#worktrees.get(boardCwd);
+    if (existing !== undefined) return existing;
+
+    const created = new WorktreeManager(boardCwd);
+    this.#worktrees.set(boardCwd, created);
+    return created;
+  }
+
+  worktreesFor(boardCwd: string): WorktreeManager {
+    return this.#worktreesFor(boardCwd);
+  }
+
+  /** Where a card's work lives: its worktree, or the board directory. */
+  #workspacePath(boardCwd: string, cardId: string): string {
+    return this.workspaceFor?.(cardId) ?? this.#worktreesFor(boardCwd).pathFor(cardId) ?? boardCwd;
+  }
+
+  async dispatchIsolated(boardId: string, cardId: string): Promise<RunningLaunch | null> {
+    const board = this.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
+    if (board === undefined) return null;
+
+    if (this.isolate && this.workspaceFor === undefined) {
+      const card = getCard(this.database, cardId);
+      const base = this.#baseRefFor(board.cwd, cardId);
+
+      const workspace = await this.#worktreesFor(board.cwd).create(
+        cardId,
+        card.title,
+        base ?? undefined,
+      );
+
+      if (!workspace.ok) {
+        // Refusing beats running several agents in one checkout, where they
+        // overwrite each other and the damage is discovered at merge time.
+        this.#halt(boardId, {
+          reason: 'no-workspace',
+          cardId,
+          cardTitle: card.title,
+          detail: workspace.reason,
+          at: Date.now(),
+        });
+        return null;
+      }
+    }
+
+    return this.dispatch(boardId, cardId);
+  }
+
+  /**
+   * A dependent card branches from its dependency's branch when that work is
+   * not merged yet, so declared work composes and undeclared work stays
+   * isolated (doc 18).
+   */
+  #baseRefFor(boardCwd: string, cardId: string): string | null {
+    const dependencies = this.database.sqlite
+      .prepare('SELECT depends_on_card_id AS id FROM card_dependencies WHERE card_id = ?')
+      .all(cardId) as { id: string }[];
+
+    const manager = this.#worktreesFor(boardCwd);
+
+    for (const dependency of dependencies) {
+      const workspace = manager.workspaceFor(dependency.id);
+      if (workspace !== undefined) return workspace.branch;
+    }
+
+    return null;
+  }
+
   dispatch(boardId: string, cardId: string): RunningLaunch | null {
     const state = this.#stateFor(boardId);
     const card = getCard(this.database, cardId);
@@ -212,7 +288,7 @@ export class Dispatcher {
 
     const running = this.#registry.track(
       launch({
-        cwd: board.cwd,
+        cwd: this.#workspacePath(board.cwd, cardId),
         title: card.title,
         body: card.body,
         guardrails: parseGuardrails(card.guardrails),
@@ -351,7 +427,7 @@ export class Dispatcher {
     if (board === undefined) return null;
 
     // The card's worktree once U2 lands; the board directory until then.
-    const cwd = this.workspaceFor?.(cardId) ?? board.cwd;
+    const cwd = this.#workspacePath(board.cwd, cardId);
 
     const result = await runVerify({ command: guardrails.verify, cwd });
     this.#lastVerify.set(cardId, result);

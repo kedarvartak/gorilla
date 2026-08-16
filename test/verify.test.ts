@@ -73,6 +73,7 @@ beforeEach(() => {
 
   pending = new PendingBindings();
   dispatcher = new Dispatcher(handle, pending);
+  dispatcher.isolate = false;
 });
 
 afterEach(async () => {

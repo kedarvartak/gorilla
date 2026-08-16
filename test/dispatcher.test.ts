@@ -56,6 +56,9 @@ beforeEach(() => {
 
   pending = new PendingBindings();
   dispatcher = new Dispatcher(handle, pending);
+  // These exercise dispatch logic in a plain temp directory. Worktree
+  // isolation has its own suite against real repositories.
+  dispatcher.isolate = false;
 });
 
 afterEach(async () => {
@@ -78,7 +81,7 @@ describe('defaults', () => {
     card('waiting');
     dispatcher.useExecutable(fakeClaude(SUCCEEDS));
 
-    expect(dispatcher.pump(BOARD)).toEqual([]);
+    expect(await dispatcher.pump(BOARD)).toEqual([]);
   });
 });
 
@@ -195,7 +198,7 @@ describe('halting', () => {
     await dispatcher.dispatch(BOARD, id)?.result;
     await vi.waitFor(() => expect(dispatcher.state(BOARD).halted).not.toBeNull());
 
-    expect(dispatcher.pump(BOARD)).toEqual([]);
+    expect(await dispatcher.pump(BOARD)).toEqual([]);
   });
 
   it('resumes only when the operator says so', async () => {

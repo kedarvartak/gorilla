@@ -313,6 +313,52 @@ export function registerDispatchRoutes(app: FastifyInstance, context: AppContext
     },
   );
 
+  app.get<{ Params: { boardId: string } }>(
+    '/api/boards/:boardId/worktrees',
+    async (request, reply) => {
+      const board = context.database.db
+        .select()
+        .from(boards)
+        .where(eq(boards.id, request.params.boardId))
+        .get();
+
+      if (board === undefined) return reply.code(404).send({ error: 'No such board.' });
+
+      const manager = context.dispatcher.worktreesFor(board.cwd);
+      const workspaces = await Promise.all(
+        manager.list().map(async (workspace) => ({
+          ...workspace,
+          status: await manager.statusOf(workspace.cardId),
+        })),
+      );
+
+      return reply.send(workspaces);
+    },
+  );
+
+  app.delete<{ Params: { boardId: string; cardId: string }; Querystring: { force?: string } }>(
+    '/api/boards/:boardId/cards/:cardId/worktree',
+    async (request, reply) => {
+      const board = context.database.db
+        .select()
+        .from(boards)
+        .where(eq(boards.id, request.params.boardId))
+        .get();
+
+      if (board === undefined) return reply.code(404).send({ error: 'No such board.' });
+
+      // Removal is an operator action. A worktree holds a night of an agent's
+      // work and is never cleaned up automatically (doc 18).
+      const result = await context.dispatcher
+        .worktreesFor(board.cwd)
+        .remove(request.params.cardId, { force: request.query.force === 'true' });
+
+      return result.ok
+        ? reply.send({ removed: true })
+        : reply.code(409).send({ error: result.reason });
+    },
+  );
+
   app.post<{ Params: { boardId: string } }>(
     '/api/boards/:boardId/dispatch/resume',
     (request, reply) => {
