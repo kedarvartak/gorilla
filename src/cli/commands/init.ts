@@ -6,6 +6,7 @@ import {
   DEFAULT_HOOK_BASE_URL,
   bridgeScript,
 } from '../../hooks/definitions.js';
+import { PLAN_COMMAND_NAME, planCommand } from '../../hooks/plan-command.js';
 import { mergeHookSettings, requiresBridge, type SettingsDocument } from '../../hooks/settings.js';
 import type { Command, CommandResult } from '../cli.js';
 
@@ -25,6 +26,9 @@ export interface InitOutcome {
   /** Path to the bridge script, when one was needed. */
   readonly bridgePath: string | null;
   readonly bridgeWritten: boolean;
+  /** Path to the /gorilla:plan command, when written. */
+  readonly commandPath: string | null;
+  readonly commandWritten: boolean;
   readonly contents: string;
   /** True when this call changed the file on disk. */
   readonly written: boolean;
@@ -99,14 +103,23 @@ export function runInit(options: InitOptions): InitOutcome {
   });
   const contents = `${JSON.stringify(result.settings, null, 2)}\n`;
 
+  // The planning command lives with the project's other commands, so it is
+  // invocable as /gorilla:plan.
+  const commandPath = join(cwd, '.claude', 'commands', 'gorilla', PLAN_COMMAND_NAME);
+  const desiredCommand = planCommand(options.baseUrl);
+  const commandCurrent =
+    existsSync(commandPath) && readFileSync(commandPath, 'utf8') === desiredCommand;
+
   const desiredBridge = bridgePath === null ? null : bridgeScript(options.baseUrl);
   const bridgeCurrent =
     bridgePath === null ||
     (existsSync(bridgePath) && readFileSync(bridgePath, 'utf8') === desiredBridge);
 
-  const unchanged = existsSync(path) && readFileSync(path, 'utf8') === contents && bridgeCurrent;
+  const unchanged =
+    existsSync(path) && readFileSync(path, 'utf8') === contents && bridgeCurrent && commandCurrent;
 
   let bridgeWritten = false;
+  let commandWritten = false;
 
   if (!options.dryRun && !unchanged) {
     mkdirSync(dirname(path), { recursive: true });
@@ -117,12 +130,20 @@ export function runInit(options: InitOptions): InitOutcome {
       chmodSync(bridgePath, 0o755);
       bridgeWritten = true;
     }
+
+    if (!commandCurrent) {
+      mkdirSync(dirname(commandPath), { recursive: true });
+      writeFileSync(commandPath, desiredCommand, 'utf8');
+      commandWritten = true;
+    }
   }
 
   return {
     path,
     bridgePath,
     bridgeWritten,
+    commandPath,
+    commandWritten,
     contents,
     written: !options.dryRun && !unchanged,
     unchanged,
@@ -193,9 +214,10 @@ export const initCommand: Command = {
       `${outcome.preserved} existing entr(ies) preserved`;
 
     const bridgeNote =
-      outcome.bridgePath === null
+      (outcome.bridgePath === null
         ? ''
-        : `\n  Bridge script: ${outcome.bridgePath} (forwards events the HTTP transport does not receive)`;
+        : `\n  Bridge script: ${outcome.bridgePath} (forwards events the HTTP transport does not receive)`) +
+      `\n  Planning command: /gorilla:plan`;
 
     if (outcome.dryRun) {
       return {

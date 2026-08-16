@@ -67,7 +67,13 @@ const JUDGEMENT_PHRASES = [
  * condition trains the operator to ignore warnings.
  */
 const CHECK_SIGNALS = [
-  /\b(npm|pnpm|yarn|bun|make|cargo|go|python3?|pytest|jest|vitest|tsc|eslint|git)\b/i,
+  // Unambiguous tool names. `make` and `go` are deliberately absent: they are
+  // ordinary English verbs, and "make the code cleaner" would otherwise be
+  // read as naming a build command - exactly the vague condition this check
+  // exists to catch.
+  /\b(npm|pnpm|yarn|bun|cargo|pytest|jest|vitest|tsc|eslint|git|python3?)\b/i,
+  // The ambiguous ones, only when followed by something command-shaped.
+  /\b(make|go)\s+(test|build|run|check|lint|vet|install|-\w)/i,
   /\bexits? (with )?(code )?0\b/i,
   /\b(passes?|passing|succeeds?|green)\b/i,
   /\bno (errors?|failures?|warnings?)\b/i,
