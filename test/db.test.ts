@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
 import { and, count, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -314,10 +315,17 @@ describe('in-memory databases', () => {
 });
 
 describe('migration bookkeeping', () => {
-  it('records the applied migration so a reopen does not reapply it', () => {
+  it('records every applied migration so a reopen does not reapply them', () => {
     const applied = handle.sqlite
       .prepare<[], { count: number }>('SELECT COUNT(*) AS count FROM __drizzle_migrations')
       .get();
-    expect(applied?.count).toBe(1);
+
+    // Compared against the migration files rather than a pinned number, so
+    // adding a migration does not require editing this test.
+    const migrationsDir = fileURLToPath(new URL('../src/server/db/migrations', import.meta.url));
+    const expected = readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).length;
+
+    expect(expected).toBeGreaterThan(0);
+    expect(applied?.count).toBe(expected);
   });
 });
