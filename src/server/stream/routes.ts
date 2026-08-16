@@ -32,11 +32,12 @@ export function registerStreamRoutes(app: FastifyInstance, context: AppContext):
    */
   const open = new Set<FastifyReply>();
 
-  app.addHook('onClose', async () => {
+  app.addHook('onClose', (_instance, done) => {
     for (const reply of open) {
       reply.raw.end();
     }
     open.clear();
+    done();
   });
 
   app.get('/stream', (request, reply: FastifyReply) => {
