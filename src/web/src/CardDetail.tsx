@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactElement } from 'react';
 
+import { Timeline } from './Timeline.js';
+
 import type { Card, GuardrailDetail } from './api.js';
 
 /**
@@ -67,6 +69,7 @@ export function CardDetail({
 }): ReactElement {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [timelineRunId, setTimelineRunId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -238,12 +241,23 @@ export function CardDetail({
                     {run.endedAt === null ? 'in progress' : 'finished'}
                     {run.runId === latest?.runId ? ' · latest' : ''}
                   </span>
+                  <button
+                    type="button"
+                    className="self-start text-info hover:underline"
+                    onClick={() => setTimelineRunId(run.runId)}
+                  >
+                    timeline
+                  </button>
                 </li>
               ))}
             </ul>
           )}
         </Rail>
       </div>
+
+      {timelineRunId === null ? null : (
+        <Timeline runId={timelineRunId} onClose={() => setTimelineRunId(null)} />
+      )}
     </div>
   );
 }
