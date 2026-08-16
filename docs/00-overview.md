@@ -64,6 +64,7 @@ the board just because it began outside it.
 | [13-phase-0-tasks.md](13-phase-0-tasks.md) | The ten Phase 0 tasks, in card shape, with goal conditions and dependencies |
 | [14-compaction-probe-findings.md](14-compaction-probe-findings.md) | T9 findings: what Claude Code actually does at compaction, measured |
 | [15-phase-0-verification.md](15-phase-0-verification.md) | T10: the Phase 0 exit-gate report, with the compaction loop confirmed end to end |
+| [16-phase-1-tasks.md](16-phase-1-tasks.md) | The twelve Phase 1 tasks: plan, dispatch, observe - with no synthesis |
 
 ## Reading order
 
@@ -75,5 +76,6 @@ is project-wide and serves the agent as well. Read them together.
 
 ## Status
 
-Phase 0 in progress. The design is approved and implementation is under way against
-the task plan in doc 13; doc 14 records what the compaction probe measured.
+**Phase 0 is complete.** T1 to T10 from doc 13 are shipped; doc 14 and doc 15 record
+what was measured, including the corrections where a measurement disproved an earlier
+assumption. Doc 16 plans Phase 1.
