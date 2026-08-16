@@ -1,0 +1,58 @@
+@import 'tailwindcss';
+
+/**
+ * Dark, dense, instrument-like (doc 09). The reference points are a monitoring
+ * console and Linear, not a consumer productivity app: the operator opens this
+ * at a moment of low context, and it should read as a panel that answers
+ * questions.
+ *
+ * Colour is reserved for state. There is only so much of it, and six card
+ * states need to be distinguishable at a glance.
+ */
+@theme {
+  --color-bg: #0d1117;
+  --color-panel: #161b22;
+  --color-panel-2: #1c2129;
+  --color-line: #21262d;
+  --color-text: #e6edf3;
+  --color-dim: #7d8590;
+  --color-accent: #d29922;
+  --color-ok: #3fb950;
+  --color-warn: #f85149;
+  --color-info: #58a6ff;
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Keyboard focus must be obvious: the board is fully operable without a mouse. */
+:focus-visible {
+  outline: 2px solid var(--color-info);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+  border-radius: 5px;
+}

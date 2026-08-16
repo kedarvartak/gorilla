@@ -15,7 +15,7 @@
     "src/server/db/migrations"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && vite build",
     "clean": "rm -rf dist",
     "dev": "tsx watch src/cli/index.ts",
     "pretest": "npm run build",
@@ -23,27 +23,40 @@
     "test:watch": "vitest",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
-    "typecheck": "tsc --noEmit",
-    "db:generate": "drizzle-kit generate"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p src/web/tsconfig.json",
+    "db:generate": "drizzle-kit generate",
+    "build:web": "vite build",
+    "dev:web": "vite"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.10.2",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^4.7.0",
     "@vitest/coverage-v8": "^2.1.8",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9.17.0",
     "prettier": "^3.4.2",
+    "tailwindcss": "^4.3.3",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.1",
+    "vite": "^5.4.21",
     "vitest": "^2.1.8"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "better-sqlite3": "^13.0.3",
     "chokidar": "^5.0.0",
     "drizzle-orm": "^0.45.2",
     "fastify": "^5.12.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "simple-git": "^3.36.0"
   }
 }
