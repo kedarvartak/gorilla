@@ -20,11 +20,6 @@ export interface Command {
   run(args: readonly string[]): Promise<CommandResult> | CommandResult;
 }
 
-/**
- * Commands arrive in later phases: `init` (T4) and `doctor` (T8) register here.
- * The registry exists now so those tasks add an entry rather than reshaping
- * argument handling.
- */
 const commands = new Map<string, Command>();
 
 export function registerCommand(command: Command): void {
