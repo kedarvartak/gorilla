@@ -3,6 +3,9 @@ import { performance } from 'node:perf_hooks';
 import type { FastifyInstance } from 'fastify';
 
 import type { AppContext } from '../app.js';
+import { boardForCwd, inferCard, sessionStartContext } from '../binding/attach.js';
+import { getCard } from '../api/cards.js';
+import { canonicaliseCwd } from './binding.js';
 
 /**
  * `POST /hooks/:event` - the hook path (doc 07).
@@ -157,8 +160,54 @@ export function registerIngestRoutes(app: FastifyInstance, context: AppContext):
       request.log.error({ event, err: error }, 'failed to persist hook event');
     }
 
-    // Phase 0 makes no decisions. An empty object is an explicit no-op: it
-    // neither allows nor denies, leaving Claude Code's own behaviour intact.
+    // SessionStart is the one event that answers with something. Everything
+    // else gets an explicit no-op: an empty object neither allows nor denies,
+    // leaving Claude Code's own behaviour intact.
+    if (event === 'SessionStart') {
+      void reply.code(200).send(sessionStartResponse(context, sessionId, cwd));
+      return;
+    }
+
     void reply.code(200).send({});
   });
+}
+
+/**
+ * The reply to a starting session (doc 07 section 3).
+ *
+ * Two jobs: tell the operator the board is watching and how to bind a card,
+ * and make sure an unclaimed session still lands somewhere. Never throws - a
+ * failure here would mean a session that cannot start.
+ */
+function sessionStartResponse(
+  context: AppContext,
+  sessionId: string,
+  cwd: string,
+): Record<string, unknown> {
+  try {
+    const board = boardForCwd(context.database, canonicaliseCwd(cwd));
+    if (board === null) return {};
+
+    const run = context.store.runForSession(sessionId);
+    const bound =
+      run?.cardId === null || run?.cardId === undefined
+        ? null
+        : getCard(context.database, run.cardId);
+
+    // An unclaimed session gets a provisional card rather than nothing. An
+    // event with nowhere to go is the blind spot this product exists to
+    // remove (doc 05).
+    if (bound === null && run !== null) {
+      inferCard(context.database, run.id, null);
+    }
+
+    return {
+      hookSpecificOutput: {
+        hookEventName: 'SessionStart',
+        additionalContext: sessionStartContext(context.database, board.id, board.name, bound),
+      },
+    };
+  } catch {
+    return {};
+  }
 }
