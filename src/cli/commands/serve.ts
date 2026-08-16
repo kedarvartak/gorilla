@@ -44,6 +44,16 @@ export const serveCommand: Command = {
       ...(recorder === undefined ? {} : { recorder }),
     });
 
+    // Printed to stderr so it survives --quiet: an operator who cannot find
+    // the board has no way to use any of this.
+    const board = server.board;
+    process.stderr.write(`Gorilla is serving ${server.url}\n`);
+    if (board !== null) {
+      process.stderr.write(
+        `  board "${board.name}" ${board.created ? 'created for' : 'observing'} ${board.cwd}\n`,
+      );
+    }
+
     const shutdown = (): void => {
       void server.stop().then(
         () => process.exit(0),

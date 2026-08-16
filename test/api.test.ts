@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
@@ -384,6 +384,57 @@ describe('live updates', () => {
       expect(buffer).toContain('event: card-deleted');
     } finally {
       await server.stop();
+    }
+  });
+});
+
+describe('first run', () => {
+  it('creates a board for the directory serve was started in', async () => {
+    // Otherwise the first thing an operator must do is POST JSON, which is a
+    // poor answer to "how do I use this" (P9).
+    const { startServer } = await import('../src/server/start.js');
+    const project = join(dir, 'auto-board');
+    mkdirSync(project, { recursive: true });
+
+    const server = await startServer({
+      port: 4489,
+      dbPath: join(dir, 'auto.db'),
+      logger: false,
+      cwd: project,
+    });
+
+    try {
+      expect(server.board?.created).toBe(true);
+      expect(server.board?.name).toBe('auto-board');
+
+      const boards = (await (await fetch(`${server.url}/api/boards`)).json()) as unknown[];
+      expect(boards).toHaveLength(1);
+
+      const columns = (await (
+        await fetch(`${server.url}/api/boards/${server.board?.id ?? ''}/columns`)
+      ).json()) as unknown[];
+      expect(columns).toHaveLength(5);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it('reuses the board on a restart rather than making another', async () => {
+    const { startServer } = await import('../src/server/start.js');
+    const project = join(dir, 'reused');
+    mkdirSync(project, { recursive: true });
+    const dbPath = join(dir, 'reused.db');
+
+    const first = await startServer({ port: 4490, dbPath, logger: false, cwd: project });
+    const firstId = first.board?.id;
+    await first.stop();
+
+    const second = await startServer({ port: 4490, dbPath, logger: false, cwd: project });
+    try {
+      expect(second.board?.created).toBe(false);
+      expect(second.board?.id).toBe(firstId);
+    } finally {
+      await second.stop();
     }
   });
 });
