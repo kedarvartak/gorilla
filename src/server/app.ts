@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import type { DatabaseHandle } from './db/client.js';
+import type { FixtureRecorder } from './fixtures/recorder.js';
 import { EventStore } from './ingest/store.js';
 import { registerIngestRoutes } from './ingest/routes.js';
 
@@ -8,11 +9,14 @@ export interface AppOptions {
   readonly database: DatabaseHandle;
   /** Fastify logger options, or false to silence it (tests). */
   readonly logger?: boolean;
+  /** When set, every received hook event is also written to a fixture (T5). */
+  readonly recorder?: FixtureRecorder;
 }
 
 export interface AppContext {
   readonly store: EventStore;
   readonly database: DatabaseHandle;
+  readonly recorder?: FixtureRecorder | undefined;
 }
 
 export function buildApp(options: AppOptions): FastifyInstance {
@@ -26,6 +30,7 @@ export function buildApp(options: AppOptions): FastifyInstance {
   const context: AppContext = {
     store: new EventStore(options.database.sqlite),
     database: options.database,
+    recorder: options.recorder,
   };
 
   app.get('/health', () => ({ status: 'ok' }));
