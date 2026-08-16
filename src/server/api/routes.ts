@@ -26,6 +26,7 @@ import { claim, claimableCards, mergeCard } from '../binding/attach.js';
 import { buildMechanicalLedger } from '../ledger/mechanical.js';
 import { checkReality, describeReality } from '../ledger/reality.js';
 import { describeVerify } from '../verify/run.js';
+import { describeMergeReport, mergeBranches } from '../review/merge.js';
 
 /**
  * REST for boards, columns and cards.
@@ -656,4 +657,126 @@ export function registerTimelineRoutes(app: FastifyInstance, context: AppContext
 
     return reply.send({ events, tools });
   });
+}
+
+/**
+ * The reviewer (P4/U4).
+ *
+ * One action for "merge last night's branches and tell me if anything broke".
+ * The operator names the cards; nothing is merged automatically, and nothing
+ * is pushed.
+ */
+export function registerReviewRoutes(app: FastifyInstance, context: AppContext): void {
+  app.post<{
+    Params: { boardId: string };
+    Body: { cardIds?: unknown; into?: string; verify?: string | null };
+  }>('/api/boards/:boardId/review/merge', async (request, reply) => {
+    const board = context.database.db
+      .select()
+      .from(boards)
+      .where(eq(boards.id, request.params.boardId))
+      .get();
+
+    if (board === undefined) return reply.code(404).send({ error: 'No such board.' });
+
+    const cardIds = Array.isArray(request.body?.cardIds)
+      ? (request.body.cardIds as unknown[]).filter((id): id is string => typeof id === 'string')
+      : [];
+
+    if (cardIds.length === 0) {
+      return reply.code(400).send({ error: 'Name the cards to merge.', field: 'cardIds' });
+    }
+
+    const manager = context.dispatcher.worktreesFor(board.cwd);
+    const cards: { cardId: string; title: string; branch: string }[] = [];
+    const missing: string[] = [];
+
+    for (const cardId of cardIds) {
+      const workspace = manager.workspaceFor(cardId);
+      if (workspace === undefined) {
+        missing.push(cardId);
+        continue;
+      }
+      cards.push({
+        cardId,
+        title: getCard(context.database, cardId).title,
+        branch: workspace.branch,
+      });
+    }
+
+    if (cards.length === 0) {
+      return reply.code(409).send({
+        error: 'None of those cards has a worktree to merge.',
+        missing,
+      });
+    }
+
+    const report = await mergeBranches({
+      repoCwd: board.cwd,
+      cards,
+      ...(typeof request.body?.into === 'string' ? { into: request.body.into } : {}),
+      verifyCommand: request.body?.verify ?? null,
+    });
+
+    // Merged cards move to the terminal column; the one that broke does not.
+    const terminal = context.database.db
+      .select()
+      .from(columns)
+      .where(eq(columns.boardId, board.id))
+      .all()
+      .find((column) => column.isTerminal);
+
+    for (const step of report.steps) {
+      if (step.outcome !== 'merged' || terminal === undefined) continue;
+      try {
+        moveCard(context.database, step.cardId, terminal.id, 0);
+        updateCard(context.database, step.cardId, { status: 'done' });
+      } catch {
+        // A card that cannot move - usually an unfinished dependency - is
+        // still merged. The report is the record; the column is a convenience.
+        continue;
+      }
+    }
+
+    publish(context, 'review-merged', { boardId: board.id, ...report });
+
+    return reply.send({
+      ...report,
+      missing,
+      summary: describeMergeReport(report),
+    });
+  });
+
+  /** What is waiting to be merged: finished cards that still have a worktree. */
+  app.get<{ Params: { boardId: string } }>(
+    '/api/boards/:boardId/review/pending',
+    async (request, reply) => {
+      const board = context.database.db
+        .select()
+        .from(boards)
+        .where(eq(boards.id, request.params.boardId))
+        .get();
+
+      if (board === undefined) return reply.code(404).send({ error: 'No such board.' });
+
+      const manager = context.dispatcher.worktreesFor(board.cwd);
+
+      const pending = await Promise.all(
+        manager.list().map(async (workspace) => {
+          const card = getCard(context.database, workspace.cardId);
+          return {
+            cardId: card.id,
+            title: card.title,
+            status: card.status,
+            branch: workspace.branch,
+            worktree: workspace.path,
+            git: await manager.statusOf(card.id),
+            verify: context.dispatcher.verifyResultFor(card.id) ?? null,
+          };
+        }),
+      );
+
+      return reply.send(pending.filter((entry) => entry.status !== 'done'));
+    },
+  );
 }
