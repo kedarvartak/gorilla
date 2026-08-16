@@ -122,6 +122,21 @@ export function registerIngestRoutes(app: FastifyInstance, context: AppContext):
       const durationMs = performance.now() - startedAt;
       if (latencies.length < MAX_SAMPLES) latencies.push({ event, durationMs });
 
+      // Published after the write, so a subscriber can never observe an event
+      // the database does not have. The broadcaster swallows subscriber errors
+      // so a stuck browser cannot slow the agent.
+      context.broadcaster.publish('hook', {
+        id: written.seq,
+        runId: written.runId,
+        sessionId,
+        event,
+        receivedAt,
+        toolName: readString(payload, 'tool_name'),
+        agentId: readString(payload, 'agent_id'),
+        cwd,
+        durationMs: Number(durationMs.toFixed(2)),
+      });
+
       if (declared !== null && declared !== event) {
         request.log.warn({ event, declared }, 'hook_event_name disagrees with the route');
       }

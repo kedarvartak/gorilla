@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gorilla - event stream</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0d1117;
+        --panel: #161b22;
+        --line: #21262d;
+        --text: #e6edf3;
+        --dim: #7d8590;
+        --accent: #d29922;
+        --ok: #3fb950;
+        --warn: #f85149;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          13px/1.5 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+      }
+      header {
+        position: sticky;
+        top: 0;
+        display: flex;
+        gap: 1.5rem;
+        align-items: baseline;
+        padding: 0.75rem 1rem;
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+      }
+      h1 {
+        margin: 0;
+        font-size: 13px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+      }
+      .stat {
+        color: var(--dim);
+      }
+      .stat b {
+        color: var(--text);
+        font-weight: 600;
+      }
+      #status[data-state='live'] {
+        color: var(--ok);
+      }
+      #status[data-state='down'] {
+        color: var(--warn);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th {
+        text-align: left;
+        padding: 0.4rem 1rem;
+        color: var(--dim);
+        font-weight: 500;
+        border-bottom: 1px solid var(--line);
+        position: sticky;
+        top: 41px;
+        background: var(--bg);
+      }
+      td {
+        padding: 0.3rem 1rem;
+        border-bottom: 1px solid var(--line);
+        white-space: nowrap;
+      }
+      tr:hover td {
+        background: var(--panel);
+      }
+      .event {
+        color: var(--accent);
+      }
+      .compact {
+        color: var(--warn);
+        font-weight: 600;
+      }
+      .dim {
+        color: var(--dim);
+      }
+      .empty {
+        padding: 2rem 1rem;
+        color: var(--dim);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Gorilla</h1>
+      <span class="stat">status <b id="status" data-state="connecting">connecting</b></span>
+      <span class="stat">events <b id="count">0</b></span>
+      <span class="stat">sessions <b id="sessions">0</b></span>
+      <span class="stat">compactions <b id="compactions">0</b></span>
+    </header>
+
+    <p class="empty" id="empty">
+      Waiting for hook events. Run <code>gorilla init</code> in a project, then start a Claude Code
+      session.
+    </p>
+
+    <table hidden id="table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>time</th>
+          <th>event</th>
+          <th>tool</th>
+          <th>session</th>
+          <th>ms</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+
+    <script>
+      // Deliberately dependency-free and throwaway: this page exists to make
+      // the pipe visible during the Phase 0 verification run and is replaced by
+      // the board in Phase 1.
+      const rows = document.getElementById('rows');
+      const table = document.getElementById('table');
+      const empty = document.getElementById('empty');
+      const statusEl = document.getElementById('status');
+      const countEl = document.getElementById('count');
+      const sessionsEl = document.getElementById('sessions');
+      const compactionsEl = document.getElementById('compactions');
+
+      const sessions = new Set();
+      let count = 0;
+      let compactions = 0;
+
+      const time = (ms) =>
+        new Date(ms).toLocaleTimeString(undefined, { hour12: false }) +
+        '.' +
+        String(ms % 1000).padStart(3, '0');
+
+      function add(payload) {
+        count += 1;
+        if (payload.sessionId) sessions.add(payload.sessionId);
+        if (payload.event === 'PreCompact') compactions += 1;
+
+        countEl.textContent = count;
+        sessionsEl.textContent = sessions.size;
+        compactionsEl.textContent = compactions;
+
+        table.hidden = false;
+        empty.hidden = true;
+
+        const tr = document.createElement('tr');
+        const isCompact = payload.event === 'PreCompact' || payload.event === 'PostCompact';
+
+        for (const [value, className] of [
+          [payload.id ?? '', 'dim'],
+          [payload.receivedAt ? time(payload.receivedAt) : '', 'dim'],
+          [payload.event ?? '', isCompact ? 'compact' : 'event'],
+          [payload.toolName ?? '', ''],
+          [(payload.sessionId ?? '').slice(0, 8), 'dim'],
+          [payload.durationMs ?? '', 'dim'],
+        ]) {
+          const td = document.createElement('td');
+          td.textContent = String(value);
+          if (className) td.className = className;
+          tr.appendChild(td);
+        }
+
+        // Newest first: the operator returning to this page wants the tail.
+        rows.prepend(tr);
+        while (rows.childElementCount > 500) rows.lastElementChild.remove();
+      }
+
+      function connect() {
+        const source = new EventSource('/stream');
+
+        source.addEventListener('open', () => {
+          statusEl.textContent = 'live';
+          statusEl.dataset.state = 'live';
+        });
+
+        source.addEventListener('hook', (message) => {
+          try {
+            add(JSON.parse(message.data));
+          } catch {
+            /* a malformed frame must not stop the stream */
+          }
+        });
+
+        source.addEventListener('gap', () => {
+          statusEl.textContent = 'live (gap)';
+          statusEl.dataset.state = 'live';
+        });
+
+        source.addEventListener('error', () => {
+          statusEl.textContent = 'reconnecting';
+          statusEl.dataset.state = 'down';
+          // EventSource reconnects on its own and resends Last-Event-ID.
+        });
+      }
+
+      connect();
+    </script>
+  </body>
+</html>
