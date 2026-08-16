@@ -13,6 +13,7 @@ import {
   registerCardDetailRoutes,
   registerDispatchRoutes,
   registerPlanRoutes,
+  registerBriefRoutes,
   registerReviewRoutes,
   registerTimelineRoutes,
 } from './api/routes.js';
@@ -107,6 +108,7 @@ export function buildApp(options: AppOptions): FastifyInstance {
   registerCardDetailRoutes(app, context);
   registerTimelineRoutes(app, context);
   registerReviewRoutes(app, context);
+  registerBriefRoutes(app, context);
   registerWebRoutes(app);
 
   return app;
