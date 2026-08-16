@@ -10,6 +10,7 @@ import { registerWebRoutes } from './web/routes.js';
 import {
   registerApiRoutes,
   registerBindingRoutes,
+  registerCardDetailRoutes,
   registerDispatchRoutes,
   registerPlanRoutes,
 } from './api/routes.js';
@@ -97,6 +98,7 @@ export function buildApp(options: AppOptions): FastifyInstance {
   registerDispatchRoutes(app, context);
   registerPlanRoutes(app, context);
   registerBindingRoutes(app, context);
+  registerCardDetailRoutes(app, context);
   registerWebRoutes(app);
 
   return app;

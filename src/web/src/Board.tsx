@@ -23,6 +23,7 @@ import {
   type Column,
   type DispatchState,
 } from './api.js';
+import { CardDetail } from './CardDetail.js';
 import { CardTile } from './CardTile.js';
 
 /**
@@ -82,6 +83,7 @@ export function Board(): ReactElement {
   const [live, setLive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState('');
+  const [openCardId, setOpenCardId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -271,13 +273,21 @@ export function Board(): ReactElement {
               key={column.id}
               column={column}
               cards={byColumn.get(column.id) ?? []}
-              onOpen={(card) => {
-                void api.markSeen(card.id).then(() => void load());
-              }}
+              onOpen={(card) => setOpenCardId(card.id)}
             />
           ))}
         </div>
       </DndContext>
+
+      {openCardId === null ? null : (
+        <CardDetail
+          cardId={openCardId}
+          onClose={() => {
+            setOpenCardId(null);
+            void load();
+          }}
+        />
+      )}
     </main>
   );
 }

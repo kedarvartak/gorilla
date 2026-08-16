@@ -8,7 +8,7 @@ import { createDefaultColumns } from '../cards/defaults.js';
 import { describeGuardrails, parseGuardrails } from '../cards/guardrails.js';
 import { blockersFor, dispatchableCards } from '../cards/eligibility.js';
 import { canonicaliseCwd } from '../ingest/binding.js';
-import { boards, cardDependencies, columns, type Card } from '../db/schema.js';
+import { boards, cardDependencies, columns, runs, type Card } from '../db/schema.js';
 import {
   addDependency,
   CardError,
@@ -23,6 +23,8 @@ import {
 } from './cards.js';
 import { createPlan, getPlan, guardrailNote } from './plans.js';
 import { claim, claimableCards, mergeCard } from '../binding/attach.js';
+import { buildMechanicalLedger } from '../ledger/mechanical.js';
+import { checkReality, describeReality } from '../ledger/reality.js';
 
 /**
  * REST for boards, columns and cards.
@@ -432,5 +434,71 @@ export function registerBindingRoutes(app: FastifyInstance, context: AppContext)
 
   app.get<{ Params: { boardId: string } }>('/api/boards/:boardId/claimable', (request) => {
     return claimableCards(context.database, request.params.boardId).map(present);
+  });
+}
+
+/**
+ * Card detail (P4).
+ *
+ * One request returns everything the detail view needs - specification, run
+ * history, and the mechanical ledger - because three round trips to render one
+ * card is three chances for the panes to disagree with each other.
+ */
+export function registerCardDetailRoutes(app: FastifyInstance, context: AppContext): void {
+  app.get<{ Params: { cardId: string } }>('/api/cards/:cardId/detail', async (request, reply) => {
+    try {
+      const card = getCard(context.database, request.params.cardId);
+      const guardrails = parseGuardrails(card.guardrails);
+
+      const cardRuns = context.database.db
+        .select()
+        .from(runs)
+        .where(eq(runs.cardId, card.id))
+        .orderBy(asc(runs.startedAt))
+        .all();
+
+      const ledgers = cardRuns.map((run) => ({
+        runId: run.id,
+        sessionId: run.sessionId,
+        startedAt: run.startedAt,
+        endedAt: run.endedAt,
+        gitBranch: run.gitBranch,
+        events: (
+          context.database.sqlite
+            .prepare('SELECT COUNT(*) AS n FROM events WHERE run_id = ?')
+            .get(run.id) as { n: number }
+        ).n,
+        ledger: buildMechanicalLedger({ sqlite: context.database.sqlite, runId: run.id }),
+      }));
+
+      // Git is the only source here independent of the agent, so it is the one
+      // that can contradict it (doc 08, claim versus reality).
+      const board = context.database.db
+        .select()
+        .from(boards)
+        .where(eq(boards.id, card.boardId))
+        .get();
+      const claimed = ledgers.flatMap((entry) => entry.ledger.changed);
+      const reality =
+        board === undefined
+          ? null
+          : await checkReality({
+              cwd: board.cwd,
+              headShaAtStart: cardRuns[0]?.headShaAtStart ?? null,
+              claimedPaths: claimed,
+            });
+
+      return reply.send({
+        card: present(card),
+        guardrails,
+        guardrailDetail: describeGuardrails(guardrails),
+        blockers: blockersFor(context.database.db, card.id),
+        runs: ledgers,
+        reality,
+        realityNotes: reality === null ? [] : describeReality(reality),
+      });
+    } catch (error) {
+      return fail(reply, error);
+    }
   });
 }
