@@ -4,6 +4,6 @@ coverage/
 *.log
 .env
 .env.*
-fixtures/
+/fixtures/
 .DS_Store
 *.tsbuildinfo

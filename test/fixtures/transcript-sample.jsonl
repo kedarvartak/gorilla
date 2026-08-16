@@ -1,0 +1,12 @@
+{"type":"mode","sessionId":"11111111-2222-4333-8444-555555555555","mode":"default"}
+{"type":"permission-mode","sessionId":"11111111-2222-4333-8444-555555555555","permissionMode":"acceptEdits"}
+{"type":"user","uuid":"u1","parentUuid":null,"timestamp":"2026-08-16T10:00:00.000Z","cwd":"/home/example/project","gitBranch":"main","sessionId":"11111111-2222-4333-8444-555555555555","message":{"role":"user","content":"Add a health endpoint"}}
+{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2026-08-16T10:00:05.000Z","cwd":"/home/example/project","gitBranch":"main","message":{"role":"assistant","model":"claude-opus-5","content":[{"type":"thinking","thinking":"The router lives in src/server."},{"type":"text","text":"I'll add it to the router."},{"type":"tool_use","id":"toolu_1","name":"Edit","input":{"file_path":"/home/example/project/src/server/app.ts"}}],"usage":{"input_tokens":12,"cache_creation_input_tokens":2000,"cache_read_input_tokens":48000,"output_tokens":140,"output_tokens_details":{"thinking_tokens":40}}}}
+{"type":"attachment","uuid":"at1","sessionId":"11111111-2222-4333-8444-555555555555","attachment":{"kind":"file"}}
+{"type":"ai-title","sessionId":"11111111-2222-4333-8444-555555555555","aiTitle":"Add health endpoint"}
+{"type":"file-history-snapshot","messageId":"a1","isSnapshotUpdate":false,"snapshot":{}}
+{"type":"assistant","uuid":"a2","parentUuid":"a1","timestamp":"2026-08-16T10:00:20.000Z","message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"Interrupted by user"}],"usage":{"input_tokens":0,"cache_read_input_tokens":999999,"output_tokens":0}}}
+{"type":"assistant","uuid":"a3","parentUuid":"a2","timestamp":"2026-08-16T10:01:00.000Z","message":{"role":"assistant","model":"claude-opus-5","content":[{"type":"text","text":"Done. The endpoint returns ok."}],"usage":{"input_tokens":30,"cache_creation_input_tokens":500,"cache_read_input_tokens":95000,"output_tokens":60,"output_tokens_details":{"thinking_tokens":10}}}}
+{"type":"some-future-record-type","sessionId":"11111111-2222-4333-8444-555555555555","payload":{"unknown":true}}
+{"type":"another-unknown","x":1}
+this line is not json at all
