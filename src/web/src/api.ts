@@ -53,8 +53,10 @@ export interface HaltState {
 
 export interface DispatchState {
   readonly mode: 'manual' | 'automatic';
+  readonly policy: 'review' | 'unattended';
   readonly concurrency: number;
   readonly running: readonly string[];
+  readonly completed: readonly string[];
   readonly halted: HaltState | null;
 }
 
@@ -100,7 +102,7 @@ export const api = {
 
   markSeen: (cardId: string) => request<Card>(`/api/cards/${cardId}/seen`, { method: 'POST' }),
 
-  setDispatch: (boardId: string, body: { mode?: string; concurrency?: number }) =>
+  setDispatch: (boardId: string, body: { mode?: string; concurrency?: number; policy?: string }) =>
     request<DispatchState>(`/api/boards/${boardId}/dispatch`, {
       method: 'POST',
       body: JSON.stringify(body),

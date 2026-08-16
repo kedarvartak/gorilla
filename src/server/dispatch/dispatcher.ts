@@ -54,7 +54,10 @@ export interface HaltState {
 
 export interface BoardDispatchState {
   readonly mode: DispatchMode;
+  readonly policy: QueuePolicy;
   readonly concurrency: number;
+  /** Cards that finished and are waiting to be looked at. */
+  readonly completed: readonly string[];
   readonly running: readonly string[];
   readonly halted: HaltState | null;
 }
@@ -68,18 +71,39 @@ export interface DispatcherEvents {
 
 interface BoardState {
   mode: DispatchMode;
+  policy: QueuePolicy;
   concurrency: number;
   running: Map<string, RunningLaunch>;
+  completed: Set<string>;
   halted: HaltState | null;
 }
 
 export const DEFAULT_CONCURRENCY = 1;
+
+/**
+ * How the queue treats a completed run.
+ *
+ * `review` stops after every completion, which is right while the operator is
+ * present: a finished run is not a reviewed one, and the next card might build
+ * on it.
+ *
+ * `unattended` keeps going and collects completions for the morning. It is
+ * only safe because U2 gives each card its own worktree - a later card cannot
+ * see an earlier card's unmerged work unless it declared a dependency, in
+ * which case the graph already sequences them (doc 18).
+ *
+ * Under `unattended` the queue still halts on failure, on a run that achieved
+ * nothing, and on a failed verify. Those are the states where continuing would
+ * pile work on a broken foundation.
+ */
+export type QueuePolicy = 'review' | 'unattended';
 
 export class Dispatcher {
   readonly #boards = new Map<string, BoardState>();
   readonly #registry = new LaunchRegistry();
   readonly #lastVerify = new Map<string, VerifyResult>();
   readonly #worktrees = new Map<string, WorktreeManager>();
+  readonly #pumping = new Set<string>();
   #executable: string | undefined;
 
   /** Overridden in tests; otherwise resolved from the card's worktree. */
@@ -105,8 +129,10 @@ export class Dispatcher {
 
     const created: BoardState = {
       mode: 'manual',
+      policy: 'review',
       concurrency: DEFAULT_CONCURRENCY,
       running: new Map(),
+      completed: new Set(),
       halted: null,
     };
     this.#boards.set(boardId, created);
@@ -117,8 +143,10 @@ export class Dispatcher {
     const state = this.#stateFor(boardId);
     return {
       mode: state.mode,
+      policy: state.policy,
       concurrency: state.concurrency,
       running: [...state.running.keys()],
+      completed: [...state.completed],
       halted: state.halted,
     };
   }
@@ -135,6 +163,19 @@ export class Dispatcher {
     return this.state(boardId);
   }
 
+  /**
+   * Switching to `unattended` also raises nothing on its own: concurrency is a
+   * separate decision, because how many agents a machine can host is not the
+   * same question as whether the operator is awake.
+   */
+  setPolicy(boardId: string, policy: QueuePolicy): BoardDispatchState {
+    this.#stateFor(boardId).policy = policy;
+    this.#publish(boardId);
+
+    if (policy === 'unattended') void this.pump(boardId);
+    return this.state(boardId);
+  }
+
   setConcurrency(boardId: string, concurrency: number): BoardDispatchState {
     this.#stateFor(boardId).concurrency = Math.max(1, Math.floor(concurrency));
     this.#publish(boardId);
@@ -147,6 +188,7 @@ export class Dispatcher {
    */
   resume(boardId: string): BoardDispatchState {
     this.#stateFor(boardId).halted = null;
+    this.#stateFor(boardId).completed.clear();
     this.#publish(boardId);
 
     if (this.#stateFor(boardId).mode === 'automatic') void this.pump(boardId);
@@ -168,6 +210,11 @@ export class Dispatcher {
     if (state.halted !== null) return [];
     if (state.mode !== 'automatic') return [];
 
+    // Guards against two pumps interleaving and starting the same card twice
+    // when several runs finish at once.
+    if (this.#pumping.has(boardId)) return [];
+    this.#pumping.add(boardId);
+
     const started: string[] = [];
 
     while (state.running.size < state.concurrency && state.halted === null) {
@@ -179,6 +226,7 @@ export class Dispatcher {
       started.push(next.id);
     }
 
+    this.#pumping.delete(boardId);
     return started;
   }
 
@@ -400,21 +448,40 @@ export class Dispatcher {
     // R10 exists to prevent (doc 18, U1).
     const verify = await this.#verify(boardId, cardId);
 
-    this.#halt(boardId, {
-      reason:
-        verify?.status === 'failed' || verify?.status === 'errored'
-          ? 'verify-failed'
-          : 'awaiting-review',
-      cardId,
-      cardTitle: card.title,
-      detail:
-        verify === null || verify.status === 'skipped'
-          ? 'The run finished and is waiting to be reviewed.'
-          : describeVerify(verify),
-      at: Date.now(),
-    });
+    state.completed.add(cardId);
 
+    if (verify?.status === 'failed' || verify?.status === 'errored') {
+      this.#halt(boardId, {
+        reason: 'verify-failed',
+        cardId,
+        cardTitle: card.title,
+        detail: describeVerify(verify),
+        at: Date.now(),
+      });
+      this.#publish(boardId);
+      return;
+    }
+
+    if (state.policy === 'review') {
+      this.#halt(boardId, {
+        reason: 'awaiting-review',
+        cardId,
+        cardTitle: card.title,
+        detail:
+          verify === null || verify.status === 'skipped'
+            ? 'The run finished and is waiting to be reviewed.'
+            : describeVerify(verify),
+        at: Date.now(),
+      });
+      this.#publish(boardId);
+      return;
+    }
+
+    // Unattended: the completion is recorded and the queue moves on. Stopping
+    // here would mean waking to one finished task and a queue that never
+    // moved, which is the entire point of the mode.
     this.#publish(boardId);
+    void this.pump(boardId);
   }
 
   /** Runs the card's verify command where the work happened. */

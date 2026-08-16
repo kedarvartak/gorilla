@@ -354,3 +354,80 @@ describe('launched binding', () => {
     running?.cancel();
   });
 });
+
+describe('unattended operation', () => {
+  it('keeps going through completions instead of stopping at the first', async () => {
+    // The overnight case. Halting on success would mean waking up to one
+    // finished task and a queue that never moved.
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    for (const title of ['a', 'b', 'c']) card(title);
+
+    dispatcher.setPolicy(BOARD, 'unattended');
+    dispatcher.setMode(BOARD, 'automatic');
+
+    await vi.waitFor(() => expect(dispatcher.state(BOARD).completed).toHaveLength(3), {
+      timeout: 10_000,
+    });
+    expect(dispatcher.state(BOARD).halted).toBeNull();
+  });
+
+  it('still stops on a failure, because later work would build on it', async () => {
+    dispatcher.useExecutable(fakeClaude(FAILS));
+    card('breaks');
+    card('never runs');
+
+    dispatcher.setPolicy(BOARD, 'unattended');
+    dispatcher.setMode(BOARD, 'automatic');
+
+    await vi.waitFor(() => expect(dispatcher.state(BOARD).halted?.reason).toBe('failure'));
+  });
+
+  it('records what finished, so the morning has somewhere to start', async () => {
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    const id = card('finished overnight');
+
+    dispatcher.setPolicy(BOARD, 'unattended');
+    dispatcher.setMode(BOARD, 'automatic');
+
+    await vi.waitFor(() => expect(dispatcher.state(BOARD).completed).toContain(id));
+  });
+
+  it('halts on every completion under the review policy', async () => {
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    card('a');
+    card('b');
+
+    // The default, for when the operator is present.
+    expect(dispatcher.state(BOARD).policy).toBe('review');
+    dispatcher.setMode(BOARD, 'automatic');
+
+    await vi.waitFor(() => expect(dispatcher.state(BOARD).halted?.reason).toBe('awaiting-review'));
+    expect(dispatcher.state(BOARD).completed).toHaveLength(1);
+  });
+
+  it('does not start the same card twice when several finish at once', async () => {
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    for (const title of ['a', 'b', 'c', 'd']) card(title);
+
+    dispatcher.setConcurrency(BOARD, 3);
+    dispatcher.setPolicy(BOARD, 'unattended');
+    dispatcher.setMode(BOARD, 'automatic');
+
+    await vi.waitFor(() => expect(dispatcher.state(BOARD).completed).toHaveLength(4), {
+      timeout: 15_000,
+    });
+
+    // Four cards, four completions - no card ran twice.
+    expect(new Set(dispatcher.state(BOARD).completed).size).toBe(4);
+  });
+
+  it('clears the completed list when the operator resumes', async () => {
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    card('a');
+
+    dispatcher.setMode(BOARD, 'automatic');
+    await vi.waitFor(() => expect(dispatcher.state(BOARD).completed).toHaveLength(1));
+
+    expect(dispatcher.resume(BOARD).completed).toHaveLength(0);
+  });
+});
