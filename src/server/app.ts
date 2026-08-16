@@ -1,0 +1,36 @@
+import Fastify, { type FastifyInstance } from 'fastify';
+
+import type { DatabaseHandle } from './db/client.js';
+import { EventStore } from './ingest/store.js';
+import { registerIngestRoutes } from './ingest/routes.js';
+
+export interface AppOptions {
+  readonly database: DatabaseHandle;
+  /** Fastify logger options, or false to silence it (tests). */
+  readonly logger?: boolean;
+}
+
+export interface AppContext {
+  readonly store: EventStore;
+  readonly database: DatabaseHandle;
+}
+
+export function buildApp(options: AppOptions): FastifyInstance {
+  const app = Fastify({
+    logger: options.logger ?? false,
+    // Hook payloads carry tool inputs and responses, which include file
+    // contents. The default 1MB limit would reject them.
+    bodyLimit: 32 * 1024 * 1024,
+  });
+
+  const context: AppContext = {
+    store: new EventStore(options.database.sqlite),
+    database: options.database,
+  };
+
+  app.get('/health', () => ({ status: 'ok' }));
+
+  registerIngestRoutes(app, context);
+
+  return app;
+}

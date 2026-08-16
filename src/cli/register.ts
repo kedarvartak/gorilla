@@ -1,5 +1,6 @@
 import { registerCommand } from './cli.js';
 import { initCommand } from './commands/init.js';
+import { serveCommand } from './commands/serve.js';
 
 /**
  * Single place commands are wired in. Importing this module has the side
@@ -13,4 +14,5 @@ export function registerBuiltinCommands(): void {
   registered = true;
 
   registerCommand(initCommand);
+  registerCommand(serveCommand);
 }
