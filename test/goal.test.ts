@@ -65,10 +65,21 @@ describe('hasVerifiableCheck', () => {
     expect(hasVerifiableCheck(condition)).toBe(true);
   });
 
-  it.each(['the code is nicer', 'the module has been refactored', 'everything is finished'])(
-    'rejects %j',
+  it.each([
+    'the code is nicer',
+    'the module has been refactored',
+    'everything is finished',
+    // `make` and `go` are ordinary verbs long before they are build tools.
+    'make the code cleaner',
+    'go through the remaining items',
+  ])('rejects %j', (condition) => {
+    expect(hasVerifiableCheck(condition)).toBe(false);
+  });
+
+  it.each(['`make test` succeeds', 'go test ./... passes'])(
+    'still accepts %j, where the tool is followed by a target',
     (condition) => {
-      expect(hasVerifiableCheck(condition)).toBe(false);
+      expect(hasVerifiableCheck(condition)).toBe(true);
     },
   );
 });
