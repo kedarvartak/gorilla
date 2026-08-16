@@ -9,8 +9,10 @@ import {
 import {
   CLAIM_COMMAND_NAME,
   PLAN_COMMAND_NAME,
+  REVIEW_COMMAND_NAME,
   claimCommand,
   planCommand,
+  reviewCommand,
 } from '../../hooks/plan-command.js';
 import { mergeHookSettings, requiresBridge, type SettingsDocument } from '../../hooks/settings.js';
 import type { Command, CommandResult } from '../cli.js';
@@ -113,15 +115,19 @@ export function runInit(options: InitOptions): InitOutcome {
   const commandDir = join(cwd, '.claude', 'commands', 'gorilla');
   const commandPath = join(commandDir, PLAN_COMMAND_NAME);
   const claimPath = join(commandDir, CLAIM_COMMAND_NAME);
+  const reviewPath = join(commandDir, REVIEW_COMMAND_NAME);
 
   const desiredCommand = planCommand(options.baseUrl);
   const desiredClaim = claimCommand(options.baseUrl);
+  const desiredReview = reviewCommand(options.baseUrl);
 
   const commandCurrent =
     existsSync(commandPath) &&
     readFileSync(commandPath, 'utf8') === desiredCommand &&
     existsSync(claimPath) &&
-    readFileSync(claimPath, 'utf8') === desiredClaim;
+    readFileSync(claimPath, 'utf8') === desiredClaim &&
+    existsSync(reviewPath) &&
+    readFileSync(reviewPath, 'utf8') === desiredReview;
 
   const desiredBridge = bridgePath === null ? null : bridgeScript(options.baseUrl);
   const bridgeCurrent =
@@ -148,6 +154,7 @@ export function runInit(options: InitOptions): InitOutcome {
       mkdirSync(commandDir, { recursive: true });
       writeFileSync(commandPath, desiredCommand, 'utf8');
       writeFileSync(claimPath, desiredClaim, 'utf8');
+      writeFileSync(reviewPath, desiredReview, 'utf8');
       commandWritten = true;
     }
   }
@@ -231,7 +238,7 @@ export const initCommand: Command = {
       (outcome.bridgePath === null
         ? ''
         : `\n  Bridge script: ${outcome.bridgePath} (forwards events the HTTP transport does not receive)`) +
-      `\n  Commands: /gorilla:plan, /gorilla:claim`;
+      `\n  Commands: /gorilla:plan, /gorilla:claim, /gorilla:review`;
 
     if (outcome.dryRun) {
       return {

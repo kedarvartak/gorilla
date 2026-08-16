@@ -117,3 +117,61 @@ Report the result in one line, then stop. Claiming changes attribution only;
 it does not start or change any work.
 `;
 }
+
+export const REVIEW_COMMAND_NAME = 'review.md';
+
+/**
+ * `/gorilla:review` - merge the night's finished worktrees.
+ *
+ * A single-purpose brief. The agent's job is integration, not code review: it
+ * merges, checks, and reports which card broke things. Widening that remit is
+ * how a reviewer turns into an unsupervised rewrite of someone else's work.
+ */
+export function reviewCommand(baseUrl: string): string {
+  const url = baseUrl.replace(/\/+$/, '');
+
+  return `---
+description: Merge the finished Gorilla worktrees and report what broke
+---
+
+Merge last night's finished cards into the current branch and tell the operator
+whether anything broke.
+
+## 1. See what is waiting
+
+\`\`\`bash
+curl -sS ${url}/api/boards/<board>/review/pending
+\`\`\`
+
+Each entry has a card, its branch, its worktree, whether it has uncommitted
+changes, and the result of its own verify run. **Report this list first and ask
+which cards to merge.** Do not choose for the operator.
+
+Flag anything with uncommitted changes or a failed verify before merging it -
+those are the ones most likely to be a bad idea.
+
+## 2. Merge the ones they name
+
+\`\`\`bash
+curl -sS -X POST ${url}/api/boards/<board>/review/merge \\
+  -H 'content-type: application/json' \\
+  -d '{"cardIds": ["..."], "into": "main", "verify": "npm test"}'
+\`\`\`
+
+The board merges one at a time, runs the verify command after each, and stops at
+the first conflict or failure. The response names the card that stopped it.
+
+## 3. Report
+
+Say how many merged, and if something stopped it, **name the card and what
+happened**. A conflict is left in the working tree deliberately, so the operator
+can look at it - do not run \`git merge --abort\`, and do not try to resolve a
+conflict yourself unless asked.
+
+## What this command does not do
+
+It does not review code quality, does not touch cards the operator did not name,
+does not push, and does not decide what is worth merging. Its only question is
+"does this all fit together". Answer that and stop.
+`;
+}
