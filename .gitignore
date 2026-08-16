@@ -7,3 +7,4 @@ coverage/
 /fixtures/
 .DS_Store
 *.tsbuildinfo
+.claude/

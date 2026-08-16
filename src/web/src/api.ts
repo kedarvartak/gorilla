@@ -111,6 +111,14 @@ export const api = {
 
   dispatchCard: (boardId: string, cardId: string) =>
     request<DispatchState>(`/api/boards/${boardId}/cards/${cardId}/dispatch`, { method: 'POST' }),
+
+  cancelCard: (boardId: string, cardId: string) =>
+    request<{ cancelled: boolean }>(`/api/boards/${boardId}/cards/${cardId}/cancel`, {
+      method: 'POST',
+    }),
+
+  dispatchable: (boardId: string) =>
+    request<{ id: string; title: string }[]>(`/api/boards/${boardId}/dispatchable`),
 };
 
 /**

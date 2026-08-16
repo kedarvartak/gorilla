@@ -26,10 +26,21 @@ const STATUS_STYLE: Record<Card['status'], { label: string; className: string }>
 export interface CardTileProps {
   readonly card: Card;
   readonly unseen: boolean;
+  /** Eligible for dispatch, as the server computes it. */
+  readonly runnable: boolean;
   readonly onOpen: (card: Card) => void;
+  readonly onRun: (card: Card) => void;
+  readonly onCancel: (card: Card) => void;
 }
 
-export function CardTile({ card, unseen, onOpen }: CardTileProps): ReactElement {
+export function CardTile({
+  card,
+  unseen,
+  runnable,
+  onOpen,
+  onRun,
+  onCancel,
+}: CardTileProps): ReactElement {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: card.id,
   });
@@ -84,6 +95,36 @@ export function CardTile({ card, unseen, onOpen }: CardTileProps): ReactElement 
           <span className="text-warn" title="Cannot be dispatched without a goal condition">
             no goal
           </span>
+        ) : null}
+
+        {/* Starting and stopping an agent is the primary action on a card, so
+            it lives on the card rather than behind a menu. Pointer events are
+            stopped so the button does not begin a drag. */}
+        {card.status === 'running' ? (
+          <button
+            type="button"
+            className="ml-auto rounded border border-warn/50 px-1.5 text-warn hover:bg-warn/10"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              onCancel(card);
+            }}
+          >
+            stop
+          </button>
+        ) : runnable ? (
+          <button
+            type="button"
+            className="ml-auto rounded border border-ok/50 px-1.5 text-ok hover:bg-ok/10"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              onRun(card);
+            }}
+            title="Dispatch a Claude Code session for this card"
+          >
+            run
+          </button>
         ) : null}
       </div>
     </li>
