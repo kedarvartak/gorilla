@@ -230,19 +230,24 @@ describe('GET /', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('serves the event page', async () => {
+  it('serves the built board interface', async () => {
     const response = await fetch(server.url);
     const body = await response.text();
 
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toContain('text/html');
-    expect(body).toContain('EventSource');
     expect(body).toContain('Gorilla');
+    expect(body).toContain('/assets/');
   });
 
-  it('ships no external dependency, so it works offline', async () => {
+  it('loads no external origin, so it works offline', async () => {
     const body = await (await fetch(server.url)).text();
-    expect(body).not.toMatch(/<script[^>]+src=/);
+    // Everything is served from this process; nothing reaches the network.
     expect(body).not.toMatch(/https?:\/\/(?!127\.0\.0\.1)/);
+  });
+
+  it('refuses to serve files outside the asset directory', async () => {
+    const response = await fetch(`${server.url}/assets/..%2f..%2f..%2fpackage.json`);
+    expect([403, 404]).toContain(response.status);
   });
 });
