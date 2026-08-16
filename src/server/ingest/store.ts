@@ -72,4 +72,13 @@ export class EventStore {
   write(input: IngestInput): IngestOutput {
     return this.#write(input);
   }
+
+  /** The run bound to a session, if the board has seen one. */
+  runForSession(sessionId: string): { id: string; cardId: string | null } | null {
+    const row = this.sqlite
+      .prepare('SELECT id, card_id FROM runs WHERE session_id = ?')
+      .get(sessionId) as { id: string; card_id: string | null } | undefined;
+
+    return row === undefined ? null : { id: row.id, cardId: row.card_id };
+  }
 }

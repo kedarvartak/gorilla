@@ -6,7 +6,12 @@ import {
   DEFAULT_HOOK_BASE_URL,
   bridgeScript,
 } from '../../hooks/definitions.js';
-import { PLAN_COMMAND_NAME, planCommand } from '../../hooks/plan-command.js';
+import {
+  CLAIM_COMMAND_NAME,
+  PLAN_COMMAND_NAME,
+  claimCommand,
+  planCommand,
+} from '../../hooks/plan-command.js';
 import { mergeHookSettings, requiresBridge, type SettingsDocument } from '../../hooks/settings.js';
 import type { Command, CommandResult } from '../cli.js';
 
@@ -105,10 +110,18 @@ export function runInit(options: InitOptions): InitOutcome {
 
   // The planning command lives with the project's other commands, so it is
   // invocable as /gorilla:plan.
-  const commandPath = join(cwd, '.claude', 'commands', 'gorilla', PLAN_COMMAND_NAME);
+  const commandDir = join(cwd, '.claude', 'commands', 'gorilla');
+  const commandPath = join(commandDir, PLAN_COMMAND_NAME);
+  const claimPath = join(commandDir, CLAIM_COMMAND_NAME);
+
   const desiredCommand = planCommand(options.baseUrl);
+  const desiredClaim = claimCommand(options.baseUrl);
+
   const commandCurrent =
-    existsSync(commandPath) && readFileSync(commandPath, 'utf8') === desiredCommand;
+    existsSync(commandPath) &&
+    readFileSync(commandPath, 'utf8') === desiredCommand &&
+    existsSync(claimPath) &&
+    readFileSync(claimPath, 'utf8') === desiredClaim;
 
   const desiredBridge = bridgePath === null ? null : bridgeScript(options.baseUrl);
   const bridgeCurrent =
@@ -132,8 +145,9 @@ export function runInit(options: InitOptions): InitOutcome {
     }
 
     if (!commandCurrent) {
-      mkdirSync(dirname(commandPath), { recursive: true });
+      mkdirSync(commandDir, { recursive: true });
       writeFileSync(commandPath, desiredCommand, 'utf8');
+      writeFileSync(claimPath, desiredClaim, 'utf8');
       commandWritten = true;
     }
   }
@@ -217,7 +231,7 @@ export const initCommand: Command = {
       (outcome.bridgePath === null
         ? ''
         : `\n  Bridge script: ${outcome.bridgePath} (forwards events the HTTP transport does not receive)`) +
-      `\n  Planning command: /gorilla:plan`;
+      `\n  Commands: /gorilla:plan, /gorilla:claim`;
 
     if (outcome.dryRun) {
       return {

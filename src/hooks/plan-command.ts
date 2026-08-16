@@ -82,3 +82,38 @@ Cards land unstarted, in the first column. Promotion to Ready and dispatch are
 the operator's decision, not yours - say so, and stop.
 `;
 }
+
+export const CLAIM_COMMAND_NAME = 'claim.md';
+
+/**
+ * `/gorilla:claim <card-id>` - binds this terminal session to a card.
+ *
+ * Exists so a session started by hand is attributed on purpose rather than
+ * left as a provisional card the operator has to reconcile later.
+ */
+export function claimCommand(baseUrl: string): string {
+  const url = `${baseUrl.replace(/\/+$/, '')}/api/claim`;
+
+  return `---
+description: Bind this Claude Code session to a Gorilla card
+argument-hint: <card-id>
+---
+
+Bind this session to the Gorilla card \`$1\`, so everything done here is
+attributed to it.
+
+Find this session's id in the transcript path or from the board, then:
+
+\`\`\`bash
+curl -sS -X POST ${url} \\
+  -H 'content-type: application/json' \\
+  -d '{"sessionId": "<this session id>", "cardId": "'"$1"'"}'
+\`\`\`
+
+If no card id was given, list the open cards from
+\`${baseUrl.replace(/\/+$/, '')}/api/boards/<board>/claimable\` and ask which one.
+
+Report the result in one line, then stop. Claiming changes attribution only;
+it does not start or change any work.
+`;
+}
