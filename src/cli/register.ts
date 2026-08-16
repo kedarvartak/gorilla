@@ -1,5 +1,6 @@
 import { registerCommand } from './cli.js';
 import { initCommand } from './commands/init.js';
+import { replayCommand } from './commands/replay.js';
 import { serveCommand } from './commands/serve.js';
 
 /**
@@ -14,5 +15,6 @@ export function registerBuiltinCommands(): void {
   registered = true;
 
   registerCommand(initCommand);
+  registerCommand(replayCommand);
   registerCommand(serveCommand);
 }

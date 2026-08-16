@@ -1,3 +1,4 @@
+import { FixtureRecorder } from '../../server/fixtures/recorder.js';
 import { startServer } from '../../server/start.js';
 import { DEFAULT_HOST, DEFAULT_PORT } from '../../server/index.js';
 import type { Command, CommandResult } from '../cli.js';
@@ -25,7 +26,23 @@ export const serveCommand: Command = {
       return { exitCode: 1, stdout: '', stderr: (error as Error).message };
     }
 
-    const server = await startServer({ port, logger: !args.includes('--quiet') });
+    const recordIndex = args.indexOf('--record');
+    let recorder: FixtureRecorder | undefined;
+    if (recordIndex !== -1) {
+      const target = args[recordIndex + 1];
+      if (target === undefined) {
+        return { exitCode: 1, stdout: '', stderr: '--record requires a path' };
+      }
+      // Redaction is the default: a fixture is a file that gets shared, and
+      // hook payloads carry source code and shell output (doc 11).
+      recorder = new FixtureRecorder({ path: target, redact: !args.includes('--no-redact') });
+    }
+
+    const server = await startServer({
+      port,
+      logger: !args.includes('--quiet'),
+      ...(recorder === undefined ? {} : { recorder }),
+    });
 
     const shutdown = (): void => {
       void server.stop().then(

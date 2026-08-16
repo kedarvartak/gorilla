@@ -84,6 +84,17 @@ export function registerIngestRoutes(app: FastifyInstance, context: AppContext):
     const event = request.params.event;
     const declared = readString(payload, 'hook_event_name');
 
+    // Recorded before anything else, and before validation: a fixture should
+    // capture what actually arrived, including the malformed deliveries that
+    // are the most valuable ones to be able to replay.
+    if (context.recorder !== undefined) {
+      try {
+        context.recorder.record(event, payload, receivedAt);
+      } catch (error) {
+        request.log.error({ event, err: error }, 'failed to record fixture entry');
+      }
+    }
+
     const sessionId = readString(payload, 'session_id');
     const cwd = readString(payload, 'cwd');
 

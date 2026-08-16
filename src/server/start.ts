@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import { buildApp } from './app.js';
+import type { FixtureRecorder } from './fixtures/recorder.js';
 import { openDatabase, type DatabaseHandle } from './db/client.js';
 import { DEFAULT_HOST, DEFAULT_PORT } from './index.js';
 
@@ -9,6 +10,7 @@ export interface StartOptions {
   readonly host?: string;
   readonly dbPath?: string;
   readonly logger?: boolean;
+  readonly recorder?: FixtureRecorder;
 }
 
 export interface RunningServer {
@@ -25,7 +27,11 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
   const host = options.host ?? DEFAULT_HOST;
 
   const database = openDatabase(options.dbPath === undefined ? {} : { path: options.dbPath });
-  const app = buildApp({ database, logger: options.logger ?? true });
+  const app = buildApp({
+    database,
+    logger: options.logger ?? true,
+    ...(options.recorder === undefined ? {} : { recorder: options.recorder }),
+  });
 
   await app.listen({ port, host });
 
