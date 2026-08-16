@@ -128,30 +128,42 @@ evidence that those hooks work. A longer session is needed to exercise them.
 Event 14 is a `SubagentStop` with no matching `SubagentStart`. Both are
 registered as HTTP hooks in this run.
 
-This is the same shape as doc 14's `SessionStart` finding: a `*Start` event
-missing over HTTP while its `*Stop` counterpart arrives. Two observations is a
-pattern worth testing, not a conclusion - doc 14's follow-up 4 already proposes
-extending the probe to every registered event, and this raises its priority.
+At the time this looked like the same shape as doc 14's `SessionStart` finding -
+a `*Start` event missing over HTTP while its `*Stop` counterpart arrives - and
+this document originally proposed that `SubagentStart` might need the same
+bridge.
 
-If it holds, doc 07 needs the bridge for `SubagentStart` too, and the board would
-otherwise never learn that a subagent had begun - work happening in a context
-window the operator never sees, which is precisely what doc 04's P4 says to
-instrument.
+> **That hypothesis was tested and is wrong.** A session that spawns an
+> `Explore` subagent delivers `SubagentStart` over both transports equally
+> (command 1, http 1), along with four matched `PreToolUse`/`PostToolUse` pairs
+> from inside the subagent. `SubagentStart` does not need bridging.
+>
+> The `SubagentStop` here arrived immediately after `PreCompact`, so the likelier
+> explanation is that compaction runs its summarisation as an agent whose stop is
+> reported without a corresponding start. That is a curiosity, not a gap: the
+> board loses nothing by it.
+
+Recorded rather than deleted, because the wrong inference is instructive - one
+observation of an absence is not a pattern, and the cost of acting on it would
+have been a bridge nobody needed.
 
 ### Five `PreToolUse` against two `PostToolUse`
 
 Events 7, 8 and 9 are `Bash` calls with no corresponding `PostToolUse` and no
 `PostToolUseFailure`. The run used `--permission-mode acceptEdits`, which
-auto-approves file edits but not arbitrary shell commands, so the most likely
-explanation is that those three calls were denied.
+auto-approves file edits but not arbitrary shell commands, so those three calls
+were denied.
 
-Gorilla does not currently register `PermissionRequest` or `PermissionDenied`, so
-a denial is invisible to the board: it sees an intent with no outcome. For a
-product whose purpose is to explain what the agent did, "tried three times and
-was refused" is exactly the kind of thing that should reach the operator.
-
-**Recommendation:** add `PermissionDenied` to doc 07's registered set in Phase 1.
-It maps directly onto a ledger `risk` entry.
+> **Followed up.** Registering `PermissionDenied` is not sufficient, and
+> believing it was would have left the hole open. Under `--permission-mode
+> dontAsk`, a refused call was measured to emit **no `PermissionDenied`, no
+> `PermissionRequest` and no `PostToolUseFailure`** - only a `PreToolUse` with
+> nothing after it. The absence is the only signal there is.
+>
+> So the board now counts **tool intents with no outcome** directly, which works
+> regardless of permission mode. `PermissionDenied` and `PermissionRequest` are
+> registered as well, since the documentation says they fire under auto mode and
+> they are free to add.
 
 ## Ingest latency
 

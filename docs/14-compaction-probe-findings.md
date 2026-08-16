@@ -166,6 +166,12 @@ turn on a compacted context before being repaired - but it is not a dead end.
    If `SessionStart` differs by transport, others may too, and doc 07 registers
    fifteen.
 
+   > **Partially done.** `SubagentStart`, `SubagentStop`, `PreToolUse`,
+   > `PostToolUse`, `PermissionRequest`, `PermissionDenied`, `Notification` and
+   > `Stop` were checked across both transports. Only `SessionStart` differs; the
+   > rest arrive over HTTP or, in the case of the permission events, do not fire
+   > at all under `dontAsk`. See doc 15.
+
 ## Reproducing
 
 ```
