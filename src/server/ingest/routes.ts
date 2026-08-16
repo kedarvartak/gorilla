@@ -3,7 +3,7 @@ import { performance } from 'node:perf_hooks';
 import type { FastifyInstance } from 'fastify';
 
 import type { AppContext } from '../app.js';
-import { boardForCwd, inferCard, sessionStartContext } from '../binding/attach.js';
+import { boardForCwd, claim, inferCard, sessionStartContext } from '../binding/attach.js';
 import { getCard } from '../api/cards.js';
 import { canonicaliseCwd } from './binding.js';
 
@@ -194,11 +194,19 @@ function sessionStartResponse(
         ? null
         : getCard(context.database, run.cardId);
 
-    // An unclaimed session gets a provisional card rather than nothing. An
-    // event with nowhere to go is the blind spot this product exists to
-    // remove (doc 05).
     if (bound === null && run !== null) {
-      inferCard(context.database, run.id, null);
+      // A launch the board is expecting takes precedence over inference.
+      // Without this, a dispatched session is captured by a provisional card
+      // and the card that launched it shows no evidence at all (doc 17).
+      const expected = context.pending.claim(canonicaliseCwd(cwd));
+
+      if (expected !== null) {
+        claim(context.database, sessionId, expected);
+      } else {
+        // Otherwise it is a terminal session, and an event with nowhere to go
+        // is the blind spot this product exists to remove (doc 05).
+        inferCard(context.database, run.id, null);
+      }
     }
 
     return {

@@ -65,6 +65,7 @@ the board just because it began outside it.
 | [14-compaction-probe-findings.md](14-compaction-probe-findings.md) | T9 findings: what Claude Code actually does at compaction, measured |
 | [15-phase-0-verification.md](15-phase-0-verification.md) | T10: the Phase 0 exit-gate report, with the compaction loop confirmed end to end |
 | [16-phase-1-tasks.md](16-phase-1-tasks.md) | The twelve Phase 1 tasks: plan, dispatch, observe - with no synthesis |
+| [17-phase-1-verification.md](17-phase-1-verification.md) | P12: the Phase 1 exit-gate report, and the two defects only an end-to-end run could find |
 
 ## Reading order
 
@@ -76,6 +77,11 @@ is project-wide and serves the agent as well. Read them together.
 
 ## Status
 
-**Phase 0 is complete.** T1 to T10 from doc 13 are shipped; doc 14 and doc 15 record
-what was measured, including the corrections where a measurement disproved an earlier
-assumption. Doc 16 plans Phase 1.
+**Phase 0 and Phase 1 are complete.** T1 to T10 (doc 13) and P1 to P12 (doc 16) are
+shipped. Docs 14, 15 and 17 record what was measured, including the corrections where a
+measurement disproved an earlier assumption.
+
+The loop in this document now runs end to end: plan a conversation, land cards, dispatch
+a supervised session, and read a mechanical ledger of what happened. Whether that ledger
+is *worth reading* is the Phase 1 gate, and doc 17 leaves it open for the operator to
+answer over a week of real work. Phase 2 - synthesis - should not begin until it is.

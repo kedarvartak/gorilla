@@ -16,6 +16,7 @@ import {
   registerTimelineRoutes,
 } from './api/routes.js';
 import { Dispatcher } from './dispatch/dispatcher.js';
+import { PendingBindings } from './binding/pending.js';
 
 export interface AppOptions {
   readonly database: DatabaseHandle;
@@ -31,6 +32,7 @@ export interface AppContext {
   readonly recorder?: FixtureRecorder | undefined;
   readonly broadcaster: Broadcaster;
   readonly dispatcher: Dispatcher;
+  readonly pending: PendingBindings;
 }
 
 export function buildApp(options: AppOptions): FastifyInstance {
@@ -42,13 +44,15 @@ export function buildApp(options: AppOptions): FastifyInstance {
   });
 
   const broadcaster = new Broadcaster();
+  const pending = new PendingBindings();
 
   const context: AppContext = {
     store: new EventStore(options.database.sqlite),
     database: options.database,
     recorder: options.recorder,
     broadcaster,
-    dispatcher: new Dispatcher(options.database, {
+    pending,
+    dispatcher: new Dispatcher(options.database, pending, {
       onStateChange: (boardId, state) => broadcaster.publish('dispatch-state', { boardId, state }),
       onRunStarted: (boardId, cardId, sessionId) =>
         broadcaster.publish('run-started', { boardId, cardId, sessionId }),
