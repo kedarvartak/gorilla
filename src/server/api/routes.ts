@@ -26,6 +26,8 @@ import { claim, claimableCards, mergeCard } from '../binding/attach.js';
 import { buildMechanicalLedger } from '../ledger/mechanical.js';
 import { checkReality, describeReality } from '../ledger/reality.js';
 import { describeVerify } from '../verify/run.js';
+import { buildBrief, renderBrief } from '../brief/brief.js';
+import type { StoredEntry } from '../ledger/dedupe.js';
 import { describeMergeReport, mergeBranches } from '../review/merge.js';
 
 /**
@@ -777,6 +779,145 @@ export function registerReviewRoutes(app: FastifyInstance, context: AppContext):
       );
 
       return reply.send(pending.filter((entry) => entry.status !== 'done'));
+    },
+  );
+}
+
+/**
+ * The brief (U5).
+ *
+ * Built from the mechanical ledger today; model entries fold in through the
+ * same shape once extraction runs on a schedule. The endpoint exists now so the
+ * interface, the digest and any export read one thing rather than three.
+ */
+export function registerBriefRoutes(app: FastifyInstance, context: AppContext): void {
+  app.get<{ Params: { cardId: string } }>('/api/cards/:cardId/brief', async (request, reply) => {
+    try {
+      const card = getCard(context.database, request.params.cardId);
+      const board = context.database.db
+        .select()
+        .from(boards)
+        .where(eq(boards.id, card.boardId))
+        .get();
+
+      const cardRuns = context.database.db
+        .select()
+        .from(runs)
+        .where(eq(runs.cardId, card.id))
+        .orderBy(asc(runs.startedAt))
+        .all();
+
+      // A stable identity derived from the sources, so "since you last looked"
+      // survives the brief being regenerated.
+      const entries: StoredEntry[] = [];
+      const entryTimes: Record<string, number> = {};
+      const changed: string[] = [];
+
+      for (const run of cardRuns) {
+        const ledger = buildMechanicalLedger({ sqlite: context.database.sqlite, runId: run.id });
+
+        for (const entry of ledger.entries) {
+          const id = `${run.id}:${entry.kind}:${entry.sourceEventIds.join(',')}`;
+          entries.push({ ...entry, id, origin: 'mechanical' });
+
+          const first = entry.sourceEventIds[0];
+          const at =
+            first === undefined
+              ? run.startedAt
+              : ((
+                  context.database.sqlite
+                    .prepare('SELECT received_at AS at FROM events WHERE id = ?')
+                    .get(first) as { at: number } | undefined
+                )?.at ?? run.startedAt);
+
+          entryTimes[id] = at;
+        }
+
+        changed.push(...ledger.changed);
+      }
+
+      const compactions = (
+        context.database.sqlite
+          .prepare(
+            "SELECT COUNT(*) AS n FROM events WHERE event_name = 'PreCompact' AND run_id IN (SELECT id FROM runs WHERE card_id = ?)",
+          )
+          .get(card.id) as { n: number }
+      ).n;
+
+      const workspacePath =
+        board === undefined
+          ? undefined
+          : context.dispatcher.worktreesFor(board.cwd).pathFor(card.id);
+
+      const reality =
+        board === undefined
+          ? null
+          : await checkReality({
+              cwd: workspacePath ?? board.cwd,
+              headShaAtStart: cardRuns[0]?.headShaAtStart ?? null,
+              claimedPaths: changed,
+            });
+
+      const workspace =
+        board === undefined
+          ? undefined
+          : context.dispatcher.worktreesFor(board.cwd).workspaceFor(card.id);
+
+      const brief = buildBrief({
+        cardTitle: card.title,
+        cardStatus: card.status,
+        lastSeenAt: card.lastSeenAt,
+        entries,
+        entryTimes,
+        changedFiles: reality?.changedFiles ?? [],
+        changedButUnmentioned: reality?.changedButUnmentioned ?? [],
+        verify: context.dispatcher.verifyResultFor(card.id) ?? null,
+        goalVerdict: null,
+        compactions,
+        runCount: cardRuns.length,
+        branch: workspace?.branch ?? null,
+      });
+
+      return reply.send({ ...brief, markdown: renderBrief(brief) });
+    } catch (error) {
+      return fail(reply, error);
+    }
+  });
+
+  /** The morning view: every active card, ordered by significance not time. */
+  app.get<{ Params: { boardId: string } }>(
+    '/api/boards/:boardId/digest',
+    async (request, reply) => {
+      const cards = listCards(context.database, request.params.boardId);
+
+      const digest = await Promise.all(
+        cards
+          .filter((card) => card.status !== 'idle')
+          .map(async (card) => {
+            const response = await app.inject({
+              method: 'GET',
+              url: `/api/cards/${card.id}/brief`,
+            });
+            const brief: { headline: string; unseenCount: number } = response.json();
+
+            return {
+              cardId: card.id,
+              title: card.title,
+              status: card.status,
+              unseen: brief.unseenCount,
+              headline: brief.headline,
+              verify: context.dispatcher.verifyResultFor(card.id)?.status ?? null,
+            };
+          }),
+      );
+
+      // A failed verify outranks a quiet completion; unseen outranks seen.
+      const rank = (entry: (typeof digest)[number]): number =>
+        (entry.verify === 'failed' || entry.verify === 'errored' ? 1000 : 0) +
+        (entry.status === 'blocked' ? 500 : 0) +
+        entry.unseen;
+
+      return reply.send(digest.sort((a, b) => rank(b) - rank(a)));
     },
   );
 }
