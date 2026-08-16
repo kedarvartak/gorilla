@@ -357,42 +357,53 @@ describe('real transcripts on this machine', () => {
   const projectsDir = join(homedir(), '.claude', 'projects');
   const available = existsSync(projectsDir);
 
-  it.skipIf(!available)('extracts utilization from the three largest', async () => {
-    const { readdirSync, statSync } = await import('node:fs');
+  // Bounded, and given room. These files grow without limit - the transcript
+  // of the session writing this test was already 169MB - so an unbounded
+  // "three largest" turns a correctness check into a stress test that fails on
+  // duration rather than on behaviour.
+  const MAX_FIXTURE_BYTES = 40_000_000;
 
-    const candidates = readdirSync(projectsDir)
-      .flatMap((project) => {
-        const full = join(projectsDir, project);
-        try {
-          return readdirSync(full)
-            .filter((f) => f.endsWith('.jsonl'))
-            .map((f) => join(full, f));
-        } catch {
-          return [];
-        }
-      })
-      .map((path) => ({ path, size: statSync(path).size }))
-      .sort((a, b) => b.size - a.size)
-      .slice(0, 3);
+  it.skipIf(!available)(
+    'extracts utilization from the three largest',
+    { timeout: 60_000 },
+    async () => {
+      const { readdirSync, statSync } = await import('node:fs');
 
-    if (candidates.length === 0) return;
+      const candidates = readdirSync(projectsDir)
+        .flatMap((project) => {
+          const full = join(projectsDir, project);
+          try {
+            return readdirSync(full)
+              .filter((f) => f.endsWith('.jsonl'))
+              .map((f) => join(full, f));
+          } catch {
+            return [];
+          }
+        })
+        .map((path) => ({ path, size: statSync(path).size }))
+        .filter((candidate) => candidate.size <= MAX_FIXTURE_BYTES)
+        .sort((a, b) => b.size - a.size)
+        .slice(0, 3);
 
-    for (const candidate of candidates) {
-      const summary = await readTranscript(candidate.path);
-      const utilization = utilizationFor(summary.latestContextTokens);
+      if (candidates.length === 0) return;
 
-      console.error(
-        `[transcript] ${(summary.sizeBytes / 1_000_000).toFixed(1)}MB ` +
-          `${summary.recordCount} records, ${summary.assistantCount} assistant, ` +
-          `model=${summary.model ?? 'unknown'}, ` +
-          `context=${summary.latestContextTokens ?? 0} tokens ` +
-          `(${utilization === null ? 'n/a' : `${(utilization.fraction * 100).toFixed(1)}% ${utilization.band}`}), ` +
-          `drift=${JSON.stringify(summary.drift.unknownTypes)} ` +
-          `unparseable=${summary.drift.unparseableLines}`,
-      );
+      for (const candidate of candidates) {
+        const summary = await readTranscript(candidate.path);
+        const utilization = utilizationFor(summary.latestContextTokens);
 
-      expect(summary.exists).toBe(true);
-      expect(summary.recordCount).toBeGreaterThan(0);
-    }
-  });
+        console.error(
+          `[transcript] ${(summary.sizeBytes / 1_000_000).toFixed(1)}MB ` +
+            `${summary.recordCount} records, ${summary.assistantCount} assistant, ` +
+            `model=${summary.model ?? 'unknown'}, ` +
+            `context=${summary.latestContextTokens ?? 0} tokens ` +
+            `(${utilization === null ? 'n/a' : `${(utilization.fraction * 100).toFixed(1)}% ${utilization.band}`}), ` +
+            `drift=${JSON.stringify(summary.drift.unknownTypes)} ` +
+            `unparseable=${summary.drift.unparseableLines}`,
+        );
+
+        expect(summary.exists).toBe(true);
+        expect(summary.recordCount).toBeGreaterThan(0);
+      }
+    },
+  );
 });
