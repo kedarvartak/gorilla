@@ -2,12 +2,15 @@ import { sql } from 'drizzle-orm';
 import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 /**
- * Phase 0 storage schema (doc 05).
+ * Storage schema (doc 05).
  *
- * Only the three entities the hook ingest path needs are defined here. Cards,
- * ledger entries and briefs arrive in Phase 1 and 2; `runs.cardId` is present
- * but unconstrained so that ingest can record a binding before the cards table
- * exists.
+ * Phase 0 defined boards, runs and events. Phase 1 adds the board itself:
+ * columns, cards, guardrails and plans. Ledger entries and briefs are Phase 2.
+ *
+ * `runs.cardId` stays deliberately unconstrained. A run is created by the hook
+ * path the instant an event arrives, before anything knows which card it
+ * belongs to - and an event with nowhere to go is the blind spot this product
+ * exists to remove. Attribution happens afterwards.
  */
 
 /** A board is bound to exactly one canonicalised working directory (doc 05). */
@@ -120,3 +123,140 @@ export type Run = typeof runs.$inferSelect;
 export type NewRun = typeof runs.$inferInsert;
 export type EventRow = typeof events.$inferSelect;
 export type NewEvent = typeof events.$inferInsert;
+
+/**
+ * A column on a board. Configurable, but exactly one must be the review gate
+ * and exactly one the terminal column, because the gate logic in Phase 3 needs
+ * to know which (doc 05).
+ */
+export const columns = sqliteTable(
+  'columns',
+  {
+    id: text('id').primaryKey(),
+    boardId: text('board_id')
+      .notNull()
+      .references(() => boards.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    position: integer('position').notNull(),
+    /** Cards here are eligible for dispatch. */
+    isReady: integer('is_ready', { mode: 'boolean' }).notNull().default(false),
+    /** The gate holds cards here until the operator acknowledges (Phase 3). */
+    isReviewGate: integer('is_review_gate', { mode: 'boolean' }).notNull().default(false),
+    isTerminal: integer('is_terminal', { mode: 'boolean' }).notNull().default(false),
+  },
+  (table) => [
+    uniqueIndex('columns_board_position').on(table.boardId, table.position),
+    index('columns_board').on(table.boardId),
+  ],
+);
+
+/**
+ * A plan: one batch of cards produced by one planning conversation (doc 05).
+ *
+ * The provenance is the point. When a card's intent is unclear three weeks
+ * later, the conversation that produced it is the answer, and it should be one
+ * link away rather than lost.
+ */
+export const plans = sqliteTable(
+  'plans',
+  {
+    id: text('id').primaryKey(),
+    boardId: text('board_id')
+      .notNull()
+      .references(() => boards.id, { onDelete: 'cascade' }),
+    sourceSessionId: text('source_session_id'),
+    prompt: text('prompt'),
+    createdAt: integer('created_at').notNull(),
+  },
+  (table) => [index('plans_board').on(table.boardId)],
+);
+
+/**
+ * The atomic unit of work and of comprehension (doc 05).
+ *
+ * Guardrails are stored as structured JSON rather than free text so the
+ * enforcement kind survives the round trip. An interface that cannot tell a
+ * hard rule from an advisory one will present them identically, and a guardrail
+ * believed to be enforced but which is not is worse than no guardrail (R10).
+ */
+export const cards = sqliteTable(
+  'cards',
+  {
+    id: text('id').primaryKey(),
+    boardId: text('board_id')
+      .notNull()
+      .references(() => boards.id, { onDelete: 'cascade' }),
+    columnId: text('column_id')
+      .notNull()
+      .references(() => columns.id, { onDelete: 'restrict' }),
+    planId: text('plan_id').references(() => plans.id, { onDelete: 'set null' }),
+
+    title: text('title').notNull(),
+    body: text('body').notNull().default(''),
+    position: integer('position').notNull(),
+
+    /** The composed text passed to /goal (doc 07 section 4). */
+    goalCondition: text('goal_condition'),
+    /** GuardrailSet as JSON. See src/server/cards/guardrails.ts. */
+    guardrails: text('guardrails').notNull().default('{}'),
+
+    agentModel: text('agent_model'),
+    agentEffort: text('agent_effort'),
+    permissionMode: text('permission_mode'),
+    synthesisModel: text('synthesis_model'),
+
+    status: text('status', {
+      enum: ['idle', 'queued', 'running', 'awaiting-review', 'blocked', 'done', 'abandoned'],
+    })
+      .notNull()
+      .default('idle'),
+
+    /**
+     * When the operator last opened this card. The single field the "since you
+     * last looked" section is computed against, and the most direct answer this
+     * schema holds to the problem in doc 01.
+     */
+    lastSeenAt: integer('last_seen_at'),
+    acknowledgedAt: integer('acknowledged_at'),
+
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (table) => [
+    index('cards_board').on(table.boardId),
+    index('cards_column_position').on(table.columnId, table.position),
+    index('cards_status').on(table.status),
+    index('cards_plan').on(table.planId),
+  ],
+);
+
+/**
+ * Card dependencies. A pending card with unresolved dependencies cannot be
+ * dispatched (doc 05, dispatcher).
+ *
+ * A separate table rather than a JSON array on the card, so the dispatcher can
+ * answer "what is eligible" with a query rather than by loading every card.
+ */
+export const cardDependencies = sqliteTable(
+  'card_dependencies',
+  {
+    cardId: text('card_id')
+      .notNull()
+      .references(() => cards.id, { onDelete: 'cascade' }),
+    dependsOnCardId: text('depends_on_card_id')
+      .notNull()
+      .references(() => cards.id, { onDelete: 'cascade' }),
+  },
+  (table) => [
+    uniqueIndex('card_dependencies_pair').on(table.cardId, table.dependsOnCardId),
+    index('card_dependencies_depends_on').on(table.dependsOnCardId),
+  ],
+);
+
+export type Column = typeof columns.$inferSelect;
+export type NewColumn = typeof columns.$inferInsert;
+export type Plan = typeof plans.$inferSelect;
+export type NewPlan = typeof plans.$inferInsert;
+export type Card = typeof cards.$inferSelect;
+export type NewCard = typeof cards.$inferInsert;
+export type CardDependency = typeof cardDependencies.$inferSelect;
