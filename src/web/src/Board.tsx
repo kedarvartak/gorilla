@@ -245,6 +245,53 @@ export function Board(): ReactElement {
           unseen <b className={unseen > 0 ? 'text-accent' : 'text-text'}>{unseen}</b>
         </span>
 
+        <span className="text-dim">
+          finished{' '}
+          <b className={(dispatch?.completed.length ?? 0) > 0 ? 'text-ok' : 'text-text'}>
+            {dispatch?.completed.length ?? 0}
+          </b>
+        </span>
+
+        <label className="text-dim">
+          {/* The switch for "define tasks, run them, go to sleep". Under
+              review the queue stops after every completion; unattended keeps
+              going and collects them for the morning. */}
+          policy{' '}
+          <select
+            className="rounded border border-line bg-panel-2 px-1 py-0.5 text-text"
+            value={dispatch?.policy ?? 'review'}
+            onChange={(changed) => {
+              void api
+                .setDispatch(board.id, { policy: changed.target.value })
+                .then(setDispatch)
+                .catch((cause: Error) => setError(cause.message));
+            }}
+          >
+            <option value="review">review each</option>
+            <option value="unattended">unattended</option>
+          </select>
+        </label>
+
+        <label className="text-dim">
+          agents{' '}
+          <select
+            className="rounded border border-line bg-panel-2 px-1 py-0.5 text-text"
+            value={dispatch?.concurrency ?? 1}
+            onChange={(changed) => {
+              void api
+                .setDispatch(board.id, { concurrency: Number(changed.target.value) })
+                .then(setDispatch)
+                .catch((cause: Error) => setError(cause.message));
+            }}
+          >
+            {[1, 2, 3, 4, 6].map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <label className="text-dim">
           dispatch{' '}
           <select

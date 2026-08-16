@@ -290,28 +290,35 @@ export function registerDispatchRoutes(app: FastifyInstance, context: AppContext
     return context.dispatcher.state(request.params.boardId);
   });
 
-  app.post<{ Params: { boardId: string }; Body: { mode?: string; concurrency?: number } }>(
-    '/api/boards/:boardId/dispatch',
-    (request, reply) => {
-      const { boardId } = request.params;
-      const mode = request.body?.mode;
-      const concurrency = request.body?.concurrency;
+  app.post<{
+    Params: { boardId: string };
+    Body: { mode?: string; concurrency?: number; policy?: string };
+  }>('/api/boards/:boardId/dispatch', (request, reply) => {
+    const { boardId } = request.params;
+    const mode = request.body?.mode;
+    const concurrency = request.body?.concurrency;
+    const policy = request.body?.policy;
 
-      if (mode !== undefined && mode !== 'manual' && mode !== 'automatic') {
-        return reply.code(400).send({ error: 'Mode must be manual or automatic.', field: 'mode' });
-      }
-      if (concurrency !== undefined && (!Number.isInteger(concurrency) || concurrency < 1)) {
-        return reply
-          .code(400)
-          .send({ error: 'Concurrency must be a positive integer.', field: 'concurrency' });
-      }
+    if (mode !== undefined && mode !== 'manual' && mode !== 'automatic') {
+      return reply.code(400).send({ error: 'Mode must be manual or automatic.', field: 'mode' });
+    }
+    if (policy !== undefined && policy !== 'review' && policy !== 'unattended') {
+      return reply
+        .code(400)
+        .send({ error: 'Policy must be review or unattended.', field: 'policy' });
+    }
+    if (concurrency !== undefined && (!Number.isInteger(concurrency) || concurrency < 1)) {
+      return reply
+        .code(400)
+        .send({ error: 'Concurrency must be a positive integer.', field: 'concurrency' });
+    }
 
-      if (concurrency !== undefined) context.dispatcher.setConcurrency(boardId, concurrency);
-      if (mode !== undefined) context.dispatcher.setMode(boardId, mode);
+    if (concurrency !== undefined) context.dispatcher.setConcurrency(boardId, concurrency);
+    if (policy !== undefined) context.dispatcher.setPolicy(boardId, policy);
+    if (mode !== undefined) context.dispatcher.setMode(boardId, mode);
 
-      return reply.send(context.dispatcher.state(boardId));
-    },
-  );
+    return reply.send(context.dispatcher.state(boardId));
+  });
 
   app.get<{ Params: { boardId: string } }>(
     '/api/boards/:boardId/worktrees',
