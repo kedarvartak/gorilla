@@ -6,6 +6,7 @@ import { parseGuardrails } from '../cards/guardrails.js';
 import type { DatabaseHandle } from '../db/client.js';
 import { boards, cards, columns, runs } from '../db/schema.js';
 import type { PendingBindings } from '../binding/pending.js';
+import { describeVerify, runVerify, type VerifyResult } from '../verify/run.js';
 import {
   launch,
   LaunchRegistry,
@@ -31,7 +32,14 @@ import {
 export type DispatchMode = 'manual' | 'automatic';
 
 export type HaltReason =
-  'failure' | 'cancelled' | 'awaiting-review' | 'no-goal' | 'launch-error' | 'no-effect';
+  | 'failure'
+  | 'cancelled'
+  | 'awaiting-review'
+  | 'no-goal'
+  | 'launch-error'
+  | 'no-effect'
+  // The board ran the card's verify command and it did not pass.
+  | 'verify-failed';
 
 export interface HaltState {
   readonly reason: HaltReason;
@@ -52,6 +60,7 @@ export interface DispatcherEvents {
   readonly onStateChange?: (boardId: string, state: BoardDispatchState) => void;
   readonly onRunStarted?: (boardId: string, cardId: string, sessionId: string | null) => void;
   readonly onRunFinished?: (boardId: string, cardId: string, result: LaunchResult) => void;
+  readonly onVerified?: (boardId: string, cardId: string, result: VerifyResult) => void;
 }
 
 interface BoardState {
@@ -66,7 +75,11 @@ export const DEFAULT_CONCURRENCY = 1;
 export class Dispatcher {
   readonly #boards = new Map<string, BoardState>();
   readonly #registry = new LaunchRegistry();
+  readonly #lastVerify = new Map<string, VerifyResult>();
   #executable: string | undefined;
+
+  /** Set by U2 so verify runs in the card's worktree rather than the board directory. */
+  workspaceFor: ((cardId: string) => string | undefined) | undefined;
 
   constructor(
     private readonly database: DatabaseHandle,
@@ -227,14 +240,14 @@ export class Dispatcher {
     this.#publish(boardId);
 
     void running.result.then(
-      (result) => this.#settle(boardId, cardId, result),
-      () => this.#settle(boardId, cardId, null),
+      (result) => void this.#settle(boardId, cardId, result),
+      () => void this.#settle(boardId, cardId, null),
     );
 
     return running;
   }
 
-  #settle(boardId: string, cardId: string, result: LaunchResult | null): void {
+  async #settle(boardId: string, cardId: string, result: LaunchResult | null): Promise<void> {
     const state = this.#stateFor(boardId);
     state.running.delete(cardId);
 
@@ -294,17 +307,62 @@ export class Dispatcher {
     // false success, which is doc 01's fourth failure mode (doc 17).
     const effect = this.#effectOf(cardId);
 
+    if (effect.achievedNothing) {
+      this.#halt(boardId, {
+        reason: 'no-effect',
+        cardId,
+        cardTitle: card.title,
+        detail: `The run finished without completing a single tool call. ${effect.unresolved} attempt(s) had no outcome, which usually means they were denied.`,
+        at: Date.now(),
+      });
+      this.#publish(boardId);
+      return;
+    }
+
+    // The board runs the card's verify command itself. Until now `verify` was
+    // displayed as a hard guardrail and never executed, which is the failure
+    // R10 exists to prevent (doc 18, U1).
+    const verify = await this.#verify(boardId, cardId);
+
     this.#halt(boardId, {
-      reason: effect.achievedNothing ? 'no-effect' : 'awaiting-review',
+      reason:
+        verify?.status === 'failed' || verify?.status === 'errored'
+          ? 'verify-failed'
+          : 'awaiting-review',
       cardId,
       cardTitle: card.title,
-      detail: effect.achievedNothing
-        ? `The run finished without completing a single tool call. ${effect.unresolved} attempt(s) had no outcome, which usually means they were denied.`
-        : 'The run finished and is waiting to be reviewed.',
+      detail:
+        verify === null || verify.status === 'skipped'
+          ? 'The run finished and is waiting to be reviewed.'
+          : describeVerify(verify),
       at: Date.now(),
     });
 
     this.#publish(boardId);
+  }
+
+  /** Runs the card's verify command where the work happened. */
+  async #verify(boardId: string, cardId: string): Promise<VerifyResult | null> {
+    const card = getCard(this.database, cardId);
+    const guardrails = parseGuardrails(card.guardrails);
+    if (guardrails.verify === null) return null;
+
+    const board = this.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
+    if (board === undefined) return null;
+
+    // The card's worktree once U2 lands; the board directory until then.
+    const cwd = this.workspaceFor?.(cardId) ?? board.cwd;
+
+    const result = await runVerify({ command: guardrails.verify, cwd });
+    this.#lastVerify.set(cardId, result);
+    this.events.onVerified?.(boardId, cardId, result);
+
+    return result;
+  }
+
+  /** The most recent verify result for a card, for the interface and the ledger. */
+  verifyResultFor(cardId: string): VerifyResult | undefined {
+    return this.#lastVerify.get(cardId);
   }
 
   /** Whether the card's runs actually did anything. */

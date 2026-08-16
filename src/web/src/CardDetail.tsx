@@ -36,8 +36,18 @@ interface RunDetail {
   };
 }
 
+interface VerifyReport {
+  readonly status: 'passed' | 'failed' | 'errored' | 'skipped';
+  readonly command: string;
+  readonly exitCode: number | null;
+  readonly output: string;
+  readonly durationMs: number;
+}
+
 interface Detail {
   readonly card: Card;
+  readonly verify: VerifyReport | null;
+  readonly verifyNote: string | null;
   readonly guardrailDetail: readonly GuardrailDetail[];
   readonly blockers: readonly { cardId: string; title: string; status: string }[];
   readonly runs: readonly RunDetail[];
@@ -180,6 +190,25 @@ export function CardDetail({
 
         <Rail title={`Record (${entries.length} entries, ${detail.runs.length} run(s))`}>
           <>
+            {detail.verify === null ? null : (
+              <div
+                className={`mb-3 rounded border px-2 py-1.5 ${
+                  detail.verify.status === 'passed'
+                    ? 'border-ok/40 bg-ok/10 text-ok'
+                    : 'border-warn/40 bg-warn/10 text-warn'
+                }`}
+              >
+                {/* The board ran this. It does not depend on the agent
+                    reporting honestly, which is the whole point (R10). */}
+                <div className="font-mono text-[11px]">{detail.verifyNote}</div>
+                {detail.verify.status === 'passed' ? null : (
+                  <pre className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap font-mono text-[10px] text-dim">
+                    {detail.verify.output}
+                  </pre>
+                )}
+              </div>
+            )}
+
             {entries.length === 0 ? (
               <p className="text-dim">
                 Nothing recorded yet. This is the mechanical ledger; the brief arrives in Phase 2.

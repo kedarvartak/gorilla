@@ -25,6 +25,7 @@ import { createPlan, getPlan, guardrailNote } from './plans.js';
 import { claim, claimableCards, mergeCard } from '../binding/attach.js';
 import { buildMechanicalLedger } from '../ledger/mechanical.js';
 import { checkReality, describeReality } from '../ledger/reality.js';
+import { describeVerify } from '../verify/run.js';
 
 /**
  * REST for boards, columns and cards.
@@ -488,10 +489,15 @@ export function registerCardDetailRoutes(app: FastifyInstance, context: AppConte
               claimedPaths: claimed,
             });
 
+      const verify = context.dispatcher.verifyResultFor(card.id);
+
       return reply.send({
         card: present(card),
         guardrails,
         guardrailDetail: describeGuardrails(guardrails),
+        // What the board checked, rather than what the agent claimed.
+        verify: verify ?? null,
+        verifyNote: verify === undefined ? null : describeVerify(verify),
         blockers: blockersFor(context.database.db, card.id),
         runs: ledgers,
         reality,
