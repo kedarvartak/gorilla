@@ -3,7 +3,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type { DatabaseHandle } from './db/client.js';
 import type { FixtureRecorder } from './fixtures/recorder.js';
 import { EventStore } from './ingest/store.js';
-import { registerIngestRoutes } from './ingest/routes.js';
+import { registerIngestRoutes, recordedLatencies } from './ingest/routes.js';
 import { Broadcaster } from './stream/broadcaster.js';
 import { registerStreamRoutes } from './stream/routes.js';
 import { registerWebRoutes } from './web/routes.js';
@@ -39,6 +39,29 @@ export function buildApp(options: AppOptions): FastifyInstance {
   };
 
   app.get('/health', () => ({ status: 'ok' }));
+
+  // Latency lives in the process, so T10's report can only read it while the
+  // server that received the events is still running.
+  const startedAt = Date.now();
+  app.get('/diagnostics', () => {
+    const samples = recordedLatencies()
+      .map((sample) => sample.durationMs)
+      .sort((a, b) => a - b);
+
+    const quantile = (q: number): number =>
+      samples.length === 0
+        ? 0
+        : (samples[Math.min(samples.length - 1, Math.floor(q * samples.length))] ?? 0);
+
+    return {
+      uptimeMs: Date.now() - startedAt,
+      samples: samples.length,
+      p50: quantile(0.5),
+      p95: quantile(0.95),
+      p99: quantile(0.99),
+      max: samples[samples.length - 1] ?? 0,
+    };
+  });
 
   registerIngestRoutes(app, context);
   registerStreamRoutes(app, context);

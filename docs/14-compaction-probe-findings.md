@@ -103,6 +103,12 @@ invocation ended at the compaction.
 auto-compact and stay alive. It is the one Phase 0 exit criterion this probe
 cannot close.
 
+> **Answered by T10 (doc 15).** `SessionStart` does fire with source `compact`,
+> between `PreCompact` and `PostCompact`. This probe could not see it because it
+> registered `SessionStart` as an HTTP hook, which never receives that event, so
+> the result below is a second confirmation of the transport finding rather than
+> a contradiction of it. Doc 12's repair loop is viable as specified.
+
 ### Unplanned finding: HTTP hooks do not receive SessionStart
 
 The most consequential result, and it was not one of the three questions.

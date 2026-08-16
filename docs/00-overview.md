@@ -63,6 +63,7 @@ the board just because it began outside it.
 | [12-context-engine.md](12-context-engine.md) | The project model, the divergence score, and compaction repair - keeping operator and agent on one picture |
 | [13-phase-0-tasks.md](13-phase-0-tasks.md) | The ten Phase 0 tasks, in card shape, with goal conditions and dependencies |
 | [14-compaction-probe-findings.md](14-compaction-probe-findings.md) | T9 findings: what Claude Code actually does at compaction, measured |
+| [15-phase-0-verification.md](15-phase-0-verification.md) | T10: the Phase 0 exit-gate report, with the compaction loop confirmed end to end |
 
 ## Reading order
 
