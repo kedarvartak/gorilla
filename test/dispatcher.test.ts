@@ -8,11 +8,13 @@ import { createCard, getCard, moveCard, addDependency } from '../src/server/api/
 import { createDefaultColumns } from '../src/server/cards/defaults.js';
 import { openDatabase, type DatabaseHandle } from '../src/server/db/client.js';
 import { Dispatcher } from '../src/server/dispatch/dispatcher.js';
+import { PendingBindings } from '../src/server/binding/pending.js';
 import { boards, columns } from '../src/server/db/schema.js';
 
 let dir: string;
 let handle: DatabaseHandle;
 let dispatcher: Dispatcher;
+let pending: PendingBindings;
 
 const BOARD = 'board-1';
 
@@ -52,7 +54,8 @@ beforeEach(() => {
   handle.db.insert(boards).values({ id: BOARD, name: 'b', cwd: dir, createdAt: 1 }).run();
   createDefaultColumns(handle.db, BOARD);
 
-  dispatcher = new Dispatcher(handle);
+  pending = new PendingBindings();
+  dispatcher = new Dispatcher(handle, pending);
 });
 
 afterEach(async () => {
@@ -262,5 +265,89 @@ describe('shutdown', () => {
 
     await dispatcher.shutdown();
     expect((await running?.result)?.outcome).toBe('cancelled');
+  });
+});
+
+describe('a run that achieved nothing', () => {
+  it('is not reported as an ordinary completion', async () => {
+    // The measured shape from the Phase 1 verification: the agent tries, every
+    // call is denied, and it exits 0 having changed nothing.
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    const id = card('refused everything');
+
+    const run = dispatcher.dispatch(BOARD, id);
+    const runRow = handle.sqlite.prepare('SELECT id FROM runs WHERE card_id = ?').get(id) as
+      { id: string } | undefined;
+
+    // Simulate three attempts with no outcome, attributed to this card.
+    if (runRow === undefined) {
+      handle.sqlite
+        .prepare(
+          'INSERT INTO runs (id, board_id, card_id, session_id, cwd, started_at) VALUES (?,?,?,?,?,?)',
+        )
+        .run('r-none', BOARD, id, 'sess-none', dir, Date.now());
+    }
+    for (let seq = 1; seq <= 3; seq += 1) {
+      handle.sqlite
+        .prepare(
+          'INSERT INTO events (run_id, session_id, seq, event_name, received_at, payload) VALUES (?,?,?,?,?,?)',
+        )
+        .run(
+          runRow?.id ?? 'r-none',
+          'sess-none',
+          seq,
+          'PreToolUse',
+          Date.now(),
+          '{"tool_name":"Edit"}',
+        );
+    }
+
+    await run?.result;
+
+    await vi.waitFor(() => {
+      const halted = dispatcher.state(BOARD).halted;
+      expect(halted?.reason).toBe('no-effect');
+      expect(halted?.detail).toContain('denied');
+    });
+  });
+
+  it('still reports a real completion normally', async () => {
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    const id = card('did something');
+
+    const run = dispatcher.dispatch(BOARD, id);
+    const runRow = handle.sqlite.prepare('SELECT id FROM runs WHERE card_id = ?').get(id) as
+      { id: string } | undefined;
+
+    if (runRow !== undefined) {
+      for (const [seq, event] of [
+        [1, 'PreToolUse'],
+        [2, 'PostToolUse'],
+      ] as const) {
+        handle.sqlite
+          .prepare(
+            'INSERT INTO events (run_id, session_id, seq, event_name, received_at, payload) VALUES (?,?,?,?,?,?)',
+          )
+          .run(runRow.id, 'sess-ok', seq, event, Date.now(), '{"tool_name":"Edit"}');
+      }
+    }
+
+    await run?.result;
+    await vi.waitFor(() => expect(dispatcher.state(BOARD).halted?.reason).toBe('awaiting-review'));
+  });
+});
+
+describe('launched binding', () => {
+  it('registers the expectation before the child starts', () => {
+    dispatcher.useExecutable(fakeClaude(`sleep 3`));
+    const id = card('expects a session');
+
+    const running = dispatcher.dispatch(BOARD, id);
+
+    // SessionStart fires before the launcher can read the session id, so the
+    // expectation has to exist by now or inference will steal the run.
+    expect(pending.pendingFor(dir).map((entry) => entry.cardId)).toContain(id);
+
+    running?.cancel();
   });
 });

@@ -47,6 +47,9 @@ export interface LaunchOptions {
   readonly onStderr?: (line: string) => void;
 }
 
+/** What a card gets when it does not choose. See the note in `launch`. */
+export const DEFAULT_PERMISSION_MODE = 'acceptEdits';
+
 export type LaunchOutcome = 'completed' | 'failed' | 'cancelled';
 
 export interface LaunchResult {
@@ -105,7 +108,11 @@ export function launch(options: LaunchOptions): RunningLaunch {
     guardrails: options.guardrails,
     agentModel: options.agentModel ?? null,
     agentEffort: options.agentEffort ?? null,
-    permissionMode: options.permissionMode ?? null,
+    // A dispatched card exists to be worked on unattended. With no permission
+    // mode the agent is refused every edit, gives up, and exits 0 - a run that
+    // reads as success having done nothing (doc 17). acceptEdits is what doc 07
+    // section 3 shows, and the card can override it.
+    permissionMode: options.permissionMode ?? DEFAULT_PERMISSION_MODE,
     contextFilePath: contextPath,
     settingsPath,
     resumeSessionId: null,

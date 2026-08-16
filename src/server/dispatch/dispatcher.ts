@@ -4,7 +4,8 @@ import { getCard, updateCard } from '../api/cards.js';
 import { dispatchableCards } from '../cards/eligibility.js';
 import { parseGuardrails } from '../cards/guardrails.js';
 import type { DatabaseHandle } from '../db/client.js';
-import { boards, cards, columns } from '../db/schema.js';
+import { boards, cards, columns, runs } from '../db/schema.js';
+import type { PendingBindings } from '../binding/pending.js';
 import {
   launch,
   LaunchRegistry,
@@ -29,7 +30,8 @@ import {
 
 export type DispatchMode = 'manual' | 'automatic';
 
-export type HaltReason = 'failure' | 'cancelled' | 'awaiting-review' | 'no-goal' | 'launch-error';
+export type HaltReason =
+  'failure' | 'cancelled' | 'awaiting-review' | 'no-goal' | 'launch-error' | 'no-effect';
 
 export interface HaltState {
   readonly reason: HaltReason;
@@ -68,6 +70,7 @@ export class Dispatcher {
 
   constructor(
     private readonly database: DatabaseHandle,
+    private readonly pending: PendingBindings,
     private readonly events: DispatcherEvents = {},
   ) {}
 
@@ -188,6 +191,12 @@ export class Dispatcher {
 
     updateCard(this.database, cardId, { status: 'running' });
 
+    // Registered before the child starts. SessionStart fires before the
+    // launcher can read the session id from the stream, so without this the
+    // hook path infers a provisional card and the run is attributed to a
+    // phantom instead of this card (doc 17).
+    this.pending.expect(board.cwd, cardId);
+
     const running = this.#registry.track(
       launch({
         cwd: board.cwd,
@@ -200,7 +209,17 @@ export class Dispatcher {
         permissionMode: card.permissionMode,
         cardId,
         ...(this.#executable === undefined ? {} : { executable: this.#executable }),
-        onSessionId: (sessionId) => this.events.onRunStarted?.(boardId, cardId, sessionId),
+        onSessionId: (sessionId) => {
+          // Belt and braces: if the run already exists and is unbound, or was
+          // bound elsewhere, correct it now that the session id is known.
+          this.database.db
+            .update(runs)
+            .set({ cardId, mode: 'launched' })
+            .where(eq(runs.sessionId, sessionId))
+            .run();
+
+          this.events.onRunStarted?.(boardId, cardId, sessionId);
+        },
       }),
     );
 
@@ -218,6 +237,9 @@ export class Dispatcher {
   #settle(boardId: string, cardId: string, result: LaunchResult | null): void {
     const state = this.#stateFor(boardId);
     state.running.delete(cardId);
+
+    const board = this.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
+    if (board !== undefined) this.pending.release(board.cwd, cardId);
 
     const card = getCard(this.database, cardId);
 
@@ -267,15 +289,39 @@ export class Dispatcher {
     this.#moveToReview(boardId, cardId);
     updateCard(this.database, cardId, { status: 'awaiting-review' });
 
+    // A run can exit 0 having been refused every tool call - the agent tries,
+    // is denied, and gives up. Reporting that as an ordinary completion is a
+    // false success, which is doc 01's fourth failure mode (doc 17).
+    const effect = this.#effectOf(cardId);
+
     this.#halt(boardId, {
-      reason: 'awaiting-review',
+      reason: effect.achievedNothing ? 'no-effect' : 'awaiting-review',
       cardId,
       cardTitle: card.title,
-      detail: 'The run finished and is waiting to be reviewed.',
+      detail: effect.achievedNothing
+        ? `The run finished without completing a single tool call. ${effect.unresolved} attempt(s) had no outcome, which usually means they were denied.`
+        : 'The run finished and is waiting to be reviewed.',
       at: Date.now(),
     });
 
     this.#publish(boardId);
+  }
+
+  /** Whether the card's runs actually did anything. */
+  #effectOf(cardId: string): { achievedNothing: boolean; unresolved: number } {
+    const row = this.database.sqlite
+      .prepare(
+        `SELECT
+           SUM(CASE WHEN event_name = 'PreToolUse' THEN 1 ELSE 0 END) AS intents,
+           SUM(CASE WHEN event_name IN ('PostToolUse', 'PostToolUseFailure') THEN 1 ELSE 0 END) AS outcomes
+         FROM events WHERE run_id IN (SELECT id FROM runs WHERE card_id = ?)`,
+      )
+      .get(cardId) as { intents: number | null; outcomes: number | null };
+
+    const intents = row.intents ?? 0;
+    const outcomes = row.outcomes ?? 0;
+
+    return { achievedNothing: intents > 0 && outcomes === 0, unresolved: intents - outcomes };
   }
 
   #moveToReview(boardId: string, cardId: string): void {
