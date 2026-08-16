@@ -19,7 +19,15 @@ export const DEFAULT_COLUMNS: readonly Omit<NewColumn, 'id' | 'boardId'>[] = [
 
 /** Creates the default columns for a board. Idempotent per board. */
 export function createDefaultColumns(db: Db, boardId: string): void {
-  const existing = db.select({ id: columns.id }).from(columns).all();
+  // Scoped to this board. Checking whether *any* columns exist silently gave
+  // the second board on an instance none at all, which was invisible while
+  // only one board was ever created.
+  const existing = db
+    .select({ id: columns.id })
+    .from(columns)
+    .where(eq(columns.boardId, boardId))
+    .all();
+
   if (existing.length > 0) return;
 
   for (const column of DEFAULT_COLUMNS) {

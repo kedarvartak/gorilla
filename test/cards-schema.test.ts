@@ -169,6 +169,21 @@ describe('default columns', () => {
     createDefaultColumns(handle.db, BOARD);
     expect(handle.db.select().from(columns).all()).toHaveLength(DEFAULT_COLUMNS.length);
   });
+
+  it('gives a second board its own columns', () => {
+    board();
+
+    handle.db
+      .insert(boards)
+      .values({ id: 'board-2', name: 'other', cwd: '/other', createdAt: Date.now() })
+      .run();
+    createDefaultColumns(handle.db, 'board-2');
+
+    // The guard is per board. Checking whether any columns exist at all left
+    // the second board with none, and every card creation on it then failed.
+    const second = handle.db.select().from(columns).where(eq(columns.boardId, 'board-2')).all();
+    expect(second).toHaveLength(DEFAULT_COLUMNS.length);
+  });
 });
 
 describe('dependencies', () => {
