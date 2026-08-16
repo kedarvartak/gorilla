@@ -62,6 +62,7 @@ the board just because it began outside it.
 | [11-risks.md](11-risks.md) | Risks, dependencies on unstable surfaces, and open decisions |
 | [12-context-engine.md](12-context-engine.md) | The project model, the divergence score, and compaction repair - keeping operator and agent on one picture |
 | [13-phase-0-tasks.md](13-phase-0-tasks.md) | The ten Phase 0 tasks, in card shape, with goal conditions and dependencies |
+| [14-compaction-probe-findings.md](14-compaction-probe-findings.md) | T9 findings: what Claude Code actually does at compaction, measured |
 
 ## Reading order
 
@@ -73,4 +74,5 @@ is project-wide and serves the agent as well. Read them together.
 
 ## Status
 
-Planning. No code written. Awaiting approval of the design before Phase 0 begins.
+Phase 0 in progress. The design is approved and implementation is under way against
+the task plan in doc 13; doc 14 records what the compaction probe measured.
