@@ -269,3 +269,75 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
     }
   });
 }
+
+/**
+ * Dispatch control (P8).
+ *
+ * Separate from the card routes because dispatching is an action on the board,
+ * not an edit to a card, and the operator reasons about it that way.
+ */
+export function registerDispatchRoutes(app: FastifyInstance, context: AppContext): void {
+  app.get<{ Params: { boardId: string } }>('/api/boards/:boardId/dispatch', (request) => {
+    return context.dispatcher.state(request.params.boardId);
+  });
+
+  app.post<{ Params: { boardId: string }; Body: { mode?: string; concurrency?: number } }>(
+    '/api/boards/:boardId/dispatch',
+    (request, reply) => {
+      const { boardId } = request.params;
+      const mode = request.body?.mode;
+      const concurrency = request.body?.concurrency;
+
+      if (mode !== undefined && mode !== 'manual' && mode !== 'automatic') {
+        return reply.code(400).send({ error: 'Mode must be manual or automatic.', field: 'mode' });
+      }
+      if (concurrency !== undefined && (!Number.isInteger(concurrency) || concurrency < 1)) {
+        return reply
+          .code(400)
+          .send({ error: 'Concurrency must be a positive integer.', field: 'concurrency' });
+      }
+
+      if (concurrency !== undefined) context.dispatcher.setConcurrency(boardId, concurrency);
+      if (mode !== undefined) context.dispatcher.setMode(boardId, mode);
+
+      return reply.send(context.dispatcher.state(boardId));
+    },
+  );
+
+  app.post<{ Params: { boardId: string } }>(
+    '/api/boards/:boardId/dispatch/resume',
+    (request, reply) => {
+      return reply.send(context.dispatcher.resume(request.params.boardId));
+    },
+  );
+
+  app.post<{ Params: { boardId: string; cardId: string } }>(
+    '/api/boards/:boardId/cards/:cardId/dispatch',
+    (request, reply) => {
+      try {
+        const running = context.dispatcher.dispatch(request.params.boardId, request.params.cardId);
+
+        if (running === null) {
+          // The dispatcher records why in the halt state rather than throwing,
+          // so the reason survives for the operator to read.
+          return reply.code(409).send({
+            error: 'The card could not be dispatched.',
+            state: context.dispatcher.state(request.params.boardId),
+          });
+        }
+
+        return reply.code(202).send(context.dispatcher.state(request.params.boardId));
+      } catch (error) {
+        return fail(reply, error);
+      }
+    },
+  );
+
+  app.post<{ Params: { boardId: string; cardId: string } }>(
+    '/api/boards/:boardId/cards/:cardId/cancel',
+    (request, reply) => {
+      const cancelled = context.dispatcher.cancel(request.params.boardId, request.params.cardId);
+      return reply.code(cancelled ? 202 : 409).send({ cancelled });
+    },
+  );
+}

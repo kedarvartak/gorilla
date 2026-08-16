@@ -7,7 +7,8 @@ import { registerIngestRoutes, recordedLatencies } from './ingest/routes.js';
 import { Broadcaster } from './stream/broadcaster.js';
 import { registerStreamRoutes } from './stream/routes.js';
 import { registerWebRoutes } from './web/routes.js';
-import { registerApiRoutes } from './api/routes.js';
+import { registerApiRoutes, registerDispatchRoutes } from './api/routes.js';
+import { Dispatcher } from './dispatch/dispatcher.js';
 
 export interface AppOptions {
   readonly database: DatabaseHandle;
@@ -22,6 +23,7 @@ export interface AppContext {
   readonly database: DatabaseHandle;
   readonly recorder?: FixtureRecorder | undefined;
   readonly broadcaster: Broadcaster;
+  readonly dispatcher: Dispatcher;
 }
 
 export function buildApp(options: AppOptions): FastifyInstance {
@@ -32,12 +34,32 @@ export function buildApp(options: AppOptions): FastifyInstance {
     bodyLimit: 32 * 1024 * 1024,
   });
 
+  const broadcaster = new Broadcaster();
+
   const context: AppContext = {
     store: new EventStore(options.database.sqlite),
     database: options.database,
     recorder: options.recorder,
-    broadcaster: new Broadcaster(),
+    broadcaster,
+    dispatcher: new Dispatcher(options.database, {
+      onStateChange: (boardId, state) => broadcaster.publish('dispatch-state', { boardId, state }),
+      onRunStarted: (boardId, cardId, sessionId) =>
+        broadcaster.publish('run-started', { boardId, cardId, sessionId }),
+      onRunFinished: (boardId, cardId, result) =>
+        broadcaster.publish('run-finished', {
+          boardId,
+          cardId,
+          outcome: result.outcome,
+          sessionId: result.sessionId,
+        }),
+    }),
   };
+
+  // Cancel anything still running when the board stops, rather than leaving
+  // claude processes against the operator's repository with nothing watching.
+  app.addHook('onClose', async () => {
+    await context.dispatcher.shutdown();
+  });
 
   app.get('/health', () => ({ status: 'ok' }));
 
@@ -67,6 +89,7 @@ export function buildApp(options: AppOptions): FastifyInstance {
   registerIngestRoutes(app, context);
   registerStreamRoutes(app, context);
   registerApiRoutes(app, context);
+  registerDispatchRoutes(app, context);
   registerWebRoutes(app);
 
   return app;
