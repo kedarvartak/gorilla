@@ -29,7 +29,7 @@ import { describeVerify } from '../verify/run.js';
 import { buildBrief, renderBrief } from '../brief/brief.js';
 import type { StoredEntry } from '../ledger/dedupe.js';
 import { cursorFor, entryTimesFor, storedEntriesFor } from '../ledger/store.js';
-import { describeMergeReport, mergeBranches } from '../review/merge.js';
+import { describeMergeReport, mergeBranches, mergeTargetFor } from '../review/merge.js';
 
 /**
  * REST for boards, columns and cards.
@@ -156,6 +156,11 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
           ...(body['synthesisModel'] === undefined
             ? {}
             : { synthesisModel: body['synthesisModel'] as string | null }),
+          // Reaches `--effort`. It was in the schema and passed to the launcher
+          // but accepted by no route, so the column could never be set.
+          ...(body['agentEffort'] === undefined
+            ? {}
+            : { agentEffort: body['agentEffort'] as string | null }),
         });
 
         publish('card-created', present(card));
@@ -205,6 +210,9 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
           ...(body['synthesisModel'] === undefined
             ? {}
             : { synthesisModel: body['synthesisModel'] as string | null }),
+          ...(body['agentEffort'] === undefined
+            ? {}
+            : { agentEffort: body['agentEffort'] as string | null }),
           ...(body['status'] === undefined ? {} : { status: body['status'] as Card['status'] }),
         });
 
@@ -526,6 +534,11 @@ export function registerCardDetailRoutes(app: FastifyInstance, context: AppConte
         sessionId: run.sessionId,
         startedAt: run.startedAt,
         endedAt: run.endedAt,
+        // Distinguishes "the session told us it ended" from "we deduced it must
+        // have". The interface must not present a deduction as a report.
+        endReason: run.endReason,
+        goalOutcome: run.goalOutcome,
+        mode: run.mode,
         gitBranch: run.gitBranch,
         events: (
           context.database.sqlite
@@ -554,10 +567,26 @@ export function registerCardDetailRoutes(app: FastifyInstance, context: AppConte
 
       const verify = context.dispatcher.verifyResultFor(card.id);
 
+      // The isolated branch this card's work is sitting on, unmerged. Without
+      // this the interface can describe what happened but offers no way to act
+      // on it, which is where "how do I close this?" comes from.
+      const manager = board === undefined ? null : context.dispatcher.worktreesFor(board.cwd);
+      const workspace = manager?.workspaceFor(card.id);
+
       return reply.send({
         card: present(card),
         guardrails,
         guardrailDetail: describeGuardrails(guardrails),
+        workspace:
+          workspace === undefined
+            ? null
+            : {
+                branch: workspace.branch,
+                worktree: workspace.path,
+                git: await manager?.statusOf(card.id),
+              },
+        mergeTarget: board === undefined ? null : await mergeTargetFor(board.cwd),
+        verifyCommand: guardrails.verify ?? null,
         // What the board checked, rather than what the agent claimed.
         verify: verify ?? null,
         verifyNote: verify === undefined ? null : describeVerify(verify),

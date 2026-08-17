@@ -7,6 +7,7 @@ import { boardForCwd, claim, inferCard, sessionStartContext } from '../binding/a
 import { getCard } from '../api/cards.js';
 import { canonicaliseCwd } from './binding.js';
 import { triggerFor } from '../ledger/service.js';
+import { applyRunLifecycle } from './lifecycle.js';
 
 /**
  * `POST /hooks/:event` - the hook path (doc 07).
@@ -131,6 +132,15 @@ export function registerIngestRoutes(app: FastifyInstance, context: AppContext):
       // Recorded, not started: extraction reads the transcript and may call an
       // API, and this handler is in the agent's critical path (doc 06).
       if (triggerFor(event) !== null) extractFor = written.runId;
+
+      // A single indexed update, so it stays on this path: a run that reads as
+      // live after it ended is the stale signal the board exists to remove.
+      applyRunLifecycle(context.database.sqlite, {
+        runId: written.runId,
+        eventName: event,
+        receivedAt,
+        payload,
+      });
 
       // Published after the write, so a subscriber can never observe an event
       // the database does not have. The broadcaster swallows subscriber errors
