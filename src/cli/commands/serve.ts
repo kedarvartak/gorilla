@@ -1,7 +1,7 @@
 import { FixtureRecorder } from '../../server/fixtures/recorder.js';
 import { startServer } from '../../server/start.js';
 import { DEFAULT_HOST, DEFAULT_PORT } from '../../server/index.js';
-import { extractionModelFromEnv } from '../../server/ledger/service.js';
+import { resolveExtractionBackend } from '../../server/ledger/service.js';
 import type { Command, CommandResult } from '../cli.js';
 
 function parsePort(args: readonly string[]): number {
@@ -39,9 +39,9 @@ export const serveCommand: Command = {
       recorder = new FixtureRecorder({ path: target, redact: !args.includes('--no-redact') });
     }
 
-    // Resolved here rather than inside the server so that no test can make a
-    // paid call because the operator's shell exported a key.
-    const extraction = extractionModelFromEnv();
+    // Resolved here rather than inside the server so that no test can spend
+    // anything by merely constructing an app.
+    const extraction = resolveExtractionBackend();
 
     const server = await startServer({
       port,

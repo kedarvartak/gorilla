@@ -7,7 +7,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp, contextOf } from '../src/server/app.js';
 import { openDatabase, type DatabaseHandle } from '../src/server/db/client.js';
 import { claim } from '../src/server/binding/attach.js';
-import { ExtractionService, shouldAdvance, triggerFor } from '../src/server/ledger/service.js';
+import {
+  ExtractionService,
+  resolveExtractionBackend,
+  shouldAdvance,
+  triggerFor,
+} from '../src/server/ledger/service.js';
+import { claudeCodeExtractionModel, parseCliResponse } from '../src/server/ledger/cli-model.js';
 import { advanceCursor, cursorFor, storedEntriesFor } from '../src/server/ledger/store.js';
 import type { ExtractionModel, ExtractionRequest } from '../src/server/ledger/model.js';
 
@@ -462,5 +468,113 @@ describe('the brief', () => {
     expect(brief.extraction.note).toBeNull();
     expect(brief.extraction.tokensSpent).toBeGreaterThan(0);
     expect(cursorFor(database, runId).lastOutcome).toBe('extracted');
+  });
+});
+
+describe('the Claude Code backend', () => {
+  it('is the default, so no API key is needed', () => {
+    const resolved = resolveExtractionBackend({});
+
+    expect(resolved.backend).toBe('cli');
+    expect(resolved.model).toBeDefined();
+    expect(resolved.note).toContain('existing quota');
+  });
+
+  it('does not switch to the API merely because a key is present', () => {
+    // A key in the shell is not a request to be billed separately for work the
+    // operator's Claude Code subscription already covers.
+    expect(resolveExtractionBackend({ ANTHROPIC_API_KEY: 'sk-ant-test' }).backend).toBe('cli');
+  });
+
+  it('uses the API only when explicitly asked, and only with a key', () => {
+    expect(
+      resolveExtractionBackend({ GORILLA_EXTRACTION: 'api', ANTHROPIC_API_KEY: 'sk-ant-test' })
+        .backend,
+    ).toBe('api');
+
+    const missing = resolveExtractionBackend({ GORILLA_EXTRACTION: 'api' });
+    expect(missing.backend).toBe('off');
+    expect(missing.note).toContain('ANTHROPIC_API_KEY is not set');
+  });
+
+  it('can be switched off entirely', () => {
+    const off = resolveExtractionBackend({ GORILLA_EXTRACTION: 'off' });
+    expect(off.backend).toBe('off');
+    expect(off.model).toBeUndefined();
+  });
+
+  it('reads the structured output and the real token usage', () => {
+    const response = parseCliResponse(
+      JSON.stringify({
+        is_error: false,
+        structured_output: { entries: [{ kind: 'risk', statement: 'x', sourceEventIds: [1] }] },
+        usage: {
+          input_tokens: 10,
+          cache_creation_input_tokens: 4_000,
+          cache_read_input_tokens: 100,
+          output_tokens: 50,
+        },
+      }),
+    );
+
+    expect(response.entries).toHaveLength(1);
+    // Cache creation and reads are billed, so a budget that ignored them would
+    // report a fraction of what a long window costs.
+    expect(response.usage.inputTokens).toBe(4_110);
+    expect(response.usage.outputTokens).toBe(50);
+  });
+
+  it('treats a missing entry list as "nothing to record", not as a failure', () => {
+    const response = parseCliResponse(JSON.stringify({ is_error: false, usage: {} }));
+    expect(response.entries).toEqual([]);
+  });
+
+  it('raises the CLI’s own message when it reports an error', () => {
+    expect(() =>
+      parseCliResponse(JSON.stringify({ is_error: true, result: 'usage limit reached' })),
+    ).toThrow(/usage limit reached/);
+  });
+
+  it('survives a child that exits before reading the prompt', async () => {
+    // `echo` ignores stdin and exits at once, which raises EPIPE on the write.
+    // An unhandled error event on that stream would take the board down, so this
+    // asserts the process is still here to answer afterwards.
+    const model = claudeCodeExtractionModel({ executable: 'echo' });
+
+    await expect(
+      model({ model: 'claude-haiku-4-5-20251001', system: 's', prompt: 'p', maxTokens: 100 }),
+    ).rejects.toThrow();
+
+    expect(triggerFor('Stop')).toBe('Stop');
+  });
+
+  it('says the CLI is missing rather than failing obscurely', async () => {
+    const model = claudeCodeExtractionModel({ executable: 'gorilla-no-such-claude-binary' });
+
+    await expect(
+      model({ model: 'claude-haiku-4-5-20251001', system: 's', prompt: 'p', maxTokens: 100 }),
+    ).rejects.toThrow(/Claude Code CLI on PATH/);
+  });
+
+  it('never lets a synthesis call be attributed to a card', async () => {
+    // The recursion this prevents is the expensive one: a synthesis call that
+    // fires its own Stop hook triggers another synthesis, forever. `--safe-mode`
+    // and a working directory outside the project are the two guards.
+    const model = claudeCodeExtractionModel({ executable: 'echo' });
+    const before = database.sqlite.prepare('SELECT COUNT(*) AS n FROM events').get() as {
+      n: number;
+    };
+
+    await model({
+      model: 'claude-haiku-4-5-20251001',
+      system: 's',
+      prompt: 'p',
+      maxTokens: 100,
+    }).catch(() => undefined);
+
+    const after = database.sqlite.prepare('SELECT COUNT(*) AS n FROM events').get() as {
+      n: number;
+    };
+    expect(after.n).toBe(before.n);
   });
 });

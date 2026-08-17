@@ -12,6 +12,7 @@ import {
   type ExtractionOutcome,
   type TokenBudget,
 } from './extract.js';
+import { claudeCodeExtractionModel } from './cli-model.js';
 import { anthropicExtractionModel, type ExtractionModel } from './model.js';
 import { advanceCursor, cursorFor, recordEntries, storedEntriesFor } from './store.js';
 import type { WindowTrigger } from './window.js';
@@ -293,30 +294,64 @@ async function defaultNarrative(
   }
 }
 
+export type ExtractionBackend = 'cli' | 'api' | 'off';
+
+export interface ResolvedBackend {
+  readonly backend: ExtractionBackend;
+  readonly model?: ExtractionModel;
+  readonly note: string;
+}
+
 /**
- * The model from the environment, or an explanation of its absence.
+ * Which backend synthesises the ledger.
  *
- * Resolved by the CLI rather than by `buildApp`, so that constructing an app in
- * a test can never make a paid API call because the operator's shell happened to
- * export a key.
+ * The Claude Code CLI is the default, and that is a deliberate reversal. An
+ * operator running Claude Code has already paid for Claude Code; asking them for
+ * a separate API key to summarise the sessions they are already paying for
+ * charges twice for one piece of work, and it puts the ledger - the reason this
+ * product exists - behind a purchase. `claude -p` spends the quota that is
+ * already there.
+ *
+ * `GORILLA_EXTRACTION` overrides: `api` for a key (useful when the board runs
+ * somewhere the CLI is not installed), `off` to record nothing but mechanical
+ * entries.
+ *
+ * Resolved by the CLI entry point rather than by `buildApp`, so constructing an
+ * app in a test can never spend anything.
  */
-export function extractionModelFromEnv(env: NodeJS.ProcessEnv = process.env): {
-  model?: ExtractionModel;
-  note: string;
-} {
+export function resolveExtractionBackend(env: NodeJS.ProcessEnv = process.env): ResolvedBackend {
+  const requested = (env['GORILLA_EXTRACTION'] ?? 'cli').trim().toLowerCase();
+
+  if (requested === 'off') {
+    return {
+      backend: 'off',
+      note: 'Model extraction is off (GORILLA_EXTRACTION=off): mechanical entries only.',
+    };
+  }
+
   const apiKey = env['ANTHROPIC_API_KEY'];
 
-  if (apiKey === undefined || apiKey.trim() === '') {
+  if (requested === 'api') {
+    if (apiKey === undefined || apiKey.trim() === '') {
+      return {
+        backend: 'off',
+        note: 'GORILLA_EXTRACTION=api was asked for but ANTHROPIC_API_KEY is not set: mechanical entries only.',
+      };
+    }
+
     return {
-      note: 'ANTHROPIC_API_KEY is not set: the ledger will hold mechanical entries only.',
+      backend: 'api',
+      model: anthropicExtractionModel({
+        apiKey,
+        ...(env['ANTHROPIC_BASE_URL'] === undefined ? {} : { baseUrl: env['ANTHROPIC_BASE_URL'] }),
+      }),
+      note: 'Model extraction is on, billed to ANTHROPIC_API_KEY.',
     };
   }
 
   return {
-    model: anthropicExtractionModel({
-      apiKey,
-      ...(env['ANTHROPIC_BASE_URL'] === undefined ? {} : { baseUrl: env['ANTHROPIC_BASE_URL'] }),
-    }),
-    note: 'Model extraction is on.',
+    backend: 'cli',
+    model: claudeCodeExtractionModel(),
+    note: 'Model extraction is on, running through the Claude Code CLI on your existing quota.',
   };
 }
