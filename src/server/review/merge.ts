@@ -59,6 +59,21 @@ async function currentBranch(git: SimpleGit): Promise<string> {
 }
 
 /**
+ * The branch a merge would land on, for the interface to name before asking.
+ *
+ * "Merge into main" and "merge into whatever you happen to be on" are different
+ * offers, and only one of them is safe to make without saying which.
+ */
+export async function mergeTargetFor(repoCwd: string): Promise<string | null> {
+  if (!existsSync(repoCwd)) return null;
+  try {
+    return await currentBranch(simpleGit(repoCwd));
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Merges each branch in turn.
  *
  * A conflict is left in the working tree on purpose. Aborting would hide what

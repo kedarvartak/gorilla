@@ -23,7 +23,12 @@ export interface Card {
   readonly status:
     'idle' | 'queued' | 'running' | 'awaiting-review' | 'blocked' | 'done' | 'abandoned';
   readonly goalCondition: string | null;
+  /** Reaches `claude --model` for this card's run. Null means the board default. */
   readonly agentModel: string | null;
+  /** Reaches `claude --effort`. */
+  readonly agentEffort: string | null;
+  /** Used only for windows that escalate - compaction, and manual re-extraction. */
+  readonly synthesisModel: string | null;
   readonly lastSeenAt: number | null;
   readonly updatedAt: number;
   readonly guardrailDetail: readonly GuardrailDetail[];
@@ -58,6 +63,23 @@ export interface DispatchState {
   readonly running: readonly string[];
   readonly completed: readonly string[];
   readonly halted: HaltState | null;
+}
+
+export interface MergeStep {
+  readonly cardId: string;
+  readonly title: string;
+  readonly branch: string;
+  readonly outcome: 'merged' | 'conflicted' | 'verify-failed' | 'skipped' | 'errored';
+  readonly detail: string;
+}
+
+export interface MergeReport {
+  readonly into: string;
+  readonly steps: readonly MergeStep[];
+  readonly merged: number;
+  readonly stoppedAt: MergeStep | null;
+  readonly clean: boolean;
+  readonly summary: readonly string[];
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -98,6 +120,20 @@ export const api = {
       body: JSON.stringify({ columnId, index }),
     }),
 
+  /** Partial: only the named fields change, so two edits cannot clobber each other. */
+  updateCard: (
+    cardId: string,
+    body: Partial<{
+      title: string;
+      body: string;
+      goalCondition: string | null;
+      agentModel: string | null;
+      agentEffort: string | null;
+      synthesisModel: string | null;
+      status: Card['status'];
+    }>,
+  ) => request<Card>(`/api/cards/${cardId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+
   deleteCard: (cardId: string) => request<void>(`/api/cards/${cardId}`, { method: 'DELETE' }),
 
   markSeen: (cardId: string) => request<Card>(`/api/cards/${cardId}/seen`, { method: 'POST' }),
@@ -117,6 +153,20 @@ export const api = {
   cancelCard: (boardId: string, cardId: string) =>
     request<{ cancelled: boolean }>(`/api/boards/${boardId}/cards/${cardId}/cancel`, {
       method: 'POST',
+    }),
+
+  /**
+   * The reviewer. One card or many, merged in the order given, verified after
+   * each. Merged cards are moved to the terminal column by the server, so the
+   * interface never has to decide what "done" means separately from the merge.
+   */
+  mergeCards: (
+    boardId: string,
+    body: { cardIds: readonly string[]; into?: string; verify?: string | null },
+  ) =>
+    request<MergeReport>(`/api/boards/${boardId}/review/merge`, {
+      method: 'POST',
+      body: JSON.stringify(body),
     }),
 
   dispatchable: (boardId: string) =>

@@ -12,6 +12,7 @@ import type { FixtureRecorder } from './fixtures/recorder.js';
 import { openDatabase, type DatabaseHandle } from './db/client.js';
 import { DEFAULT_HOST, DEFAULT_PORT } from './index.js';
 import type { ExtractionModel } from './ledger/model.js';
+import { describeReconcile, reconcileOpenRuns } from './ingest/lifecycle.js';
 
 export interface EnsuredBoard {
   readonly id: string;
@@ -66,6 +67,8 @@ export interface RunningServer {
   readonly database: DatabaseHandle;
   readonly url: string;
   readonly board: EnsuredBoard | null;
+  /** What startup found left open, so `serve` can say so rather than hide it. */
+  readonly reconciled: string | null;
   stop(): Promise<void>;
 }
 
@@ -81,6 +84,10 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
     options.ensureBoard === false
       ? null
       : ensureBoardForCwd(database, options.cwd ?? process.cwd());
+  // Before serving: the board has just started, so it cannot be supervising
+  // anything, and a run still marked open is one that was cut off.
+  const reconciled = describeReconcile(reconcileOpenRuns(database.sqlite));
+
   const app = buildApp({
     database,
     logger: options.logger ?? true,
@@ -94,6 +101,7 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
     app,
     database,
     board,
+    reconciled,
     url: `http://${host}:${port}`,
     stop: async () => {
       await app.close();

@@ -438,3 +438,56 @@ describe('first run', () => {
     }
   });
 });
+
+describe('per-card model preference', () => {
+  it('round-trips every field that reaches the CLI', async () => {
+    const id = await makeCard('Model preferences');
+
+    const patched = await json<{
+      agentModel: string | null;
+      agentEffort: string | null;
+      synthesisModel: string | null;
+    }>('PATCH', `/api/cards/${id}`, {
+      agentModel: 'opus',
+      agentEffort: 'xhigh',
+      synthesisModel: 'haiku',
+    });
+
+    expect(patched.status).toBe(200);
+    expect(patched.body.agentModel).toBe('opus');
+    // agentEffort was in the schema and passed to `--effort`, but no route
+    // accepted it, so the column could never be set from anywhere.
+    expect(patched.body.agentEffort).toBe('xhigh');
+    expect(patched.body.synthesisModel).toBe('haiku');
+  });
+
+  it('clears back to the board default', async () => {
+    const id = await makeCard('Back to default', { agentModel: 'opus' });
+
+    const cleared = await json<{ agentModel: string | null }>('PATCH', `/api/cards/${id}`, {
+      agentModel: null,
+    });
+
+    // Null is a real choice, not a missing field: it means "board default".
+    expect(cleared.body.agentModel).toBeNull();
+  });
+
+  it('leaves unnamed fields alone', async () => {
+    const id = await makeCard('Partial edit', { agentModel: 'sonnet' });
+    await json('PATCH', `/api/cards/${id}`, { agentEffort: 'low' });
+
+    const card = await json<{ agentModel: string | null; agentEffort: string | null }>(
+      'GET',
+      `/api/cards/${id}`,
+    );
+
+    expect(card.body.agentModel).toBe('sonnet');
+    expect(card.body.agentEffort).toBe('low');
+  });
+
+  it('accepts the effort at creation too', async () => {
+    const id = await makeCard('Created with effort', { agentEffort: 'max' });
+    const card = await json<{ agentEffort: string | null }>('GET', `/api/cards/${id}`);
+    expect(card.body.agentEffort).toBe('max');
+  });
+});

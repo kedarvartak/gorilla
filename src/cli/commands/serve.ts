@@ -57,6 +57,9 @@ export const serveCommand: Command = {
     // Stated at startup as well as in the brief. A ledger that is quietly
     // mechanical-only looks identical to one where the model found nothing.
     process.stderr.write(`  ${extraction.note}\n`);
+    // Said out loud rather than fixed silently: a run the board closed by
+    // deduction is a run whose end time is an estimate.
+    if (server.reconciled !== null) process.stderr.write(`  ${server.reconciled}\n`);
     if (board !== null) {
       process.stderr.write(
         `  board "${board.name}" ${board.created ? 'created for' : 'observing'} ${board.cwd}\n`,
