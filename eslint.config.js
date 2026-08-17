@@ -22,7 +22,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['test/**/*.ts', '*.config.ts', 'eslint.config.js'],
+    files: ['test/**/*.ts', 'test/**/*.tsx', '*.config.ts', 'eslint.config.js'],
     ...tseslint.configs.disableTypeChecked,
   },
 );
