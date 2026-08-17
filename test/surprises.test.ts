@@ -74,7 +74,8 @@ describe('the surprise set', () => {
   });
 
   it('treats an entry with no recorded status as unreviewed', () => {
-    const { operatorStatus: _omitted, ...withoutStatus } = entry({ kind: 'assumption' });
+    const withStatus = entry({ kind: 'assumption' });
+    const withoutStatus = { ...withStatus, operatorStatus: undefined };
 
     expect(surprises([withoutStatus])).toHaveLength(1);
   });

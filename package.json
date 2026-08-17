@@ -39,6 +39,7 @@
     "@vitest/coverage-v8": "^2.1.8",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9.17.0",
+    "jsdom": "^29.1.1",
     "prettier": "^3.4.2",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.19.2",
