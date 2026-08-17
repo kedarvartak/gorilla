@@ -1,6 +1,7 @@
 import { FixtureRecorder } from '../../server/fixtures/recorder.js';
 import { startServer } from '../../server/start.js';
 import { DEFAULT_HOST, DEFAULT_PORT } from '../../server/index.js';
+import { extractionModelFromEnv } from '../../server/ledger/service.js';
 import type { Command, CommandResult } from '../cli.js';
 
 function parsePort(args: readonly string[]): number {
@@ -38,16 +39,24 @@ export const serveCommand: Command = {
       recorder = new FixtureRecorder({ path: target, redact: !args.includes('--no-redact') });
     }
 
+    // Resolved here rather than inside the server so that no test can make a
+    // paid call because the operator's shell exported a key.
+    const extraction = extractionModelFromEnv();
+
     const server = await startServer({
       port,
       logger: !args.includes('--quiet'),
       ...(recorder === undefined ? {} : { recorder }),
+      ...(extraction.model === undefined ? {} : { extractionModel: extraction.model }),
     });
 
     // Printed to stderr so it survives --quiet: an operator who cannot find
     // the board has no way to use any of this.
     const board = server.board;
     process.stderr.write(`Gorilla is serving ${server.url}\n`);
+    // Stated at startup as well as in the brief. A ledger that is quietly
+    // mechanical-only looks identical to one where the model found nothing.
+    process.stderr.write(`  ${extraction.note}\n`);
     if (board !== null) {
       process.stderr.write(
         `  board "${board.name}" ${board.created ? 'created for' : 'observing'} ${board.cwd}\n`,

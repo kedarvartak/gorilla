@@ -260,3 +260,85 @@ export type NewPlan = typeof plans.$inferInsert;
 export type Card = typeof cards.$inferSelect;
 export type NewCard = typeof cards.$inferInsert;
 export type CardDependency = typeof cardDependencies.$inferSelect;
+
+/**
+ * Ledger entries that cost something to produce (doc 08).
+ *
+ * Mechanical entries are derived from events on demand and need no table.
+ * Model entries do: they were paid for, and recomputing them on every card
+ * open would spend money to answer a question already answered.
+ *
+ * `supersededBy` is set rather than the row being deleted. "This was decided,
+ * then reversed" is frequently the most informative thing in a long run, and
+ * deleting the earlier entry destroys it.
+ */
+export const ledgerEntries = sqliteTable(
+  'ledger_entries',
+  {
+    id: text('id').primaryKey(),
+    cardId: text('card_id')
+      .notNull()
+      .references(() => cards.id, { onDelete: 'cascade' }),
+    runId: text('run_id')
+      .notNull()
+      .references(() => runs.id, { onDelete: 'cascade' }),
+
+    kind: text('kind', {
+      enum: ['decision', 'assumption', 'change', 'risk', 'question', 'verdict'],
+    }).notNull(),
+    statement: text('statement').notNull(),
+    detail: text('detail'),
+    /** Required on a decision: the path not taken (doc 08). */
+    alternative: text('alternative'),
+
+    /** JSON arrays. Read through the ledger module, never parsed inline. */
+    filePaths: text('file_paths').notNull().default('[]'),
+    sourceEventIds: text('source_event_ids').notNull().default('[]'),
+
+    origin: text('origin', { enum: ['mechanical', 'model'] })
+      .notNull()
+      .default('model'),
+    confidence: integer('confidence'),
+    model: text('model'),
+
+    /** Points at the entry that reversed this one. Never deleted. */
+    supersededBy: text('superseded_by'),
+    /** The operator's judgement, which is the only human-verified signal here. */
+    operatorStatus: text('operator_status', {
+      enum: ['unreviewed', 'accepted', 'rejected', 'corrected'],
+    })
+      .notNull()
+      .default('unreviewed'),
+
+    createdAt: integer('created_at').notNull(),
+  },
+  (table) => [
+    index('ledger_card').on(table.cardId),
+    index('ledger_run').on(table.runId),
+    index('ledger_card_created').on(table.cardId, table.createdAt),
+    index('ledger_kind').on(table.kind),
+  ],
+);
+
+/**
+ * What extraction has already covered, per run.
+ *
+ * Without it, every Stop would re-extract the whole run: the same window sent
+ * again, paid for again, and deduplicated away afterwards. The cursor makes a
+ * window mean "since last time".
+ */
+export const extractionCursors = sqliteTable('extraction_cursors', {
+  runId: text('run_id')
+    .primaryKey()
+    .references(() => runs.id, { onDelete: 'cascade' }),
+  throughSeq: integer('through_seq').notNull().default(0),
+  /** Output tokens spent on this run, for the budget. */
+  tokensSpent: integer('tokens_spent').notNull().default(0),
+  lastOutcome: text('last_outcome'),
+  lastNote: text('last_note'),
+  updatedAt: integer('updated_at').notNull(),
+});
+
+export type LedgerEntryRow = typeof ledgerEntries.$inferSelect;
+export type NewLedgerEntryRow = typeof ledgerEntries.$inferInsert;
+export type ExtractionCursor = typeof extractionCursors.$inferSelect;
