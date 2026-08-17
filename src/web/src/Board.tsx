@@ -274,6 +274,26 @@ export function Board(): ReactElement {
         </label>
 
         <label className="text-dim">
+          {/* Separate from `policy`: that governs what happens between cards,
+              this governs what happens inside one. */}
+          when it needs you{' '}
+          <select
+            className="rounded border border-line bg-panel-2 px-1 py-0.5 text-text"
+            value={dispatch?.autonomy ?? 'copilot'}
+            title="Copilot stops the card and waits for you. Autopilot lets the agent decide and records the question. Both still halt on a stalled run."
+            onChange={(changed) => {
+              void api
+                .setDispatch(board.id, { autonomy: changed.target.value })
+                .then(setDispatch)
+                .catch((cause: Error) => setError(cause.message));
+            }}
+          >
+            <option value="copilot">copilot - stop and ask</option>
+            <option value="autopilot">autopilot - decide and log</option>
+          </select>
+        </label>
+
+        <label className="text-dim">
           agents{' '}
           <select
             className="rounded border border-line bg-panel-2 px-1 py-0.5 text-text"

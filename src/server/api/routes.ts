@@ -329,13 +329,19 @@ export function registerDispatchRoutes(app: FastifyInstance, context: AppContext
 
   app.post<{
     Params: { boardId: string };
-    Body: { mode?: string; concurrency?: number; policy?: string };
+    Body: { mode?: string; concurrency?: number; policy?: string; autonomy?: string };
   }>('/api/boards/:boardId/dispatch', (request, reply) => {
     const { boardId } = request.params;
     const mode = request.body?.mode;
     const concurrency = request.body?.concurrency;
     const policy = request.body?.policy;
+    const autonomy = request.body?.autonomy;
 
+    if (autonomy !== undefined && autonomy !== 'copilot' && autonomy !== 'autopilot') {
+      return reply
+        .code(400)
+        .send({ error: 'Autonomy must be copilot or autopilot.', field: 'autonomy' });
+    }
     if (mode !== undefined && mode !== 'manual' && mode !== 'automatic') {
       return reply.code(400).send({ error: 'Mode must be manual or automatic.', field: 'mode' });
     }
@@ -351,6 +357,7 @@ export function registerDispatchRoutes(app: FastifyInstance, context: AppContext
     }
 
     if (concurrency !== undefined) context.dispatcher.setConcurrency(boardId, concurrency);
+    if (autonomy !== undefined) context.dispatcher.setAutonomy(boardId, autonomy);
     if (policy !== undefined) context.dispatcher.setPolicy(boardId, policy);
     if (mode !== undefined) context.dispatcher.setMode(boardId, mode);
 
@@ -412,9 +419,16 @@ export function registerDispatchRoutes(app: FastifyInstance, context: AppContext
 
   app.post<{ Params: { boardId: string; cardId: string } }>(
     '/api/boards/:boardId/cards/:cardId/dispatch',
-    (request, reply) => {
+    async (request, reply) => {
       try {
-        const running = context.dispatcher.dispatch(request.params.boardId, request.params.cardId);
+        // `dispatchIsolated`, not `dispatch`: the latter runs in the board's own
+        // checkout. It had no callers at all, so every card started from the
+        // interface was writing into the operator's working tree on whatever
+        // branch they were on - the precise collision U2 exists to prevent.
+        const running = await context.dispatcher.dispatchIsolated(
+          request.params.boardId,
+          request.params.cardId,
+        );
 
         if (running === null) {
           // The dispatcher records why in the halt state rather than throwing,
