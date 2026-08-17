@@ -1,4 +1,4 @@
-import type { LedgerEntry } from './entries.js';
+import type { LedgerEntry, OperatorStatus } from './entries.js';
 
 /**
  * Deduplication and supersession (doc 08).
@@ -22,6 +22,14 @@ import type { LedgerEntry } from './entries.js';
 export interface StoredEntry extends LedgerEntry {
   readonly id: string;
   readonly supersededBy?: string | null;
+  /**
+   * The operator's verdict, carried rather than derived.
+   *
+   * Without it nothing downstream can tell an entry a human has already judged
+   * from one still waiting to be read, which is the whole basis of deciding what
+   * is outstanding.
+   */
+  readonly operatorStatus?: OperatorStatus;
 }
 
 export type MergeAction = 'inserted' | 'duplicate' | 'supersedes';

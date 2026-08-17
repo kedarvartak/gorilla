@@ -8,3 +8,7 @@ coverage/
 .DS_Store
 *.tsbuildinfo
 .claude/
+# The board's own state inside a project: one full checkout per dispatched card.
+# Without this, any `git add -A` - including one an agent runs in its own
+# worktree - commits a copy of the project into the project.
+.gorilla/

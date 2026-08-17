@@ -35,6 +35,16 @@ export interface LedgerEntry {
   readonly model?: string;
 }
 
+/**
+ * The operator's verdict on a stored entry.
+ *
+ * `unreviewed` is the default and the only status that leaves an entry
+ * outstanding: everything else means a human has already looked, and a surface
+ * that keeps showing a reviewed entry teaches the operator to ignore it.
+ */
+export const OPERATOR_STATUSES = ['unreviewed', 'accepted', 'rejected', 'corrected'] as const;
+export type OperatorStatus = (typeof OPERATOR_STATUSES)[number];
+
 export function isModelKind(value: unknown): value is ModelKind {
   return typeof value === 'string' && (MODEL_KINDS as readonly string[]).includes(value);
 }
