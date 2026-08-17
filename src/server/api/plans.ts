@@ -2,7 +2,14 @@ import { randomUUID } from 'node:crypto';
 
 import { asc, eq } from 'drizzle-orm';
 
-import { addDependency, createCard, CardError } from './cards.js';
+import {
+  addDependency,
+  createCard,
+  CardError,
+  isPriority,
+  PRIORITIES,
+  type CardPriority,
+} from './cards.js';
 import { checkCondition, type GoalWarning } from '../goal/compose.js';
 import { parseGuardrails } from '../cards/guardrails.js';
 import type { DatabaseHandle } from '../db/client.js';
@@ -23,13 +30,26 @@ import { cards as cardsTable, columns, plans, type Card } from '../db/schema.js'
  *   discovered on the board a day later.
  */
 
+function readPlanPriority(value: unknown): CardPriority {
+  if (!isPriority(value)) {
+    throw new CardError(
+      `A card's priority must be one of ${PRIORITIES.join(', ')}.`,
+      400,
+      'priority',
+    );
+  }
+  return value;
+}
+
 export interface PlanCardInput {
   readonly title?: unknown;
   readonly body?: unknown;
   readonly goalCondition?: unknown;
   readonly guardrails?: unknown;
   readonly agentModel?: unknown;
+  readonly agentEffort?: unknown;
   readonly synthesisModel?: unknown;
+  readonly priority?: unknown;
   /** Titles of other cards in this same batch. */
   readonly dependsOn?: unknown;
 }
@@ -117,9 +137,14 @@ export function createPlan(handle: DatabaseHandle, boardId: string, input: PlanI
         goalCondition,
         ...(raw.guardrails === undefined ? {} : { guardrails: raw.guardrails }),
         ...(asString(raw.agentModel) === null ? {} : { agentModel: asString(raw.agentModel) }),
+        ...(asString(raw.agentEffort) === null ? {} : { agentEffort: asString(raw.agentEffort) }),
         ...(asString(raw.synthesisModel) === null
           ? {}
           : { synthesisModel: asString(raw.synthesisModel) }),
+        // Refused rather than defaulted. A planning agent that asked for a
+        // priority and silently got `normal` would leave the operator believing
+        // the batch was ordered when it was not.
+        ...(raw.priority === undefined ? {} : { priority: readPlanPriority(raw.priority) }),
       });
 
       created.push(card);
