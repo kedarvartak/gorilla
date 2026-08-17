@@ -92,6 +92,38 @@ similarity plus file-path overlap. Outcomes:
   reversed" is high-value information the operator would otherwise never see.
 - Otherwise: inserted.
 
+## Who pays
+
+Synthesis runs through the **Claude Code CLI**, not the Claude API. An operator
+running Claude Code has already bought the capacity to read their own sessions;
+requiring a separate `ANTHROPIC_API_KEY` charges twice for one piece of work and
+puts the ledger - the reason this product exists - behind a purchase. `claude -p`
+spends the quota that is already there.
+
+The mechanism is `claude --print --safe-mode --json-schema <schema>
+--output-format json --system-prompt <instructions> --tools ""`. Three flags
+carry the design:
+
+- `--safe-mode` disables hooks. This is a correctness requirement, not hygiene:
+  without it a synthesis call fires its own `Stop` hook into the board, which
+  triggers another synthesis, which fires another `Stop`. The recursion is
+  unbounded and it spends real quota. The call also runs with its working
+  directory outside the project, so the board's own hook configuration is not
+  discovered at all. Two independent guards, because this is the one failure in
+  the pipeline that costs money rather than a missing summary.
+- `--system-prompt` replaces the coding-agent prompt rather than appending to it.
+  Extraction is a reading task, and the default prompt is several thousand tokens
+  of instructions about editing files, paid for on every call.
+- `--tools ""` because extraction needs no tools. A synthesiser that can edit
+  files is a synthesiser that can be wrong in ways that matter.
+
+`--json-schema` gives the same structural guarantee as the forced tool call the
+API path uses, so `validate.ts` is unchanged and testable offline either way.
+
+`GORILLA_EXTRACTION=api` selects the API key instead, for a board running
+somewhere the CLI is not installed. `GORILLA_EXTRACTION=off` records mechanical
+entries only. Both are stated at startup and on the brief itself.
+
 ## Cost control
 
 An unbounded summarisation pipeline attached to an unbounded agent loop is an

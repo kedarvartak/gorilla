@@ -833,7 +833,7 @@ function extractionStateFor(context: AppContext, runIds: readonly string[]): Ext
   // "no decisions recorded" means "no decisions were made" is worse off than
   // before (R10).
   const note = !configured
-    ? 'Ledger is MECHANICAL ONLY: no extraction model is configured, so nothing here records what was decided or assumed. Set ANTHROPIC_API_KEY and restart the board.'
+    ? 'Ledger is MECHANICAL ONLY: extraction is switched off, so nothing here records what was decided or assumed. Unset GORILLA_EXTRACTION and restart the board to synthesise through the Claude Code CLI.'
     : lastOutcome !== null && !QUIET_OUTCOMES.has(lastOutcome)
       ? (lastNote ?? `Extraction last ended as ${lastOutcome}.`)
       : null;

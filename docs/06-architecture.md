@@ -84,7 +84,7 @@ reconnection semantics are built in, and it survives proxies without configurati
 | File watching | `chokidar` | Reliable cross-platform tailing |
 | Git | `simple-git` | Thin wrapper, no native build |
 | Process supervision | `execa` | Ergonomic child process handling with clean signal semantics |
-| Summarisation | Claude API via `@anthropic-ai/sdk`, Haiku 4.5 default with escalation | See doc 08 |
+| Summarisation | `claude -p` via the Claude Code CLI, Haiku 4.5 default with escalation | Runs on the quota the operator already has; a separate API key is a second bill for one piece of work. See doc 08 |
 | Testing | Vitest, plus a recorded-fixture hook replay harness | The hook stream is the system's real input and must be testable offline |
 
 Deliberately excluded: Next.js (no SSR requirement, and the API surface is small
