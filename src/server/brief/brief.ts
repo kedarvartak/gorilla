@@ -101,12 +101,20 @@ function sinceYouLastLooked(input: BriefInput): BriefSection {
 
   const lines: string[] = [];
 
+  // Reversals are never truncated: an operator who accepted something now false
+  // is the most dangerous state a card reaches, and there are rarely many.
   for (const entry of reversals) {
     lines.push(`REVERSED: ${statementOf(entry)}`);
   }
-  for (const entry of decisions) lines.push(`Decided: ${statementOf(entry)}`);
-  for (const entry of questions) lines.push(`Needs you: ${entry.statement}`);
-  for (const entry of risks) lines.push(`Risk: ${entry.statement}`);
+  for (const entry of decisions.slice(0, MAX_LINES_PER_SECTION)) {
+    lines.push(`Decided: ${statementOf(entry)}`);
+  }
+  for (const entry of questions.slice(0, MAX_LINES_PER_SECTION)) {
+    lines.push(`Needs you: ${entry.statement}`);
+  }
+  for (const entry of risks.slice(0, MAX_LINES_PER_SECTION)) {
+    lines.push(`Risk: ${entry.statement}`);
+  }
 
   const counted = reversals.length + decisions.length + questions.length + risks.length;
   if (counted < unseen.length) {
@@ -145,6 +153,20 @@ function stateOfTheWork(input: BriefInput): BriefSection {
   return { title: 'State of the work', lines, empty: false };
 }
 
+/**
+ * How many entries a section shows before it stops listing and starts counting.
+ *
+ * Not arbitrary. A run that failed badly produced 68 risks and 49 questions on
+ * one card, most of them paraphrases of "the agent retried instead of
+ * escalating". Deduplication cannot catch those - they share only structural
+ * words, and the threshold that would catch them would also collapse unrelated
+ * claims - so the brief has to refuse to print them instead.
+ *
+ * A brief that costs twenty minutes gets skipped entirely, which is the failure
+ * in doc 01 returning by a different route.
+ */
+export const MAX_LINES_PER_SECTION = 8;
+
 function listSection(
   title: string,
   entries: readonly StoredEntry[],
@@ -152,15 +174,23 @@ function listSection(
 ): BriefSection {
   if (entries.length === 0) return { title, lines: [emptyLine], empty: true };
 
-  return {
-    title,
-    lines: entries.map((entry) => {
-      const superseded =
-        entry.supersededBy !== null && entry.supersededBy !== undefined ? ' [superseded]' : '';
-      return `${statementOf(entry)}${superseded}`;
-    }),
-    empty: false,
-  };
+  const shown = entries.slice(0, MAX_LINES_PER_SECTION);
+  const lines = shown.map((entry) => {
+    const superseded =
+      entry.supersededBy !== null && entry.supersededBy !== undefined ? ' [superseded]' : '';
+    return `${statementOf(entry)}${superseded}`;
+  });
+
+  if (entries.length > shown.length) {
+    const hidden = entries.length - shown.length;
+    lines.push(
+      `…and ${String(hidden)} more not shown. A count this high usually means one run ` +
+        'repeated itself rather than that this much was decided; the entries are all ' +
+        'still on the card.',
+    );
+  }
+
+  return { title, lines, empty: false };
 }
 
 function blastRadius(input: BriefInput): BriefSection {

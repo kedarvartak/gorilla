@@ -7,6 +7,7 @@ import type { DatabaseHandle } from '../db/client.js';
 import { boards, cards, columns, runs } from '../db/schema.js';
 import type { PendingBindings } from '../binding/pending.js';
 import { describeVerify, runVerify, type VerifyResult } from '../verify/run.js';
+import { assessStall, DEFAULT_STALL, progressOf, type StallThresholds } from './stall.js';
 import { WorktreeManager } from '../worktree/manager.js';
 import {
   launch,
@@ -42,7 +43,11 @@ export type HaltReason =
   // The board ran the card's verify command and it did not pass.
   | 'verify-failed'
   // The card could not be given an isolated worktree to work in.
-  | 'no-workspace';
+  | 'no-workspace'
+  // The run stopped getting anywhere: refused calls, or silence.
+  | 'stalled'
+  // Copilot mode: the agent asked for something only the operator can give.
+  | 'needs-operator';
 
 export interface HaltState {
   readonly reason: HaltReason;
@@ -55,6 +60,7 @@ export interface HaltState {
 export interface BoardDispatchState {
   readonly mode: DispatchMode;
   readonly policy: QueuePolicy;
+  readonly autonomy: AgentAutonomy;
   readonly concurrency: number;
   /** Cards that finished and are waiting to be looked at. */
   readonly completed: readonly string[];
@@ -72,6 +78,7 @@ export interface DispatcherEvents {
 interface BoardState {
   mode: DispatchMode;
   policy: QueuePolicy;
+  autonomy: AgentAutonomy;
   concurrency: number;
   running: Map<string, RunningLaunch>;
   completed: Set<string>;
@@ -98,6 +105,27 @@ export const DEFAULT_CONCURRENCY = 1;
  */
 export type QueuePolicy = 'review' | 'unattended';
 
+/**
+ * What happens when a running agent needs the operator (doc 18).
+ *
+ * A separate axis from `QueuePolicy`, which governs what happens *between*
+ * cards. This governs what happens *inside* one.
+ *
+ * `copilot` stops the moment the agent asks for something - a permission it does
+ * not have, or an answer it cannot get - marks the card as needing you, and
+ * halts. You wake to "this card needs a decision" instead of a session that
+ * spent the night guessing or looping.
+ *
+ * `autopilot` lets the agent proceed on its own judgement and records the
+ * question for the morning. It is not "no supervision": stall detection halts
+ * either mode, because autopilot without it is exactly the twenty-five-hour
+ * retry loop that made this setting necessary.
+ */
+export type AgentAutonomy = 'copilot' | 'autopilot';
+
+/** Events that mean the agent is waiting on a human rather than working. */
+const ASKS_FOR_OPERATOR: ReadonlySet<string> = new Set(['PermissionRequest', 'Notification']);
+
 export class Dispatcher {
   readonly #boards = new Map<string, BoardState>();
   readonly #registry = new LaunchRegistry();
@@ -105,6 +133,9 @@ export class Dispatcher {
   readonly #worktrees = new Map<string, WorktreeManager>();
   readonly #pumping = new Set<string>();
   #executable: string | undefined;
+
+  /** Loosened in tests that need a stall detected without waiting minutes. */
+  stallThresholds: StallThresholds = DEFAULT_STALL;
 
   /** Overridden in tests; otherwise resolved from the card's worktree. */
   workspaceFor: ((cardId: string) => string | undefined) | undefined;
@@ -130,6 +161,10 @@ export class Dispatcher {
     const created: BoardState = {
       mode: 'manual',
       policy: 'review',
+      // Copilot by default. Autopilot is the mode that lets an agent decide
+      // something on the operator's behalf while they sleep, and that should be
+      // asked for rather than assumed.
+      autonomy: 'copilot',
       concurrency: DEFAULT_CONCURRENCY,
       running: new Map(),
       completed: new Set(),
@@ -144,6 +179,7 @@ export class Dispatcher {
     return {
       mode: state.mode,
       policy: state.policy,
+      autonomy: state.autonomy,
       concurrency: state.concurrency,
       running: [...state.running.keys()],
       completed: [...state.completed],
@@ -173,6 +209,12 @@ export class Dispatcher {
     this.#publish(boardId);
 
     if (policy === 'unattended') void this.pump(boardId);
+    return this.state(boardId);
+  }
+
+  setAutonomy(boardId: string, autonomy: AgentAutonomy): BoardDispatchState {
+    this.#stateFor(boardId).autonomy = autonomy;
+    this.#publish(boardId);
     return this.state(boardId);
   }
 
@@ -509,6 +551,68 @@ export class Dispatcher {
   }
 
   /** Whether the card's runs actually did anything. */
+  /**
+   * Watches a running card, from the hook path.
+   *
+   * Called for every event, so it must stay cheap: two indexed aggregates and a
+   * comparison. It exists because the checks in `#settle` only run when a session
+   * finishes, and the failure worth catching is the one that never finishes.
+   */
+  observe(runId: string, eventName: string, now = Date.now()): void {
+    const bound = this.#runningCardFor(runId);
+    if (bound === null) return;
+
+    const { boardId, cardId } = bound;
+    const state = this.#stateFor(boardId);
+
+    // Copilot: the agent has asked for something only the operator can give.
+    // Letting it continue means it either guesses or waits until morning.
+    if (state.autonomy === 'copilot' && ASKS_FOR_OPERATOR.has(eventName)) {
+      this.#stop(
+        boardId,
+        cardId,
+        'needs-operator',
+        `The agent raised ${eventName} and this board is in copilot mode, so it was stopped rather than left to decide on your behalf.`,
+      );
+      return;
+    }
+
+    const progress = progressOf(this.database.sqlite, runId);
+    if (progress === null) return;
+
+    const verdict = assessStall(progress, now, this.stallThresholds);
+    if (verdict.stalled) {
+      this.#stop(boardId, cardId, 'stalled', verdict.detail ?? 'The run stopped making progress.');
+    }
+  }
+
+  /** The board and card of a run this dispatcher is currently supervising. */
+  #runningCardFor(runId: string): { boardId: string; cardId: string } | null {
+    const run = this.database.db.select().from(runs).where(eq(runs.id, runId)).get();
+    if (run?.cardId === null || run?.cardId === undefined) return null;
+
+    for (const [boardId, state] of this.#boards) {
+      if (state.running.has(run.cardId)) return { boardId, cardId: run.cardId };
+    }
+    return null;
+  }
+
+  /**
+   * Cancels a run and halts, for a reason the run itself will not report.
+   *
+   * The cancel is what stops the money. The halt is what stops the queue piling
+   * later cards on top of a card that never worked.
+   */
+  #stop(boardId: string, cardId: string, reason: HaltReason, detail: string): void {
+    const card = getCard(this.database, cardId);
+
+    this.cancel(boardId, cardId);
+    updateCard(this.database, cardId, { status: 'blocked' });
+
+    this.#halt(boardId, { reason, cardId, cardTitle: card.title, detail, at: Date.now() });
+    this.#publish(boardId);
+  }
+
   #effectOf(cardId: string): { achievedNothing: boolean; unresolved: number } {
     const row = this.database.sqlite
       .prepare(

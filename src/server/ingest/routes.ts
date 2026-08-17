@@ -142,6 +142,11 @@ export function registerIngestRoutes(app: FastifyInstance, context: AppContext):
         payload,
       });
 
+      // Watches for a run that has stopped getting anywhere. Cheap enough for
+      // this path, and it is the only place that sees a run which never ends -
+      // the checks in the dispatcher's settle path never reach one of those.
+      context.dispatcher.observe(written.runId, event, receivedAt);
+
       // Published after the write, so a subscriber can never observe an event
       // the database does not have. The broadcaster swallows subscriber errors
       // so a stuck browser cannot slow the agent.

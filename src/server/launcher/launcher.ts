@@ -48,7 +48,21 @@ export interface LaunchOptions {
 }
 
 /** What a card gets when it does not choose. See the note in `launch`. */
-export const DEFAULT_PERMISSION_MODE = 'acceptEdits';
+/**
+ * The permission mode a dispatched card runs under.
+ *
+ * `acceptEdits` was the original choice and it was wrong for unattended work:
+ * it auto-accepts file edits and nothing else, so every `Bash` call waits for an
+ * approval that no headless session can ever receive. A card whose goal says
+ * "verified by running `npm test`" could not run a single command - measured the
+ * hard way, when one spent twenty-five hours retrying a blocked `npm install`.
+ *
+ * `bypassPermissions` is safe here for two specific reasons, neither of which is
+ * "we trust the agent": the card runs in its own git worktree, so the blast
+ * radius is one branch, and the card's guardrails are still written into the
+ * settings overlay as deny rules, which take precedence over the mode.
+ */
+export const DEFAULT_PERMISSION_MODE = 'bypassPermissions';
 
 export type LaunchOutcome = 'completed' | 'failed' | 'cancelled';
 

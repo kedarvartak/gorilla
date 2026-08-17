@@ -431,3 +431,20 @@ describe('unattended operation', () => {
     expect(dispatcher.resume(BOARD).completed).toHaveLength(0);
   });
 });
+
+describe('autonomy and stalls', () => {
+  it('defaults to copilot, because autopilot decides on the operator’s behalf', () => {
+    expect(dispatcher.state(BOARD).autonomy).toBe('copilot');
+  });
+
+  it('can be switched to autopilot', () => {
+    expect(dispatcher.setAutonomy(BOARD, 'autopilot').autonomy).toBe('autopilot');
+  });
+
+  it('ignores events for a run it is not supervising', () => {
+    // The observer runs on every hook delivery, including attached terminal
+    // sessions the board never launched.
+    expect(() => dispatcher.observe('no-such-run', 'Notification')).not.toThrow();
+    expect(dispatcher.state(BOARD).halted).toBeNull();
+  });
+});

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildBrief, renderBrief, type BriefInput } from '../src/server/brief/brief.js';
+import {
+  buildBrief,
+  MAX_LINES_PER_SECTION,
+  renderBrief,
+  type BriefInput,
+} from '../src/server/brief/brief.js';
 import {
   decideMerge,
   mergeCandidates,
@@ -268,5 +273,74 @@ describe('the rest of the brief', () => {
     expect(renderBrief(buildBrief(input({ branch: 'gorilla/ingest-1a2b' })))).toContain(
       'has not been merged',
     );
+  });
+});
+
+describe('a brief that would otherwise be unreadable', () => {
+  it('stops listing and starts counting past the cap', () => {
+    // A real run produced 68 risks, most of them paraphrases of one another.
+    // Deduplication cannot catch paraphrase, so the brief refuses to print them.
+    const many = Array.from({ length: 30 }, (_, index) => ({
+      id: `risk-${String(index)}`,
+      kind: 'risk' as const,
+      statement: `Attempt ${String(index)} was blocked and the agent retried instead of escalating.`,
+      sourceEventIds: [index + 1],
+      origin: 'model' as const,
+      supersededBy: null,
+    }));
+
+    const brief = buildBrief({
+      cardTitle: 'Stuck card',
+      cardStatus: 'blocked',
+      lastSeenAt: null,
+      entries: many,
+      entryTimes: {},
+      changedFiles: [],
+      changedButUnmentioned: [],
+      verify: null,
+      goalVerdict: null,
+      compactions: 0,
+      runCount: 1,
+    });
+
+    const section = brief.sections.find((s) => s.title === 'Risks and open questions');
+    expect(section).toBeDefined();
+    expect(section?.lines.length).toBeLessThanOrEqual(MAX_LINES_PER_SECTION + 1);
+
+    const tail = section?.lines[section.lines.length - 1] ?? '';
+    expect(tail).toContain('more not shown');
+    // Says what a high count usually means, rather than leaving the operator to
+    // conclude that this much was genuinely decided.
+    expect(tail).toContain('repeated itself');
+  });
+
+  it('never truncates reversals', () => {
+    const reversals = Array.from({ length: 12 }, (_, index) => ({
+      id: `rev-${String(index)}`,
+      kind: 'decision' as const,
+      statement: `Reversed decision number ${String(index)}.`,
+      sourceEventIds: [index + 1],
+      origin: 'model' as const,
+      supersededBy: 'later-entry',
+    }));
+
+    const brief = buildBrief({
+      cardTitle: 'Reversal heavy',
+      cardStatus: 'awaiting-review',
+      lastSeenAt: 1,
+      entries: reversals,
+      entryTimes: Object.fromEntries(reversals.map((entry) => [entry.id, 100])),
+      changedFiles: [],
+      changedButUnmentioned: [],
+      verify: null,
+      goalVerdict: null,
+      compactions: 0,
+      runCount: 1,
+    });
+
+    const since = brief.sections[0];
+    // An operator who accepted something now false is in the most dangerous
+    // state a card reaches; a cap there would hide exactly the wrong thing.
+    expect(since?.lines.filter((line) => line.startsWith('REVERSED:')).length).toBe(12);
   });
 });

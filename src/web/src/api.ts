@@ -61,6 +61,8 @@ export interface HaltState {
 export interface DispatchState {
   readonly mode: 'manual' | 'automatic';
   readonly policy: 'review' | 'unattended';
+  /** What happens inside a run when the agent needs the operator. */
+  readonly autonomy: 'copilot' | 'autopilot';
   readonly concurrency: number;
   readonly running: readonly string[];
   readonly completed: readonly string[];
@@ -141,7 +143,10 @@ export const api = {
 
   markSeen: (cardId: string) => request<Card>(`/api/cards/${cardId}/seen`, { method: 'POST' }),
 
-  setDispatch: (boardId: string, body: { mode?: string; concurrency?: number; policy?: string }) =>
+  setDispatch: (
+    boardId: string,
+    body: { mode?: string; concurrency?: number; policy?: string; autonomy?: string },
+  ) =>
     request<DispatchState>(`/api/boards/${boardId}/dispatch`, {
       method: 'POST',
       body: JSON.stringify(body),
