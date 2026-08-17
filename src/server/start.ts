@@ -11,6 +11,7 @@ import { boards } from './db/schema.js';
 import type { FixtureRecorder } from './fixtures/recorder.js';
 import { openDatabase, type DatabaseHandle } from './db/client.js';
 import { DEFAULT_HOST, DEFAULT_PORT } from './index.js';
+import type { ExtractionModel } from './ledger/model.js';
 
 export interface EnsuredBoard {
   readonly id: string;
@@ -53,6 +54,11 @@ export interface StartOptions {
   /** Defaults to true. Tests that assert on an empty board turn it off. */
   readonly ensureBoard?: boolean;
   readonly cwd?: string;
+  /**
+   * The extraction model. Left absent by tests and supplied by `serve` from the
+   * environment, so no test can spend money on a key the shell exported.
+   */
+  readonly extractionModel?: ExtractionModel;
 }
 
 export interface RunningServer {
@@ -79,6 +85,7 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
     database,
     logger: options.logger ?? true,
     ...(options.recorder === undefined ? {} : { recorder: options.recorder }),
+    ...(options.extractionModel === undefined ? {} : { extractionModel: options.extractionModel }),
   });
 
   await app.listen({ port, host });

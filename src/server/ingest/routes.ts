@@ -6,6 +6,7 @@ import type { AppContext } from '../app.js';
 import { boardForCwd, claim, inferCard, sessionStartContext } from '../binding/attach.js';
 import { getCard } from '../api/cards.js';
 import { canonicaliseCwd } from './binding.js';
+import { triggerFor } from '../ledger/service.js';
 
 /**
  * `POST /hooks/:event` - the hook path (doc 07).
@@ -77,6 +78,8 @@ export function registerIngestRoutes(app: FastifyInstance, context: AppContext):
   );
 
   app.post<{ Params: { event: string } }>('/hooks/:event', (request, reply) => {
+    /** Set by the write below, and read after the reply has been sent. */
+    let extractFor: string | null = null;
     const startedAt = performance.now();
     const receivedAt = Date.now();
     const payload = asRecord(request.body);
@@ -125,6 +128,10 @@ export function registerIngestRoutes(app: FastifyInstance, context: AppContext):
       const durationMs = performance.now() - startedAt;
       if (latencies.length < MAX_SAMPLES) latencies.push({ event, durationMs });
 
+      // Recorded, not started: extraction reads the transcript and may call an
+      // API, and this handler is in the agent's critical path (doc 06).
+      if (triggerFor(event) !== null) extractFor = written.runId;
+
       // Published after the write, so a subscriber can never observe an event
       // the database does not have. The broadcaster swallows subscriber errors
       // so a stuck browser cannot slow the agent.
@@ -169,6 +176,11 @@ export function registerIngestRoutes(app: FastifyInstance, context: AppContext):
     }
 
     void reply.code(200).send({});
+
+    // After the response. `Stop` and `PreCompact` close a window worth
+    // synthesising, and PreCompact's is the one whose content is about to stop
+    // existing - but neither may hold the agent up while we do it.
+    if (extractFor !== null) void context.extraction.enqueue(extractFor, event);
   });
 }
 

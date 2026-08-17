@@ -28,6 +28,13 @@ export interface BriefInput {
   readonly compactions: number;
   readonly runCount: number;
   readonly branch?: string | null;
+  /**
+   * Why the ledger looks the way it does, when it is not the full picture: no
+   * API key, an exhausted budget, a failed call. Rendered rather than returned
+   * as metadata, because a brief that is quietly mechanical-only reads exactly
+   * like one where the model found nothing worth saying (doc 06, R10).
+   */
+  readonly extractionNote?: string | null;
 }
 
 export interface BriefSection {
@@ -125,6 +132,14 @@ function stateOfTheWork(input: BriefInput): BriefSection {
 
   if (input.branch !== null && input.branch !== undefined && input.branch !== '') {
     lines.push(`Work is on branch ${input.branch} and has not been merged.`);
+  }
+
+  if (
+    input.extractionNote !== null &&
+    input.extractionNote !== undefined &&
+    input.extractionNote !== ''
+  ) {
+    lines.push(input.extractionNote);
   }
 
   return { title: 'State of the work', lines, empty: false };

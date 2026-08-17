@@ -7,8 +7,10 @@ import type { Card, GuardrailDetail } from './api.js';
 /**
  * Card detail (doc 09, screen 2).
  *
- * Three panes: specification, the record, and live state. The centre pane is
- * the mechanical ledger for now; Phase 2 replaces it with the brief.
+ * Three panes: specification, the brief, and live state. The centre pane is the
+ * answer to "what happened while I was away", so it leads with what is new and
+ * offers the raw entries only on request - a wall of entries is the volume
+ * problem this product exists to remove (doc 03).
  *
  * The specification rail must show each guardrail's enforcement kind. An
  * interface that presents an advisory rule as though it were enforced sends
@@ -42,6 +44,24 @@ interface VerifyReport {
   readonly exitCode: number | null;
   readonly output: string;
   readonly durationMs: number;
+}
+
+interface BriefSection {
+  readonly title: string;
+  readonly lines: readonly string[];
+  readonly empty: boolean;
+}
+
+interface Brief {
+  readonly headline: string;
+  readonly sections: readonly BriefSection[];
+  readonly unseenCount: number;
+  readonly nothingNew: boolean;
+  readonly extraction: {
+    readonly configured: boolean;
+    readonly tokensSpent: number;
+    readonly note: string | null;
+  };
 }
 
 interface Detail {
@@ -78,6 +98,8 @@ export function CardDetail({
   onClose: () => void;
 }): ReactElement {
   const [detail, setDetail] = useState<Detail | null>(null);
+  const [brief, setBrief] = useState<Brief | null>(null);
+  const [showEntries, setShowEntries] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [timelineRunId, setTimelineRunId] = useState<string | null>(null);
 
@@ -86,19 +108,28 @@ export function CardDetail({
 
     async function load(): Promise<void> {
       try {
-        const response = await fetch(`/api/cards/${cardId}/detail`);
-        if (!response.ok) throw new Error(`Could not load card: ${response.status}`);
-        const body = (await response.json()) as Detail;
+        const [detailResponse, briefResponse] = await Promise.all([
+          fetch(`/api/cards/${cardId}/detail`),
+          fetch(`/api/cards/${cardId}/brief`),
+        ]);
+
+        if (!detailResponse.ok) throw new Error(`Could not load card: ${detailResponse.status}`);
+        const body = (await detailResponse.json()) as Detail;
         if (!cancelled) setDetail(body);
+
+        // A brief that will not load must not hide the rest of the card.
+        if (briefResponse.ok && !cancelled) setBrief((await briefResponse.json()) as Brief);
+
+        // Marked seen only after the brief has been computed. The other order
+        // makes "since you last looked" permanently empty, because opening the
+        // card would move the line the brief is measured against.
+        await fetch(`/api/cards/${cardId}/seen`, { method: 'POST' });
       } catch (cause) {
         if (!cancelled) setError((cause as Error).message);
       }
     }
 
     void load();
-    // Opening a card is the operator looking at it, which is what the unseen
-    // badge is computed against.
-    void fetch(`/api/cards/${cardId}/seen`, { method: 'POST' });
 
     return () => {
       cancelled = true;
@@ -188,54 +219,103 @@ export function CardDetail({
           </>
         </Rail>
 
-        <Rail title={`Record (${entries.length} entries, ${detail.runs.length} run(s))`}>
+        <Rail
+          title={
+            brief === null
+              ? 'Brief'
+              : `Brief · ${brief.nothingNew ? 'nothing new' : `${brief.unseenCount} new`}`
+          }
+        >
           <>
-            {detail.verify === null ? null : (
-              <div
-                className={`mb-3 rounded border px-2 py-1.5 ${
-                  detail.verify.status === 'passed'
-                    ? 'border-ok/40 bg-ok/10 text-ok'
-                    : 'border-warn/40 bg-warn/10 text-warn'
-                }`}
-              >
+            {/* Verify output only when it did not pass. When it passed, the
+                brief's one line is enough and a green box is just noise. */}
+            {detail.verify === null || detail.verify.status === 'passed' ? null : (
+              <div className="mb-3 rounded border border-warn/40 bg-warn/10 px-2 py-1.5 text-warn">
                 {/* The board ran this. It does not depend on the agent
                     reporting honestly, which is the whole point (R10). */}
                 <div className="font-mono text-[11px]">{detail.verifyNote}</div>
-                {detail.verify.status === 'passed' ? null : (
-                  <pre className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap font-mono text-[10px] text-dim">
-                    {detail.verify.output}
-                  </pre>
-                )}
+                <pre className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap font-mono text-[10px] text-dim">
+                  {detail.verify.output}
+                </pre>
               </div>
             )}
 
-            {entries.length === 0 ? (
-              <p className="text-dim">
-                Nothing recorded yet. This is the mechanical ledger; the brief arrives in Phase 2.
-              </p>
+            {brief === null ? (
+              <p className="text-dim">The brief could not be loaded.</p>
             ) : (
-              <ul className="flex flex-col gap-2">
-                {entries.map((entry, index) => (
-                  <li key={`${entry.kind}-${index}`} className="border-l-2 border-line pl-2">
-                    <span
-                      className={`mr-1.5 font-mono text-[10px] uppercase ${
-                        KIND_COLOUR[entry.kind] ?? 'text-dim'
-                      }`}
-                    >
-                      {entry.kind}
-                    </span>
-                    <span className="text-text">{entry.statement}</span>
-                    {entry.detail === undefined ? null : (
-                      <div className="mt-0.5 font-mono text-[11px] text-dim">{entry.detail}</div>
-                    )}
-                    <div className="font-mono text-[10px] text-dim">
-                      {/* Every entry names its evidence; nothing here is
-                          unfalsifiable (doc 08). */}
-                      {entry.sourceEventIds.length} source event(s)
-                    </div>
-                  </li>
+              <>
+                {brief.extraction.note === null ? null : (
+                  <p className="mb-3 rounded border border-warn/40 bg-warn/10 px-2 py-1.5 text-[11px] text-warn">
+                    {brief.extraction.note}
+                  </p>
+                )}
+
+                {brief.sections.map((section) => (
+                  <div key={section.title} className="mb-3">
+                    <h4 className="mb-1 font-mono text-[11px] uppercase tracking-wider text-dim">
+                      {section.title}
+                    </h4>
+                    {section.lines.map((line, index) => (
+                      <p
+                        key={`${section.title}-${String(index)}`}
+                        className={`whitespace-pre-wrap leading-snug ${
+                          section.empty
+                            ? 'text-dim'
+                            : line.startsWith('REVERSED:')
+                              ? 'text-warn'
+                              : line.startsWith('Needs you:')
+                                ? 'text-accent'
+                                : 'text-text'
+                        }`}
+                      >
+                        {line}
+                      </p>
+                    ))}
+                  </div>
                 ))}
-              </ul>
+              </>
+            )}
+
+            {entries.length === 0 ? (
+              <></>
+            ) : (
+              <div className="border-t border-line pt-2">
+                <button
+                  type="button"
+                  className="font-mono text-[11px] text-info hover:underline"
+                  onClick={() => setShowEntries(!showEntries)}
+                >
+                  {showEntries ? 'hide' : 'show'} the {entries.length} underlying entr
+                  {entries.length === 1 ? 'y' : 'ies'}
+                </button>
+
+                {!showEntries ? null : (
+                  <ul className="mt-2 flex flex-col gap-2">
+                    {entries.map((entry, index) => (
+                      <li key={`${entry.kind}-${index}`} className="border-l-2 border-line pl-2">
+                        <span
+                          className={`mr-1.5 font-mono text-[10px] uppercase ${
+                            KIND_COLOUR[entry.kind] ?? 'text-dim'
+                          }`}
+                        >
+                          {entry.kind}
+                        </span>
+                        <span className="text-text">{entry.statement}</span>
+                        {entry.detail === undefined ? null : (
+                          <div className="mt-0.5 font-mono text-[11px] text-dim">
+                            {entry.detail}
+                          </div>
+                        )}
+                        <div className="font-mono text-[10px] text-dim">
+                          {/* Every entry names its evidence; nothing here is
+                              unfalsifiable (doc 08). */}
+                          {entry.sourceEventIds.length} source event(s)
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             )}
 
             {detail.realityNotes.length > 0 ? (

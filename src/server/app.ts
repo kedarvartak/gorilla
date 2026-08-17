@@ -19,6 +19,8 @@ import {
 } from './api/routes.js';
 import { Dispatcher } from './dispatch/dispatcher.js';
 import { PendingBindings } from './binding/pending.js';
+import { ExtractionService } from './ledger/service.js';
+import type { ExtractionModel } from './ledger/model.js';
 
 export interface AppOptions {
   readonly database: DatabaseHandle;
@@ -26,6 +28,12 @@ export interface AppOptions {
   readonly logger?: boolean;
   /** When set, every received hook event is also written to a fixture (T5). */
   readonly recorder?: FixtureRecorder;
+  /**
+   * The extraction model. Absent means mechanical entries only - and absent is
+   * the default deliberately, so that building an app never spends money
+   * because a key happened to be exported. `serve` supplies the real one.
+   */
+  readonly extractionModel?: ExtractionModel;
 }
 
 export interface AppContext {
@@ -35,6 +43,20 @@ export interface AppContext {
   readonly broadcaster: Broadcaster;
   readonly dispatcher: Dispatcher;
   readonly pending: PendingBindings;
+  readonly extraction: ExtractionService;
+}
+
+/**
+ * The context behind a built app.
+ *
+ * A WeakMap rather than a Fastify decorator: the routes already close over the
+ * context, so this exists purely so a test can reach the extraction service and
+ * await work that the hook path deliberately does not await.
+ */
+const contexts = new WeakMap<FastifyInstance, AppContext>();
+
+export function contextOf(app: FastifyInstance): AppContext | undefined {
+  return contexts.get(app);
 }
 
 export function buildApp(options: AppOptions): FastifyInstance {
@@ -54,6 +76,15 @@ export function buildApp(options: AppOptions): FastifyInstance {
     recorder: options.recorder,
     broadcaster,
     pending,
+    extraction: new ExtractionService({
+      database: options.database,
+      model: options.extractionModel,
+      events: {
+        // The interface refreshes the brief on this rather than polling: the
+        // entries appear seconds after the turn that produced them.
+        onExtracted: (summary) => broadcaster.publish('ledger', summary),
+      },
+    }),
     dispatcher: new Dispatcher(options.database, pending, {
       onStateChange: (boardId, state) => broadcaster.publish('dispatch-state', { boardId, state }),
       onRunStarted: (boardId, cardId, sessionId) =>
@@ -72,6 +103,9 @@ export function buildApp(options: AppOptions): FastifyInstance {
   // claude processes against the operator's repository with nothing watching.
   app.addHook('onClose', async () => {
     await context.dispatcher.shutdown();
+    // Entries already paid for are worth waiting for; the window they came
+    // from will not exist again.
+    await context.extraction.drain();
   });
 
   app.get('/health', () => ({ status: 'ok' }));
@@ -110,6 +144,8 @@ export function buildApp(options: AppOptions): FastifyInstance {
   registerReviewRoutes(app, context);
   registerBriefRoutes(app, context);
   registerWebRoutes(app);
+
+  contexts.set(app, context);
 
   return app;
 }

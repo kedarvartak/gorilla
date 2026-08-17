@@ -1,0 +1,245 @@
+import { randomUUID } from 'node:crypto';
+
+import { asc, eq } from 'drizzle-orm';
+
+import type { DatabaseHandle } from '../db/client.js';
+import { extractionCursors, ledgerEntries } from '../db/schema.js';
+import type { LedgerEntry } from './entries.js';
+import { mergeCandidates, type StoredEntry } from './dedupe.js';
+
+/**
+ * Persistence for ledger entries (doc 08).
+ *
+ * Mechanical entries are derived on demand and need no storage. Model entries
+ * do: they were paid for, and recomputing them when a card is opened would
+ * spend money answering a question already answered.
+ *
+ * Insertion goes through dedupe, so a statement that arrives twice folds into
+ * the entry it repeats and a statement that reverses one supersedes rather than
+ * replaces it.
+ */
+
+function parseArray(raw: string): unknown[] {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function toStored(row: typeof ledgerEntries.$inferSelect): StoredEntry {
+  return {
+    id: row.id,
+    kind: row.kind,
+    statement: row.statement,
+    ...(row.detail === null ? {} : { detail: row.detail }),
+    ...(row.alternative === null ? {} : { alternative: row.alternative }),
+    filePaths: parseArray(row.filePaths).filter((path): path is string => typeof path === 'string'),
+    sourceEventIds: parseArray(row.sourceEventIds).filter(
+      (id): id is number => typeof id === 'number',
+    ),
+    origin: row.origin,
+    ...(row.confidence === null ? {} : { confidence: row.confidence / 100 }),
+    ...(row.model === null ? {} : { model: row.model }),
+    supersededBy: row.supersededBy,
+  };
+}
+
+export function storedEntriesFor(handle: DatabaseHandle, cardId: string): StoredEntry[] {
+  return handle.db
+    .select()
+    .from(ledgerEntries)
+    .where(eq(ledgerEntries.cardId, cardId))
+    .orderBy(asc(ledgerEntries.createdAt))
+    .all()
+    .map(toStored);
+}
+
+export function entryTimesFor(handle: DatabaseHandle, cardId: string): Record<string, number> {
+  const times: Record<string, number> = {};
+
+  for (const row of handle.db
+    .select({ id: ledgerEntries.id, createdAt: ledgerEntries.createdAt })
+    .from(ledgerEntries)
+    .where(eq(ledgerEntries.cardId, cardId))
+    .all()) {
+    times[row.id] = row.createdAt;
+  }
+
+  return times;
+}
+
+export interface RecordResult {
+  readonly inserted: number;
+  readonly duplicates: number;
+  readonly supersessions: number;
+}
+
+/**
+ * Records extracted entries against a card.
+ *
+ * One transaction, because a half-recorded batch would leave the dedupe pool
+ * inconsistent with what the next window compares against.
+ */
+export function recordEntries(
+  handle: DatabaseHandle,
+  cardId: string,
+  runId: string,
+  candidates: readonly LedgerEntry[],
+  now = Date.now(),
+): RecordResult {
+  if (candidates.length === 0) return { inserted: 0, duplicates: 0, supersessions: 0 };
+
+  const existing = storedEntriesFor(handle, cardId);
+  const merged = mergeCandidates(candidates, existing);
+
+  handle.sqlite.transaction(() => {
+    // Folded sources first: a duplicate raises the evidence behind the entry it
+    // repeats rather than adding a line nobody needs to read.
+    for (const [id, extra] of Object.entries(merged.foldedSources)) {
+      const row = handle.db.select().from(ledgerEntries).where(eq(ledgerEntries.id, id)).get();
+      if (row === undefined) continue;
+
+      const combined = [
+        ...new Set([
+          ...parseArray(row.sourceEventIds).filter((v): v is number => typeof v === 'number'),
+          ...extra,
+        ]),
+      ];
+
+      handle.db
+        .update(ledgerEntries)
+        .set({ sourceEventIds: JSON.stringify(combined) })
+        .where(eq(ledgerEntries.id, id))
+        .run();
+    }
+
+    for (const entry of merged.inserted) {
+      const id = randomUUID();
+
+      handle.db
+        .insert(ledgerEntries)
+        .values({
+          id,
+          cardId,
+          runId,
+          kind: entry.kind,
+          statement: entry.statement,
+          detail: entry.detail ?? null,
+          alternative: entry.alternative ?? null,
+          filePaths: JSON.stringify(entry.filePaths ?? []),
+          sourceEventIds: JSON.stringify(entry.sourceEventIds),
+          origin: entry.origin,
+          // Stored as an integer percentage: SQLite has no decimal type worth
+          // the trouble, and one percent is finer than the figure deserves.
+          confidence: entry.confidence === undefined ? null : Math.round(entry.confidence * 100),
+          model: entry.model ?? null,
+          createdAt: now,
+        })
+        .run();
+
+      // A reversal marks the entry it contradicts rather than removing it.
+      const supersession = merged.supersessions.find(
+        (decision) => decision.entry.statement === entry.statement,
+      );
+
+      if (supersession?.relatedId !== undefined) {
+        handle.db
+          .update(ledgerEntries)
+          .set({ supersededBy: id })
+          .where(eq(ledgerEntries.id, supersession.relatedId))
+          .run();
+      }
+    }
+  })();
+
+  return {
+    inserted: merged.inserted.length,
+    duplicates: merged.duplicates.length,
+    supersessions: merged.supersessions.length,
+  };
+}
+
+export interface CursorState {
+  readonly throughSeq: number;
+  readonly tokensSpent: number;
+  readonly lastOutcome: string | null;
+  readonly lastNote: string | null;
+}
+
+export function cursorFor(handle: DatabaseHandle, runId: string): CursorState {
+  const row = handle.db
+    .select()
+    .from(extractionCursors)
+    .where(eq(extractionCursors.runId, runId))
+    .get();
+
+  return row === undefined
+    ? { throughSeq: 0, tokensSpent: 0, lastOutcome: null, lastNote: null }
+    : {
+        throughSeq: row.throughSeq,
+        tokensSpent: row.tokensSpent,
+        lastOutcome: row.lastOutcome,
+        lastNote: row.lastNote,
+      };
+}
+
+/**
+ * Moves the cursor, never backwards.
+ *
+ * The clamp is not defensive tidiness. Both figures are monotonic facts - the
+ * furthest window already extracted, and the money already spent - and a write
+ * computed from a stale read would rewind them, causing a window to be extracted
+ * and paid for a second time. Two writers on one run is not the normal case, but
+ * the cost of getting it wrong is a duplicate charge rather than a wrong pixel.
+ */
+export function advanceCursor(
+  handle: DatabaseHandle,
+  runId: string,
+  update: { throughSeq: number; tokensSpent: number; outcome: string; note?: string | undefined },
+  now = Date.now(),
+): void {
+  const current = cursorFor(handle, runId);
+  const throughSeq = Math.max(current.throughSeq, update.throughSeq);
+  const tokensSpent = Math.max(current.tokensSpent, update.tokensSpent);
+
+  handle.db
+    .insert(extractionCursors)
+    .values({
+      runId,
+      throughSeq,
+      tokensSpent,
+      lastOutcome: update.outcome,
+      lastNote: update.note ?? null,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: extractionCursors.runId,
+      set: {
+        throughSeq,
+        tokensSpent,
+        lastOutcome: update.outcome,
+        lastNote: update.note ?? null,
+        updatedAt: now,
+      },
+    })
+    .run();
+}
+
+/** The operator's judgement, which the repair path in doc 12 draws only from. */
+export function setOperatorStatus(
+  handle: DatabaseHandle,
+  entryId: string,
+  status: 'unreviewed' | 'accepted' | 'rejected' | 'corrected',
+  statement?: string,
+): void {
+  handle.db
+    .update(ledgerEntries)
+    .set({
+      operatorStatus: status,
+      ...(statement === undefined ? {} : { statement }),
+    })
+    .where(eq(ledgerEntries.id, entryId))
+    .run();
+}

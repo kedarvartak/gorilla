@@ -15,6 +15,13 @@
       "when": 1786870522001,
       "tag": "0001_cards",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1786969955194,
+      "tag": "0002_ledger",
+      "breakpoints": true
     }
   ]
 }

@@ -28,6 +28,7 @@ import { checkReality, describeReality } from '../ledger/reality.js';
 import { describeVerify } from '../verify/run.js';
 import { buildBrief, renderBrief } from '../brief/brief.js';
 import type { StoredEntry } from '../ledger/dedupe.js';
+import { cursorFor, entryTimesFor, storedEntriesFor } from '../ledger/store.js';
 import { describeMergeReport, mergeBranches } from '../review/merge.js';
 
 /**
@@ -198,6 +199,12 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
           ...(body['agentModel'] === undefined
             ? {}
             : { agentModel: body['agentModel'] as string | null }),
+          // Editable for the same reason `agentModel` is: the model that reads a
+          // card's history is a per-card choice, and creation is not the only
+          // moment the operator makes it.
+          ...(body['synthesisModel'] === undefined
+            ? {}
+            : { synthesisModel: body['synthesisModel'] as string | null }),
           ...(body['status'] === undefined ? {} : { status: body['status'] as Card['status'] }),
         });
 
@@ -784,12 +791,56 @@ export function registerReviewRoutes(app: FastifyInstance, context: AppContext):
 }
 
 /**
- * The brief (U5).
+ * The brief (U5, W1).
  *
- * Built from the mechanical ledger today; model entries fold in through the
- * same shape once extraction runs on a schedule. The endpoint exists now so the
- * interface, the digest and any export read one thing rather than three.
+ * Two sources, one shape. Mechanical entries are derived from the events on
+ * every request, because they are free and always current. Model entries were
+ * paid for and are read from storage. Both are `StoredEntry`, so nothing below
+ * this line knows or cares which is which - apart from the note that says when
+ * the second source is missing.
  */
+export interface ExtractionState {
+  /** False when the board has no extraction model, which the brief must say. */
+  readonly configured: boolean;
+  readonly tokensSpent: number;
+  readonly lastOutcome: string | null;
+  /** Present only when the ledger is not the full picture. */
+  readonly note: string | null;
+}
+
+/** Outcomes that are the pipeline working correctly and need no explanation. */
+const QUIET_OUTCOMES: ReadonlySet<string> = new Set(['extracted', 'cached', 'skipped']);
+
+function extractionStateFor(context: AppContext, runIds: readonly string[]): ExtractionState {
+  let tokensSpent = 0;
+  let lastOutcome: string | null = null;
+  let lastNote: string | null = null;
+
+  for (const runId of runIds) {
+    const cursor = cursorFor(context.database, runId);
+    tokensSpent += cursor.tokensSpent;
+
+    if (cursor.lastOutcome !== null) {
+      lastOutcome = cursor.lastOutcome;
+      lastNote = cursor.lastNote;
+    }
+  }
+
+  const configured = context.extraction.configured;
+
+  // The unconfigured case outranks any per-window note: without a model the
+  // ledger holds no decisions or assumptions at all, and an operator who thinks
+  // "no decisions recorded" means "no decisions were made" is worse off than
+  // before (R10).
+  const note = !configured
+    ? 'Ledger is MECHANICAL ONLY: no extraction model is configured, so nothing here records what was decided or assumed. Set ANTHROPIC_API_KEY and restart the board.'
+    : lastOutcome !== null && !QUIET_OUTCOMES.has(lastOutcome)
+      ? (lastNote ?? `Extraction last ended as ${lastOutcome}.`)
+      : null;
+
+  return { configured, tokensSpent, lastOutcome, note };
+}
+
 export function registerBriefRoutes(app: FastifyInstance, context: AppContext): void {
   app.get<{ Params: { cardId: string } }>('/api/cards/:cardId/brief', async (request, reply) => {
     try {
@@ -836,6 +887,17 @@ export function registerBriefRoutes(app: FastifyInstance, context: AppContext): 
         changed.push(...ledger.changed);
       }
 
+      // Model entries: recorded once, when the window that produced them was
+      // still readable. Their ids are real rows, so the operator's accept and
+      // reject survive; the mechanical ids above are derived and do not.
+      entries.push(...storedEntriesFor(context.database, card.id));
+      Object.assign(entryTimes, entryTimesFor(context.database, card.id));
+
+      const extraction = extractionStateFor(
+        context,
+        cardRuns.map((run) => run.id),
+      );
+
       const compactions = (
         context.database.sqlite
           .prepare(
@@ -876,9 +938,10 @@ export function registerBriefRoutes(app: FastifyInstance, context: AppContext): 
         compactions,
         runCount: cardRuns.length,
         branch: workspace?.branch ?? null,
+        extractionNote: extraction.note,
       });
 
-      return reply.send({ ...brief, markdown: renderBrief(brief) });
+      return reply.send({ ...brief, markdown: renderBrief(brief), extraction });
     } catch (error) {
       return fail(reply, error);
     }
