@@ -46,6 +46,14 @@ Put constraints in the \`guardrails\` object. Know which are real:
 - \`scope\` is advisory. \`verify\` is a command the board runs itself.
 - \`maxTurns\` is appended to the goal condition.
 
+\`priority\` is \`high\`, \`normal\` (the default) or \`low\`, and it genuinely
+reorders dispatch within a column - it is not a label. Use \`high\` only for
+cards that should jump the queue, or it means nothing.
+
+\`dependsOn\` resolves by title **within this batch only**. To depend on a card
+from an earlier plan, post first and then add the edge with
+\`POST /api/cards/<id>/dependencies\`.
+
 ## Post it
 
 \`\`\`bash
@@ -66,6 +74,7 @@ curl -sS -X POST ${url} \\
           "maxTurns": 20
         },
         "agentModel": "sonnet",
+        "priority": "high",
         "dependsOn": ["Title of another card in this batch"]
       }
     ]

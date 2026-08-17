@@ -212,6 +212,18 @@ export const cards = sqliteTable(
       .default('idle'),
 
     /**
+     * Dispatch order within a Ready column.
+     *
+     * Not decoration. `dispatchableCards` orders by this before position, so a
+     * high-priority card genuinely runs first. A chip that said "priority" while
+     * the queue ignored it would be a label the operator trusted and the system
+     * did not honour, which is R10 in a different costume.
+     */
+    priority: text('priority', { enum: ['high', 'normal', 'low'] })
+      .notNull()
+      .default('normal'),
+
+    /**
      * When the operator last opened this card. The single field the "since you
      * last looked" section is computed against, and the most direct answer this
      * schema holds to the problem in doc 01.
@@ -227,6 +239,7 @@ export const cards = sqliteTable(
     index('cards_column_position').on(table.columnId, table.position),
     index('cards_status').on(table.status),
     index('cards_plan').on(table.planId),
+    index('cards_priority').on(table.priority),
   ],
 );
 

@@ -25,6 +25,8 @@ export interface Card {
   readonly goalCondition: string | null;
   /** Reaches `claude --model` for this card's run. Null means the board default. */
   readonly agentModel: string | null;
+  /** Reorders the dispatch queue within a Ready column; not decoration. */
+  readonly priority: 'high' | 'normal' | 'low';
   /** Reaches `claude --effort`. */
   readonly agentEffort: string | null;
   /** Used only for windows that escalate - compaction, and manual re-extraction. */
@@ -108,10 +110,10 @@ export const api = {
   cards: (boardId: string) => request<Card[]>(`/api/boards/${boardId}/cards`),
   dispatchState: (boardId: string) => request<DispatchState>(`/api/boards/${boardId}/dispatch`),
 
-  createCard: (boardId: string, title: string) =>
+  createCard: (boardId: string, title: string, priority: Card['priority'] = 'normal') =>
     request<Card>(`/api/boards/${boardId}/cards`, {
       method: 'POST',
-      body: JSON.stringify({ title }),
+      body: JSON.stringify({ title, priority }),
     }),
 
   moveCard: (cardId: string, columnId: string, index: number) =>
@@ -130,6 +132,7 @@ export const api = {
       agentModel: string | null;
       agentEffort: string | null;
       synthesisModel: string | null;
+      priority: Card['priority'];
       status: Card['status'];
     }>,
   ) => request<Card>(`/api/cards/${cardId}`, { method: 'PATCH', body: JSON.stringify(body) }),

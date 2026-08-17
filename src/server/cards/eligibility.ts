@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import type { Db } from '../db/client.js';
 import { cardDependencies, cards, columns } from '../db/schema.js';
@@ -82,9 +82,19 @@ export function canMoveTo(db: Db, cardId: string, columnId: string): MoveDecisio
 }
 
 /**
+ * Ordering rank for a card's priority. SQL rather than JavaScript so the sort
+ * happens in the same query as the filter and "the next card" has one
+ * definition.
+ */
+const PRIORITY_RANK = sql`CASE ${cards.priority} WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END`;
+
+/**
  * Cards eligible for dispatch: in a Ready column, idle, and unblocked.
- * Ordered by column position then card position, so "the next one" is
- * well-defined rather than arbitrary.
+ *
+ * Ordered by column, then priority, then card position - so "the next one" is
+ * well-defined, and a card marked high priority genuinely runs before its
+ * neighbours. Priority that did not reorder the queue would be a label the
+ * operator trusted and the system ignored (R10).
  */
 export function dispatchableCards(db: Db, boardId: string): { id: string; title: string }[] {
   const ready = db
@@ -92,7 +102,7 @@ export function dispatchableCards(db: Db, boardId: string): { id: string; title:
     .from(cards)
     .innerJoin(columns, eq(cards.columnId, columns.id))
     .where(and(eq(cards.boardId, boardId), eq(columns.isReady, true), eq(cards.status, 'idle')))
-    .orderBy(columns.position, cards.position)
+    .orderBy(columns.position, PRIORITY_RANK, cards.position)
     .all();
 
   return ready.filter((card) => blockersFor(db, card.id).length === 0);

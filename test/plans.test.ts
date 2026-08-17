@@ -224,3 +224,35 @@ describe('the /gorilla:plan command', () => {
     expect(planCommand('http://127.0.0.1:4300', 'board-9')).toContain('/api/boards/board-9/plans');
   });
 });
+
+describe('priority in a plan', () => {
+  it('carries a per-card priority through to the board', async () => {
+    const posted = await postPlan([
+      { title: 'Urgent one', goalCondition: GOOD_CONDITION, priority: 'high' },
+      { title: 'Ordinary one', goalCondition: GOOD_CONDITION },
+    ]);
+
+    expect(posted.status).toBe(201);
+
+    const listed = await app.inject({ method: 'GET', url: `/api/boards/${boardId}/cards` });
+    const byTitle = new Map(
+      (listed.json() as { title: string; priority: string }[]).map((card) => [
+        card.title,
+        card.priority,
+      ]),
+    );
+
+    expect(byTitle.get('Urgent one')).toBe('high');
+    expect(byTitle.get('Ordinary one')).toBe('normal');
+  });
+
+  it('refuses an unknown priority rather than quietly defaulting it', async () => {
+    // A planning agent that asked for a priority and silently got `normal`
+    // would leave the operator believing the batch was ordered when it was not.
+    const refused = await postPlan([
+      { title: 'Nope', goalCondition: GOOD_CONDITION, priority: 'urgent' },
+    ]);
+
+    expect(refused.status).toBe(400);
+  });
+});

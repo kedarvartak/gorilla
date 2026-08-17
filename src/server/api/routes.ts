@@ -18,8 +18,11 @@ import {
   listCards,
   markSeen,
   moveCard,
+  PRIORITIES,
   removeDependency,
   updateCard,
+  isPriority,
+  type CardPriority,
 } from './cards.js';
 import { createPlan, getPlan, guardrailNote } from './plans.js';
 import { claim, claimableCards, mergeCard } from '../binding/attach.js';
@@ -53,6 +56,20 @@ function fail(reply: FastifyReply, error: unknown): FastifyReply {
 /** Guardrails are stored as JSON; the interface wants them parsed and described. */
 function publish(context: AppContext, event: string, data: unknown): void {
   context.broadcaster.publish(event, data);
+}
+
+/**
+ * Refuses an unknown priority rather than storing it.
+ *
+ * The chip reorders the dispatch queue, so a value the ordering does not
+ * recognise would silently sort as low - a card the operator marked urgent
+ * running last, with nothing to explain why.
+ */
+function readPriority(value: unknown): CardPriority {
+  if (!isPriority(value)) {
+    throw new CardError(`Priority must be one of ${PRIORITIES.join(', ')}.`, 400, 'priority');
+  }
+  return value;
 }
 
 function present(card: Card): Record<string, unknown> {
@@ -161,6 +178,7 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
           ...(body['agentEffort'] === undefined
             ? {}
             : { agentEffort: body['agentEffort'] as string | null }),
+          ...(body['priority'] === undefined ? {} : { priority: readPriority(body['priority']) }),
         });
 
         publish('card-created', present(card));
@@ -213,6 +231,7 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
           ...(body['agentEffort'] === undefined
             ? {}
             : { agentEffort: body['agentEffort'] as string | null }),
+          ...(body['priority'] === undefined ? {} : { priority: readPriority(body['priority']) }),
           ...(body['status'] === undefined ? {} : { status: body['status'] as Card['status'] }),
         });
 

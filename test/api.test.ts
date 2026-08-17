@@ -491,3 +491,35 @@ describe('per-card model preference', () => {
     expect(card.body.agentEffort).toBe('max');
   });
 });
+
+describe('priority over the API', () => {
+  it('is set at creation and shown on the card', async () => {
+    const created = await json<{ id: string; priority: string }>(
+      'POST',
+      `/api/boards/${boardId}/cards`,
+      { title: 'Urgent thing', priority: 'high' },
+    );
+
+    expect(created.body.priority).toBe('high');
+  });
+
+  it('refuses an unknown priority rather than storing it', async () => {
+    const refused = await json<{ error: string; field: string }>(
+      'POST',
+      `/api/boards/${boardId}/cards`,
+      { title: 'Bad priority', priority: 'urgent' },
+    );
+
+    expect(refused.status).toBe(400);
+    expect(refused.body.field).toBe('priority');
+    expect(refused.body.error).toContain('high, normal, low');
+  });
+
+  it('can be changed later', async () => {
+    const id = await makeCard('Promote me');
+    const patched = await json<{ priority: string }>('PATCH', `/api/cards/${id}`, {
+      priority: 'high',
+    });
+    expect(patched.body.priority).toBe('high');
+  });
+});
