@@ -14,7 +14,12 @@ import {
   triggerFor,
 } from '../src/server/ledger/service.js';
 import { claudeCodeExtractionModel, parseCliResponse } from '../src/server/ledger/cli-model.js';
-import { advanceCursor, cursorFor, storedEntriesFor } from '../src/server/ledger/store.js';
+import {
+  advanceCursor,
+  cursorFor,
+  setOperatorStatus,
+  storedEntriesFor,
+} from '../src/server/ledger/store.js';
 import type { ExtractionModel, ExtractionRequest } from '../src/server/ledger/model.js';
 
 /**
@@ -207,6 +212,22 @@ describe('extracting a run', () => {
     expect(entries[0]?.statement).toContain('SQLite');
     expect(entries[0]?.origin).toBe('model');
     expect(entries[0]?.alternative).toBe('flat JSON files on disk');
+  });
+
+  it('reads back the operator judgement on an entry', async () => {
+    const runId = await boundRun();
+    await aTurnOfWork('session-1');
+    await hook('Stop', 'session-1');
+
+    await serviceWith(fakeModel([DECISION])).enqueue(runId, 'Stop');
+
+    // A fresh entry is unreviewed, and the status has to survive the round trip:
+    // without it nothing downstream can tell judged from merely recorded.
+    const before = storedEntriesFor(database, cardId);
+    expect(before[0]?.operatorStatus).toBe('unreviewed');
+
+    setOperatorStatus(database, before[0]?.id ?? '', 'accepted');
+    expect(storedEntriesFor(database, cardId)[0]?.operatorStatus).toBe('accepted');
   });
 
   it('puts the events and the agent narration in the same window', async () => {

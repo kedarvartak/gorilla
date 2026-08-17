@@ -4,7 +4,7 @@ import { asc, eq } from 'drizzle-orm';
 
 import type { DatabaseHandle } from '../db/client.js';
 import { extractionCursors, ledgerEntries } from '../db/schema.js';
-import type { LedgerEntry } from './entries.js';
+import type { LedgerEntry, OperatorStatus } from './entries.js';
 import { mergeCandidates, type StoredEntry } from './dedupe.js';
 
 /**
@@ -43,6 +43,9 @@ function toStored(row: typeof ledgerEntries.$inferSelect): StoredEntry {
     ...(row.confidence === null ? {} : { confidence: row.confidence / 100 }),
     ...(row.model === null ? {} : { model: row.model }),
     supersededBy: row.supersededBy,
+    // Carried, not derived: without it nothing downstream can tell an entry the
+    // operator has already judged from one still waiting to be read.
+    operatorStatus: row.operatorStatus,
   };
 }
 
@@ -231,7 +234,7 @@ export function advanceCursor(
 export function setOperatorStatus(
   handle: DatabaseHandle,
   entryId: string,
-  status: 'unreviewed' | 'accepted' | 'rejected' | 'corrected',
+  status: OperatorStatus,
   statement?: string,
 ): void {
   handle.db
