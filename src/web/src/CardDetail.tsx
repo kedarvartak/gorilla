@@ -180,12 +180,15 @@ function FieldSelect({
   value,
   options,
   title,
+  neutralLabel = 'board default',
   onPick,
 }: {
   label: string;
   value: string | null;
   options: readonly string[];
   title: string;
+  /** What "unset" means for this field; not every field defers to the board. */
+  neutralLabel?: string;
   onPick: (value: string | null) => void;
 }): ReactElement {
   return (
@@ -200,7 +203,7 @@ function FieldSelect({
           aria-label={label}
           onChange={(changed) => onPick(changed.target.value === '' ? null : changed.target.value)}
         >
-          <option value="">board default</option>
+          <option value="">{neutralLabel}</option>
           {options.map((option) => (
             <option key={option} value={option}>
               {option}
@@ -468,6 +471,16 @@ export function CardDetail({
             )}
 
             <dl className="mb-3 grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1 font-mono text-[11px]">
+              <FieldSelect
+                label="priority"
+                value={detail.card.priority === 'normal' ? null : detail.card.priority}
+                options={['high', 'low']}
+                title="Reorders the dispatch queue within this card's column."
+                neutralLabel="normal"
+                onPick={(priority) =>
+                  patch({ priority: (priority ?? 'normal') as Card['priority'] })
+                }
+              />
               <FieldSelect
                 label="agent"
                 value={detail.card.agentModel}

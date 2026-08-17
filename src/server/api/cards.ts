@@ -38,7 +38,15 @@ export interface CreateCardInput {
   readonly agentEffort?: string | null;
   readonly permissionMode?: string | null;
   readonly synthesisModel?: string | null;
+  readonly priority?: CardPriority;
   readonly planId?: string | null;
+}
+
+export const PRIORITIES = ['high', 'normal', 'low'] as const;
+export type CardPriority = (typeof PRIORITIES)[number];
+
+export function isPriority(value: unknown): value is CardPriority {
+  return typeof value === 'string' && (PRIORITIES as readonly string[]).includes(value);
 }
 
 function siblingsOf(handle: DatabaseHandle, columnId: string): { id: string; position: number }[] {
@@ -98,6 +106,7 @@ export function createCard(handle: DatabaseHandle, input: CreateCardInput): Card
       agentEffort: input.agentEffort ?? null,
       permissionMode: input.permissionMode ?? null,
       synthesisModel: input.synthesisModel ?? null,
+      priority: input.priority ?? 'normal',
       createdAt: now,
       updatedAt: now,
     })
@@ -130,6 +139,7 @@ export interface UpdateCardInput {
   readonly agentEffort?: string | null;
   readonly permissionMode?: string | null;
   readonly synthesisModel?: string | null;
+  readonly priority?: CardPriority;
   readonly status?: Card['status'];
 }
 
@@ -153,6 +163,7 @@ export function updateCard(handle: DatabaseHandle, cardId: string, input: Update
       ...(input.agentEffort === undefined ? {} : { agentEffort: input.agentEffort }),
       ...(input.permissionMode === undefined ? {} : { permissionMode: input.permissionMode }),
       ...(input.synthesisModel === undefined ? {} : { synthesisModel: input.synthesisModel }),
+      ...(input.priority === undefined ? {} : { priority: input.priority }),
       ...(input.status === undefined ? {} : { status: input.status }),
       updatedAt: Date.now(),
     })

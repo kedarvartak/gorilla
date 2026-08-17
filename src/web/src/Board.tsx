@@ -97,6 +97,7 @@ export function Board(): ReactElement {
   const [live, setLive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState('');
+  const [newPriority, setNewPriority] = useState<Card['priority']>('normal');
   const [openCardId, setOpenCardId] = useState<string | null>(null);
   const [runnable, setRunnable] = useState<ReadonlySet<string>>(new Set());
 
@@ -206,7 +207,7 @@ export function Board(): ReactElement {
   async function addCard(): Promise<void> {
     if (board === null || title.trim() === '') return;
     try {
-      await api.createCard(board.id, title.trim());
+      await api.createCard(board.id, title.trim(), newPriority);
       setTitle('');
     } catch (cause) {
       setError((cause as Error).message);
@@ -310,6 +311,19 @@ export function Board(): ReactElement {
         </label>
 
         <div className="ml-auto flex items-center gap-2">
+          {/* Set at creation, because priority is a statement about the batch
+              and the moment you are describing the work is when you know it. */}
+          <select
+            className="rounded border border-line bg-panel-2 px-1 py-1 text-text"
+            value={newPriority}
+            aria-label="Priority for the new card"
+            title="High and low reorder the dispatch queue within a column."
+            onChange={(changed) => setNewPriority(changed.target.value as Card['priority'])}
+          >
+            <option value="high">high</option>
+            <option value="normal">normal</option>
+            <option value="low">low</option>
+          </select>
           <input
             className="w-56 rounded border border-line bg-panel-2 px-2 py-1 text-text placeholder:text-dim"
             placeholder="New card title"

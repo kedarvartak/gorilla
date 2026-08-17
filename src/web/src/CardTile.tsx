@@ -59,10 +59,31 @@ export function CardTile({
       {...attributes}
       {...listeners}
       onDoubleClick={() => onOpen(card)}
-      aria-label={`${card.title}, ${status.label}${unseen ? ', unseen changes' : ''}`}
+      aria-label={`${card.title}, ${status.label}${
+        card.priority === 'normal' ? '' : `, ${card.priority} priority`
+      }${unseen ? ', unseen changes' : ''}`}
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="text-text leading-snug">{card.title}</span>
+        <span className="text-text leading-snug">
+          {/* Priority sits before the title because it changes what runs next,
+              and the operator scans titles. `normal` shows nothing: a chip on
+              every card conveys no ordering at all. */}
+          {card.priority === 'normal' ? null : (
+            <span
+              className={`mr-1.5 rounded-sm px-1 align-[1px] font-mono text-[10px] uppercase ${
+                card.priority === 'high' ? 'bg-warn/25 text-warn' : 'bg-dim/20 text-dim'
+              }`}
+              title={
+                card.priority === 'high'
+                  ? 'Dispatched before normal and low cards in the same column.'
+                  : 'Dispatched after normal cards in the same column.'
+              }
+            >
+              {card.priority}
+            </span>
+          )}
+          {card.title}
+        </span>
         {unseen ? (
           <span
             className="shrink-0 rounded-sm bg-accent px-1.5 text-[11px] font-semibold text-bg"

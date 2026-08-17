@@ -25,6 +25,7 @@ import {
   EMPTY_GUARDRAILS,
   type GuardrailSet,
 } from '../src/server/cards/guardrails.js';
+import { createCard, isPriority, updateCard } from '../src/server/api/cards.js';
 import { openDatabase, type DatabaseHandle } from '../src/server/db/client.js';
 import { boards, cardDependencies, cards, columns, events, runs } from '../src/server/db/schema.js';
 
@@ -340,5 +341,67 @@ describe('guardrails', () => {
     expect(parseGuardrails(null)).toEqual(EMPTY_GUARDRAILS);
     expect(parseGuardrails('{"scope": "wrong type"}').scope).toEqual([]);
     expect(parseGuardrails('{"maxTurns": -5}').maxTurns).toBeNull();
+  });
+});
+
+describe('priority', () => {
+  it('defaults to normal', () => {
+    board();
+    const created = createCard(handle, { boardId: BOARD, title: 'No priority given' });
+    expect(created.priority).toBe('normal');
+  });
+
+  it('is stored as given, and editable afterwards', () => {
+    board();
+    const created = createCard(handle, { boardId: BOARD, title: 'Later', priority: 'low' });
+    expect(created.priority).toBe('low');
+    expect(updateCard(handle, created.id, { priority: 'high' }).priority).toBe('high');
+  });
+
+  it('rejects a value the ordering would not recognise', () => {
+    // An unrecognised priority would sort as low, so an urgent card would run
+    // last with nothing to explain why.
+    expect(isPriority('high')).toBe(true);
+    expect(isPriority('urgent')).toBe(false);
+    expect(isPriority(1)).toBe(false);
+  });
+
+  it('actually reorders the dispatch queue', () => {
+    board();
+    const ready = columnNamed('Ready');
+    createCard(handle, { boardId: BOARD, columnId: ready, title: 'first added', index: 0 });
+    createCard(handle, { boardId: BOARD, columnId: ready, title: 'second added', index: 1 });
+    createCard(handle, {
+      boardId: BOARD,
+      columnId: ready,
+      title: 'urgent, added last',
+      index: 2,
+      priority: 'high',
+    });
+
+    const order = dispatchableCards(handle.db, BOARD).map((entry) => entry.title);
+
+    // The chip is not decoration: a card marked high runs before its
+    // neighbours despite being added last (R10).
+    expect(order[0]).toBe('urgent, added last');
+    expect(order.slice(1)).toEqual(['first added', 'second added']);
+  });
+
+  it('sends low-priority cards to the back', () => {
+    board();
+    const ready = columnNamed('Ready');
+    createCard(handle, {
+      boardId: BOARD,
+      columnId: ready,
+      title: 'deprioritised',
+      index: 0,
+      priority: 'low',
+    });
+    createCard(handle, { boardId: BOARD, columnId: ready, title: 'ordinary', index: 1 });
+
+    expect(dispatchableCards(handle.db, BOARD).map((entry) => entry.title)).toEqual([
+      'ordinary',
+      'deprioritised',
+    ]);
   });
 });
