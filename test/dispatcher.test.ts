@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
@@ -151,6 +151,54 @@ describe('dispatching one card', () => {
     await dispatcher.dispatch(BOARD, id)?.result;
 
     await vi.waitFor(() => expect(getCard(handle, id).columnId).toBe(columnNamed('Needs Review')));
+  });
+
+  it('feeds accepted and rejected ledger judgements into the launch context', async () => {
+    const captured = join(dir, 'captured-context.txt');
+    // Copies whatever file --append-system-prompt-file points at, so the test
+    // can read the exact context a launched run would see.
+    const script = `
+for ((i=1; i<=$#; i++)); do
+  if [ "\${!i}" = "--append-system-prompt-file" ]; then
+    j=$((i+1))
+    cp "\${!j}" '${captured}'
+  fi
+done
+${SUCCEEDS}
+`;
+    dispatcher.useExecutable(fakeClaude(script));
+    const id = card('judged');
+    const acceptedId = surprise(id, 'The schema is append-only', 'assumption');
+    const rejectedId = surprise(id, 'Retry logic belongs in the client', 'assumption');
+    setOperatorStatus(handle, acceptedId, 'accepted');
+    setOperatorStatus(handle, rejectedId, 'rejected');
+
+    await dispatcher.dispatch(BOARD, id)?.result;
+
+    const context = readFileSync(captured, 'utf8');
+    expect(context).toContain('The schema is append-only');
+    expect(context).toContain('Retry logic belongs in the client (overruled by the operator)');
+  });
+
+  it('sends nothing for a card with no judgements', async () => {
+    const captured = join(dir, 'captured-context-empty.txt');
+    const script = `
+for ((i=1; i<=$#; i++)); do
+  if [ "\${!i}" = "--append-system-prompt-file" ]; then
+    j=$((i+1))
+    cp "\${!j}" '${captured}'
+  fi
+done
+${SUCCEEDS}
+`;
+    dispatcher.useExecutable(fakeClaude(script));
+    const id = card('unjudged');
+
+    await dispatcher.dispatch(BOARD, id)?.result;
+
+    const context = readFileSync(captured, 'utf8');
+    expect(context).not.toContain('## Established on this card');
+    expect(context).not.toContain('## Overruled by the operator');
   });
 
   it('halts after a completed run rather than pulling the next card', async () => {
