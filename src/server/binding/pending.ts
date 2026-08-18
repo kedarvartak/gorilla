@@ -12,8 +12,18 @@
  * are each correct on their own. It only appears end to end, which is what the
  * Phase 1 verification found (doc 17).
  *
- * Keyed by working directory and consumed in order, because dispatch is serial
- * by default and the board launched them.
+ * Keyed by the **launched session's own working directory**, which since U2 is
+ * the card's isolated worktree rather than the board's checkout. That is what
+ * makes the key unambiguous at any concurrency: one card, one worktree, one
+ * expectation. Keying on the board directory - as this did originally - was
+ * both ambiguous when two cards ran at once and, once worktrees became real,
+ * simply wrong: the expectation was filed under a path no session ever reports.
+ *
+ * A directory with more than one live expectation can only arise with isolation
+ * off, and there `claim` refuses to answer. Attributing a session to the wrong
+ * card is silent and permanent; leaving it unbound produces a provisional card,
+ * which is visible and correctable. Doc 05 already chose that trade: an event
+ * with nowhere to go is the blind spot, and a provisional card is the answer.
  */
 
 export interface PendingBinding {
@@ -33,20 +43,31 @@ export class PendingBindings {
     this.#byCwd.set(cwd, queue);
   }
 
-  /** Takes the oldest unexpired expectation for a directory, if any. */
+  /**
+   * Takes the one unexpired expectation for a directory.
+   *
+   * Refuses when there is more than one. With a worktree per card that never
+   * happens; without isolation it means two sessions are starting in the same
+   * place and nothing in the payload distinguishes them. Guessing would attach
+   * a night's work to the wrong card and say nothing about it.
+   */
   claim(cwd: string, now = Date.now()): string | null {
     const queue = this.#byCwd.get(cwd);
     if (queue === undefined) return null;
 
-    while (queue.length > 0) {
-      const next = queue.shift();
-      if (next === undefined) break;
-      if (now - next.at <= PENDING_TTL_MS) return next.cardId;
-      // Expired: the launch never produced a session, so drop it rather than
-      // letting it capture an unrelated one later.
-    }
+    // Expired entries are dropped first: a launch that never produced a session
+    // must not capture an unrelated one later, nor make a directory look
+    // ambiguous for ever.
+    const live = queue.filter((pending) => now - pending.at <= PENDING_TTL_MS);
+    this.#byCwd.set(cwd, live);
 
-    return null;
+    if (live.length !== 1) return null;
+
+    const only = live[0];
+    if (only === undefined) return null;
+
+    this.#byCwd.set(cwd, []);
+    return only.cardId;
   }
 
   /** Drops an expectation that has been satisfied another way. */
@@ -61,5 +82,11 @@ export class PendingBindings {
 
   pendingFor(cwd: string): readonly PendingBinding[] {
     return this.#byCwd.get(cwd) ?? [];
+  }
+
+  /** Live expectations for a directory. More than one means claims are refused. */
+  liveCount(cwd: string, now = Date.now()): number {
+    return (this.#byCwd.get(cwd) ?? []).filter((pending) => now - pending.at <= PENDING_TTL_MS)
+      .length;
   }
 }

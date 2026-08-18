@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 
 import { getCard, updateCard } from '../api/cards.js';
+import { canonicaliseCwd } from '../ingest/binding.js';
 import { dispatchableCards } from '../cards/eligibility.js';
 import { parseGuardrails } from '../cards/guardrails.js';
 import type { DatabaseHandle } from '../db/client.js';
@@ -368,17 +369,25 @@ export class Dispatcher {
       return null;
     }
 
+    // The directory the child will actually run in, which since U2 is this
+    // card's own worktree. The expectation must be filed under that and not
+    // under the board's checkout: the session reports its own cwd, so a
+    // board-keyed expectation is looked up under a path nothing ever sends.
+    // Canonicalised on both sides: the hook path canonicalises the cwd a session
+    // reports, and a key that differs only by a resolved symlink never matches.
+    const workspace = canonicaliseCwd(this.#workspacePath(board.cwd, cardId));
+
     updateCard(this.database, cardId, { status: 'running' });
 
     // Registered before the child starts. SessionStart fires before the
     // launcher can read the session id from the stream, so without this the
     // hook path infers a provisional card and the run is attributed to a
     // phantom instead of this card (doc 17).
-    this.pending.expect(board.cwd, cardId);
+    this.pending.expect(workspace, cardId);
 
     const running = this.#registry.track(
       launch({
-        cwd: this.#workspacePath(board.cwd, cardId),
+        cwd: workspace,
         title: card.title,
         body: card.body,
         guardrails: parseGuardrails(card.guardrails),
@@ -418,7 +427,9 @@ export class Dispatcher {
     state.running.delete(cardId);
 
     const board = this.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
-    if (board !== undefined) this.pending.release(board.cwd, cardId);
+    if (board !== undefined) {
+      this.pending.release(canonicaliseCwd(this.#workspacePath(board.cwd, cardId)), cardId);
+    }
 
     const card = getCard(this.database, cardId);
 
