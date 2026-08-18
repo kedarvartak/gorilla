@@ -41,6 +41,14 @@ export interface Card {
   readonly mergedBranch: string | null;
   readonly updatedAt: number;
   readonly guardrailDetail: readonly GuardrailDetail[];
+  /**
+   * Position in the order the remaining work should be done, 1-based. Null once
+   * a card is finished: a number beside a done card is an instruction to do
+   * something already done.
+   */
+  readonly rank: number | null;
+  /** True when something it depends on is still unfinished. */
+  readonly rankBlocked: boolean;
 }
 
 export interface Column {
