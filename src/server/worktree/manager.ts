@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import { simpleGit, type SimpleGit } from 'simple-git';
 
@@ -72,6 +72,76 @@ export class WorktreeManager {
 
   #git(): SimpleGit {
     return simpleGit(this.boardCwd);
+  }
+
+  /**
+   * Rediscovers worktrees that already exist on disk.
+   *
+   * `#known` is an in-memory map filled only by `create`, so every restart used
+   * to forget every worktree. The consequences were not cosmetic: a card's
+   * merge button reported "no worktree" for a branch sitting right there, the
+   * reviewer refused to merge it, and - worst - `#workspacePath` fell back to
+   * the board's own checkout, so re-dispatching a card after a restart would
+   * silently un-isolate it and run the agent in the operator's working tree.
+   *
+   * Worktrees are durable and git already tracks them, so the board should ask
+   * rather than remember. Called at startup, next to the run reconciliation
+   * that exists for the same reason.
+   */
+  async adopt(): Promise<number> {
+    if (!existsSync(this.boardCwd)) return 0;
+
+    let raw: string;
+    try {
+      raw = await this.#git().raw(['worktree', 'list', '--porcelain']);
+    } catch {
+      // Not a repository, or git is unavailable. Isolation is already off in
+      // that case; there is nothing to rediscover.
+      return 0;
+    }
+
+    const prefix = join(this.boardCwd, WORKTREE_DIR);
+    let adopted = 0;
+    let path: string | null = null;
+
+    for (const line of raw.split('\n')) {
+      if (line.startsWith('worktree ')) {
+        path = line.slice('worktree '.length).trim();
+        continue;
+      }
+
+      // `branch refs/heads/x` closes the record for the path above it.
+      if (!line.startsWith('branch ') || path === null) continue;
+
+      const branch = line
+        .slice('branch '.length)
+        .trim()
+        .replace(/^refs\/heads\//, '');
+      const candidate = path;
+      path = null;
+
+      if (!candidate.startsWith(prefix)) continue;
+
+      // The directory is named for the card, which is what makes rediscovery
+      // possible at all without a table of our own.
+      const cardId = basename(candidate);
+      if (cardId === '' || this.#known.has(cardId)) continue;
+
+      this.#known.set(cardId, {
+        cardId,
+        path: candidate,
+        branch,
+        // Unknowable after the fact: git records where a branch points now, not
+        // what it was cut from. Empty says so rather than inventing a ref.
+        baseRef: '',
+        // Adopted, not created by this process. The distinction matters to any
+        // caller deciding whether it is looking at fresh work.
+        created: false,
+      });
+      adopted += 1;
+    }
+
+    return adopted;
   }
 
   /**
