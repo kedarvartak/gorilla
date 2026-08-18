@@ -14,6 +14,7 @@ import {
   cardDependencies,
   cards as cardsTable,
   columns,
+  ledgerEntries,
   runs,
   type Card,
 } from '../db/schema.js';
@@ -47,7 +48,14 @@ import {
   storedEntryById,
 } from '../ledger/store.js';
 import { isOperatorStatus, OPERATOR_STATUSES } from '../ledger/entries.js';
-import { surprisesFor } from '../ledger/surprises.js';
+import { surprisesFor, type Surprise } from '../ledger/surprises.js';
+import {
+  acknowledgedPaths,
+  GATE_REACH,
+  mergeGate,
+  PATH_ACK_PREFIX,
+  type GateCard,
+} from '../review/gate.js';
 import { describeMergeReport, mergeBranches, mergeTargetFor } from '../review/merge.js';
 
 /**
@@ -814,6 +822,34 @@ export function registerReviewRoutes(app: FastifyInstance, context: AppContext):
       });
     }
 
+    // The gate (P3). Read before anything is merged, and applied to the whole
+    // request: one card with an unjudged surprise holds the batch, because a
+    // partially applied merge is the state the reviewer exists to avoid.
+    const gateCards: GateCard[] = [];
+
+    for (const card of cards) {
+      const response = await app.inject({ method: 'GET', url: `/api/cards/${card.cardId}/brief` });
+
+      if (response.statusCode !== 200) {
+        // Cannot tell means do not merge. Treating an unreadable brief as
+        // "nothing outstanding" would make the gate silently absent exactly
+        // when the card is in a state nobody has looked at.
+        return reply.code(409).send({
+          error: `Nothing was merged: the brief for "${card.title}" could not be read, so the board cannot tell whether anything on it is outstanding.`,
+          reach: GATE_REACH,
+          blocked: [],
+          outstanding: 0,
+          mergedNothing: true,
+        });
+      }
+
+      const brief = response.json<{ surprises?: readonly Surprise[] }>();
+      gateCards.push({ ...card, surprises: brief.surprises ?? [] });
+    }
+
+    const refusal = mergeGate(gateCards);
+    if (refusal !== null) return reply.code(409).send(refusal);
+
     const report = await mergeBranches({
       repoCwd: board.cwd,
       cards,
@@ -1008,6 +1044,77 @@ export function registerBriefRoutes(app: FastifyInstance, context: AppContext): 
     },
   );
 
+  /**
+   * The operator's verdict on a changed-but-unmentioned path (P3).
+   *
+   * Without this, a path surprise could be shown and never retired, and the
+   * merge gate would hold such a card for good - a refusal with no way through
+   * is not a gate, it is a wall. The acknowledgement is stored as a judged
+   * ledger entry because the path has no row of its own.
+   */
+  app.post<{ Params: { cardId: string }; Body: { path?: unknown; status?: unknown } }>(
+    '/api/cards/:cardId/surprises/path',
+    (request, reply) => {
+      const { cardId } = request.params;
+      const path = request.body?.path;
+
+      if (typeof path !== 'string' || path.trim() === '') {
+        return reply.code(400).send({ error: 'Name the path you looked at.', field: 'path' });
+      }
+
+      const status = request.body?.status ?? 'accepted';
+      if (!isOperatorStatus(status) || status === 'unreviewed') {
+        return reply.code(400).send({
+          error: `Status must be one of ${OPERATOR_STATUSES.filter((value) => value !== 'unreviewed').join(', ')}.`,
+          field: 'status',
+        });
+      }
+
+      try {
+        getCard(context.database, cardId);
+      } catch (error) {
+        return fail(reply, error);
+      }
+
+      // The entry hangs off a run because that is what the table requires. A
+      // card with no run has had no agent near it, so nothing has been recorded
+      // to look at either.
+      const run = context.database.db
+        .select()
+        .from(runs)
+        .where(eq(runs.cardId, cardId))
+        .orderBy(asc(runs.startedAt))
+        .all()
+        .at(-1);
+
+      if (run === undefined) {
+        return reply.code(409).send({
+          error: 'This card has no run, so there is nothing recorded to acknowledge against.',
+        });
+      }
+
+      const id = randomUUID();
+      context.database.db
+        .insert(ledgerEntries)
+        .values({
+          id,
+          cardId,
+          runId: run.id,
+          kind: 'change',
+          statement: `${PATH_ACK_PREFIX}${path}`,
+          filePaths: JSON.stringify([path]),
+          sourceEventIds: '[]',
+          origin: 'mechanical',
+          operatorStatus: status,
+          createdAt: Date.now(),
+        })
+        .run();
+
+      publish(context, 'surprise-acknowledged', { cardId, path, status });
+      return reply.code(201).send({ id, cardId, path, status });
+    },
+  );
+
   app.get<{ Params: { cardId: string } }>('/api/cards/:cardId/brief', async (request, reply) => {
     try {
       const card = getCard(context.database, request.params.cardId);
@@ -1113,10 +1220,16 @@ export function registerBriefRoutes(app: FastifyInstance, context: AppContext): 
 
       // The set the operator would regret not reading, carried alongside the
       // brief so the interface never has to work out what is outstanding.
+      const seen = acknowledgedPaths(entries);
       const surprises = surprisesFor({
         cardId: card.id,
         entries,
-        changedButUnmentioned: reality?.changedButUnmentioned ?? [],
+        // A path stays changed-but-unmentioned however long the operator looks
+        // at it, so the acknowledgement is applied here rather than pretending
+        // the run mentioned it.
+        changedButUnmentioned: (reality?.changedButUnmentioned ?? []).filter(
+          (path) => !seen.has(path),
+        ),
       });
 
       return reply.send({ ...brief, markdown: renderBrief(brief), extraction, surprises });
