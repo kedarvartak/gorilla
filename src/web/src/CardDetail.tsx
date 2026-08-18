@@ -334,6 +334,8 @@ export function CardDetail({
   const [mergeReport, setMergeReport] = useState<MergeReport | null>(null);
   /** Set only when the gate declined. Judgement is offered here and nowhere else. */
   const [mergeRefusal, setMergeRefusal] = useState<{ summary: string; reach: string } | null>(null);
+  /** What the resolver did, or why it could not. */
+  const [resolution, setResolution] = useState<string | null>(null);
 
   /**
    * Merges this card alone.
@@ -368,6 +370,43 @@ export function CardDetail({
         if (cause.refusal !== undefined) setMergeRefusal(cause.refusal);
         else setError(cause.message);
       })
+      .finally(() => setMerging(false));
+  }, [cardId, detail]);
+
+  /**
+   * Whether the last attempt left a conflict in the tree.
+   *
+   * Read from the report rather than tracked separately, so the button and the
+   * report cannot disagree about what state the repository is in.
+   */
+  const conflicted = mergeReport?.stoppedAt?.outcome === 'conflicted';
+
+  /**
+   * Resolves the conflict and completes the merge.
+   *
+   * The result is judged from git afterwards - no conflicted files, no merge in
+   * progress, the operator's verify passing - because a resolver's own account of
+   * what it did is exactly the kind of claim this board exists not to rely on.
+   */
+  const resolveThisConflict = useCallback(() => {
+    if (detail === null) return;
+    setMerging(true);
+
+    void api
+      .resolveConflicts(detail.card.boardId, {
+        ...(detail.workspace === null ? {} : { branch: detail.workspace.branch }),
+        ...(detail.mergeTarget === null ? {} : { into: detail.mergeTarget }),
+        verify: detail.verifyCommand,
+      })
+      .then((result) => {
+        setMergeReport(null);
+        setResolution(result.detail);
+        return fetch(`/api/cards/${cardId}/detail`);
+      })
+      .then(async (response) => {
+        if (response.ok) setDetail((await response.json()) as Detail);
+      })
+      .catch((cause: Error) => setResolution(cause.message))
       .finally(() => setMerging(false));
   }, [cardId, detail]);
 
@@ -818,7 +857,23 @@ export function CardDetail({
               )}
 
               <div className="flex flex-wrap gap-2">
-                {detail.workspace === null || detail.card.mergedAt !== null ? null : (
+                {detail.workspace === null || detail.card.mergedAt !== null ? null : conflicted ? (
+                  /* A conflict is the ordinary cost of two agents working in
+                     parallel, not an exceptional event, so the action becomes
+                     doing the work rather than reporting that it is needed. */
+                  <button
+                    type="button"
+                    className="rounded border border-accent/60 px-2 py-0.5 font-mono text-[11px] text-accent hover:bg-accent/10 disabled:opacity-40"
+                    disabled={merging}
+                    title={
+                      'Resolves the conflict, commits the merge, and runs the verify command. ' +
+                      'Judged from git afterwards, not from what the resolver says about itself.'
+                    }
+                    onClick={resolveThisConflict}
+                  >
+                    {merging ? 'resolving…' : 'solve conflicts and merge'}
+                  </button>
+                ) : (
                   <button
                     type="button"
                     className="rounded border border-ok/50 px-2 py-0.5 font-mono text-[11px] text-ok hover:bg-ok/10 disabled:opacity-40"
@@ -865,6 +920,10 @@ export function CardDetail({
                 >
                   {mergeReport.summary.join('\n')}
                 </pre>
+              )}
+
+              {resolution === null ? null : (
+                <p className="mt-2 font-mono text-[10px] leading-snug text-dim">{resolution}</p>
               )}
             </div>
           </>

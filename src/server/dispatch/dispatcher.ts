@@ -138,8 +138,15 @@ export class Dispatcher {
   readonly #lastVerify = new Map<string, VerifyResult>();
   readonly #worktrees = new Map<string, WorktreeManager>();
   readonly #pumping = new Set<string>();
-  /** Set by shutdown, so work already in flight stops touching the database. */
-  #closed = false;
+  /**
+   * Set by shutdown, so work already in flight stops touching the database.
+   *
+   * One flag, deliberately. Resolving the P4 merge briefly left two - `#closed`
+   * and `#stopped` - and shutdown set only one, so every guard written against
+   * the other silently never fired. CI found it as an unhandled rejection
+   * against a closed connection; two names for one condition is how that
+   * happens.
+   */
   #stopped = false;
   #executable: string | undefined;
 
@@ -200,7 +207,7 @@ export class Dispatcher {
     this.#stateFor(boardId).mode = mode;
     this.#publish(boardId);
 
-    if (mode === 'automatic') void this.pump(boardId);
+    if (mode === 'automatic') void this.pump(boardId).catch(() => undefined);
     return this.state(boardId);
   }
 
@@ -213,7 +220,7 @@ export class Dispatcher {
     this.#stateFor(boardId).policy = policy;
     this.#publish(boardId);
 
-    if (policy === 'unattended') void this.pump(boardId);
+    if (policy === 'unattended') void this.pump(boardId).catch(() => undefined);
     return this.state(boardId);
   }
 
@@ -237,7 +244,8 @@ export class Dispatcher {
     this.#stateFor(boardId).completed.clear();
     this.#publish(boardId);
 
-    if (this.#stateFor(boardId).mode === 'automatic') void this.pump(boardId);
+    if (this.#stateFor(boardId).mode === 'automatic')
+      void this.pump(boardId).catch(() => undefined);
     return this.state(boardId);
   }
 
@@ -274,6 +282,11 @@ export class Dispatcher {
     const board = this.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
 
     for (const cardId of [...state.awaitingAck]) {
+      // Re-checked inside the loop, not only around it. `outstandingSurprises`
+      // reads git, so shutdown can land between two iterations, and the next
+      // read would be against a closed connection.
+      if (this.#stopped) return true;
+
       const surprises = await outstandingSurprises({
         database: this.database,
         cardId,
@@ -324,6 +337,7 @@ export class Dispatcher {
       // The queue gate (P4). Asked before every start, not once per pump: a
       // card that finishes while this loop is running is exactly the case the
       // gate exists for.
+      if (this.#stopped) break;
       if (await this.#gateOnSurprises(boardId)) break;
       // The gate reads git, so the dispatcher can be shut down underneath it.
       // Starting a card after that would touch a database nobody owns any more.
@@ -499,7 +513,7 @@ export class Dispatcher {
   async #settle(boardId: string, cardId: string, result: LaunchResult | null): Promise<void> {
     // Nothing to settle into. Shutdown closes the database, and a settle that
     // began before it would otherwise query a closed connection.
-    if (this.#closed) return;
+    if (this.#stopped) return;
 
     const state = this.#stateFor(boardId);
     state.running.delete(cardId);
@@ -579,7 +593,7 @@ export class Dispatcher {
     // reviewer will refuse and an operator who reasonably believed it was done
     // - which happened twice before anything told the agent it had a branch.
     await this.#commitWork(boardId, cardId, card.title);
-    if (this.#closed) return;
+    if (this.#stopped) return;
 
     // The board runs the card's verify command itself. Until now `verify` was
     // displayed as a hard guardrail and never executed, which is the failure
@@ -620,7 +634,7 @@ export class Dispatcher {
     // here would mean waking to one finished task and a queue that never
     // moved, which is the entire point of the mode.
     this.#publish(boardId);
-    void this.pump(boardId);
+    void this.pump(boardId).catch(() => undefined);
   }
 
   /** Runs the card's verify command where the work happened. */
