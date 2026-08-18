@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,7 +10,8 @@ import { createDefaultColumns } from '../src/server/cards/defaults.js';
 import { openDatabase, type DatabaseHandle } from '../src/server/db/client.js';
 import { Dispatcher } from '../src/server/dispatch/dispatcher.js';
 import { PendingBindings } from '../src/server/binding/pending.js';
-import { boards, columns } from '../src/server/db/schema.js';
+import { boards, columns, ledgerEntries, runs } from '../src/server/db/schema.js';
+import { setOperatorStatus } from '../src/server/ledger/store.js';
 
 let dir: string;
 let handle: DatabaseHandle;
@@ -42,6 +44,50 @@ function card(title: string, options: { goal?: string | null; ready?: boolean } 
     moveCard(handle, created.id, columnNamed('Ready'), 0);
   }
   return created.id;
+}
+
+/**
+ * An entry nobody has judged, of the one kind that earns an interruption.
+ *
+ * Written straight to the ledger rather than extracted: the queue gate cares
+ * that something is outstanding, not how it got there, and driving a real
+ * extraction would put a model call in the middle of a dispatch test.
+ */
+function surprise(cardId: string, statement: string, kind: 'assumption' | 'decision'): string {
+  const runId = randomUUID();
+  handle.db
+    .insert(runs)
+    .values({
+      id: runId,
+      boardId: BOARD,
+      cardId,
+      sessionId: randomUUID(),
+      startedAt: Date.now(),
+      cwd: dir,
+      // Null so the reality check compares nothing: this is about the ledger
+      // surprise, and a commit range would add unmentioned paths of its own.
+      headShaAtStart: null,
+    })
+    .run();
+
+  const id = randomUUID();
+  handle.db
+    .insert(ledgerEntries)
+    .values({
+      id,
+      cardId,
+      runId,
+      kind,
+      statement,
+      ...(kind === 'decision' ? { alternative: 'the other way' } : {}),
+      filePaths: '[]',
+      sourceEventIds: '[]',
+      origin: 'model',
+      createdAt: Date.now(),
+    })
+    .run();
+
+  return id;
 }
 
 const SUCCEEDS = `echo '{"type":"system","subtype":"init","session_id":"sess-1"}'\necho '{"type":"result"}'`;
@@ -429,6 +475,96 @@ describe('unattended operation', () => {
     await vi.waitFor(() => expect(dispatcher.state(BOARD).completed).toHaveLength(1));
 
     expect(dispatcher.resume(BOARD).completed).toHaveLength(0);
+  });
+});
+
+describe('the queue gate', () => {
+  it('refuses to start the next card while a finished one has surprises nobody judged', async () => {
+    // The 3am case. Under the unattended policy the queue used to collect
+    // completions and keep going; it should keep going only while nothing is
+    // waiting to be acknowledged.
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    // Newest-first in the Ready column, so the card with the surprise is
+    // created last and therefore dispatched first.
+    const second = card('must not start');
+    const first = card('leaves a surprise');
+    surprise(first, 'The exporter is only ever called from the CLI', 'assumption');
+
+    dispatcher.setPolicy(BOARD, 'unattended');
+    dispatcher.setMode(BOARD, 'automatic');
+
+    await vi.waitFor(() =>
+      expect(dispatcher.state(BOARD).halted?.reason).toBe('unacknowledged-surprises'),
+    );
+
+    const halted = dispatcher.state(BOARD).halted;
+    expect(halted?.cardId).toBe(first);
+    // Names the card and how many things are outstanding, so the halt is
+    // actionable without opening anything.
+    expect(halted?.detail).toContain('leaves a surprise');
+    expect(halted?.detail).toContain('1 surprise');
+
+    expect(dispatcher.state(BOARD).completed).toEqual([first]);
+    expect(getCard(handle, second).status).toBe('idle');
+  });
+
+  it('re-halts if the operator resumes without judging anything', async () => {
+    // Otherwise the only cost of skipping the review is one extra click.
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    card('must not start');
+    const first = card('leaves a surprise');
+    surprise(first, 'The migration is backwards compatible', 'assumption');
+
+    dispatcher.setPolicy(BOARD, 'unattended');
+    dispatcher.setMode(BOARD, 'automatic');
+    await vi.waitFor(() =>
+      expect(dispatcher.state(BOARD).halted?.reason).toBe('unacknowledged-surprises'),
+    );
+
+    dispatcher.resume(BOARD);
+
+    await vi.waitFor(() =>
+      expect(dispatcher.state(BOARD).halted?.reason).toBe('unacknowledged-surprises'),
+    );
+  });
+
+  it('dispatches normally once the surprise has been acknowledged', async () => {
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    const second = card('runs after the reading');
+    const first = card('leaves a surprise');
+    const entry = surprise(first, 'Nothing else reads that column', 'assumption');
+
+    dispatcher.setPolicy(BOARD, 'unattended');
+    dispatcher.setMode(BOARD, 'automatic');
+    await vi.waitFor(() =>
+      expect(dispatcher.state(BOARD).halted?.reason).toBe('unacknowledged-surprises'),
+    );
+
+    setOperatorStatus(handle, entry, 'accepted');
+    dispatcher.resume(BOARD);
+
+    await vi.waitFor(() => expect(dispatcher.state(BOARD).completed).toContain(second), {
+      timeout: 10_000,
+    });
+    expect(dispatcher.state(BOARD).halted).toBeNull();
+  });
+
+  it('lets a card with nothing outstanding through', async () => {
+    // A decision is real ledger content and optional reading. Widening the
+    // surprise set is the one change that would undo the point of having it.
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    const second = card('follows it');
+    const first = card('ordinary work');
+    surprise(first, 'Used a queue rather than a set', 'decision');
+
+    dispatcher.setPolicy(BOARD, 'unattended');
+    dispatcher.setMode(BOARD, 'automatic');
+
+    await vi.waitFor(() => expect(dispatcher.state(BOARD).completed).toHaveLength(2), {
+      timeout: 10_000,
+    });
+    expect(dispatcher.state(BOARD).halted).toBeNull();
+    expect(dispatcher.state(BOARD).completed).toContain(second);
   });
 });
 
