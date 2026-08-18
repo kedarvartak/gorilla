@@ -432,19 +432,19 @@ describe('unattended operation', () => {
   });
 });
 
-describe('autonomy and stalls', () => {
-  it('defaults to copilot, because autopilot decides on the operator’s behalf', () => {
-    expect(dispatcher.state(BOARD).autonomy).toBe('copilot');
-  });
-
-  it('can be switched to autopilot', () => {
-    expect(dispatcher.setAutonomy(BOARD, 'autopilot').autonomy).toBe('autopilot');
-  });
-
+describe('supervising a running card', () => {
   it('ignores events for a run it is not supervising', () => {
     // The observer runs on every hook delivery, including attached terminal
     // sessions the board never launched.
-    expect(() => dispatcher.observe('no-such-run', 'Notification')).not.toThrow();
+    expect(() => dispatcher.observe('no-such-run')).not.toThrow();
     expect(dispatcher.state(BOARD).halted).toBeNull();
+  });
+
+  it('never stops a card merely because the agent asked a question', () => {
+    // There is no copilot mode: an overnight run has nobody awake to answer, so
+    // a queue that halts on the first question has spent the night on one card.
+    // Questions are recorded and read in the brief instead.
+    expect(dispatcher.state(BOARD).halted).toBeNull();
+    expect('autonomy' in dispatcher.state(BOARD)).toBe(false);
   });
 });

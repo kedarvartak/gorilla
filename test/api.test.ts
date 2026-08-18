@@ -524,28 +524,6 @@ describe('priority over the API', () => {
   });
 });
 
-describe('autonomy over the API', () => {
-  it('reports copilot by default', async () => {
-    const state = await json<{ autonomy: string }>('GET', `/api/boards/${boardId}/dispatch`);
-    expect(state.body.autonomy).toBe('copilot');
-  });
-
-  it('accepts autopilot', async () => {
-    const set = await json<{ autonomy: string }>('POST', `/api/boards/${boardId}/dispatch`, {
-      autonomy: 'autopilot',
-    });
-    expect(set.body.autonomy).toBe('autopilot');
-  });
-
-  it('refuses anything else', async () => {
-    const bad = await json<{ field: string }>('POST', `/api/boards/${boardId}/dispatch`, {
-      autonomy: 'yolo',
-    });
-    expect(bad.status).toBe(400);
-    expect(bad.body.field).toBe('autonomy');
-  });
-});
-
 describe('the merged marker', () => {
   it('is absent on a card nobody merged', async () => {
     const id = await makeCard('Never merged');

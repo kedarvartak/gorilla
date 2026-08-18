@@ -46,9 +46,7 @@ export type HaltReason =
   // The card could not be given an isolated worktree to work in.
   | 'no-workspace'
   // The run stopped getting anywhere: refused calls, or silence.
-  | 'stalled'
-  // Copilot mode: the agent asked for something only the operator can give.
-  | 'needs-operator';
+  | 'stalled';
 
 export interface HaltState {
   readonly reason: HaltReason;
@@ -61,7 +59,6 @@ export interface HaltState {
 export interface BoardDispatchState {
   readonly mode: DispatchMode;
   readonly policy: QueuePolicy;
-  readonly autonomy: AgentAutonomy;
   readonly concurrency: number;
   /** Cards that finished and are waiting to be looked at. */
   readonly completed: readonly string[];
@@ -79,7 +76,6 @@ export interface DispatcherEvents {
 interface BoardState {
   mode: DispatchMode;
   policy: QueuePolicy;
-  autonomy: AgentAutonomy;
   concurrency: number;
   running: Map<string, RunningLaunch>;
   completed: Set<string>;
@@ -107,25 +103,19 @@ export const DEFAULT_CONCURRENCY = 1;
 export type QueuePolicy = 'review' | 'unattended';
 
 /**
- * What happens when a running agent needs the operator (doc 18).
+ * A dispatched agent decides for itself and never stops to ask (doc 18).
  *
- * A separate axis from `QueuePolicy`, which governs what happens *between*
- * cards. This governs what happens *inside* one.
+ * There was briefly a `copilot` alternative that halted the card the moment the
+ * agent raised `PermissionRequest` or `Notification`. It is gone, deliberately:
+ * the point of an overnight run is that nobody is awake to answer, and a queue
+ * that stops on the first question has spent the night doing one card.
  *
- * `copilot` stops the moment the agent asks for something - a permission it does
- * not have, or an answer it cannot get - marks the card as needing you, and
- * halts. You wake to "this card needs a decision" instead of a session that
- * spent the night guessing or looping.
- *
- * `autopilot` lets the agent proceed on its own judgement and records the
- * question for the morning. It is not "no supervision": stall detection halts
- * either mode, because autopilot without it is exactly the twenty-five-hour
- * retry loop that made this setting necessary.
+ * That is not "no supervision". Questions are still recorded and surface in the
+ * brief in the morning, and stall detection still halts a run either way -
+ * which is what makes this safe rather than merely convenient. An agent that
+ * asks and then waits produces no events, and silence is one of the two shapes
+ * `assessStall` looks for.
  */
-export type AgentAutonomy = 'copilot' | 'autopilot';
-
-/** Events that mean the agent is waiting on a human rather than working. */
-const ASKS_FOR_OPERATOR: ReadonlySet<string> = new Set(['PermissionRequest', 'Notification']);
 
 export class Dispatcher {
   readonly #boards = new Map<string, BoardState>();
@@ -162,10 +152,6 @@ export class Dispatcher {
     const created: BoardState = {
       mode: 'manual',
       policy: 'review',
-      // Copilot by default. Autopilot is the mode that lets an agent decide
-      // something on the operator's behalf while they sleep, and that should be
-      // asked for rather than assumed.
-      autonomy: 'copilot',
       concurrency: DEFAULT_CONCURRENCY,
       running: new Map(),
       completed: new Set(),
@@ -180,7 +166,6 @@ export class Dispatcher {
     return {
       mode: state.mode,
       policy: state.policy,
-      autonomy: state.autonomy,
       concurrency: state.concurrency,
       running: [...state.running.keys()],
       completed: [...state.completed],
@@ -210,12 +195,6 @@ export class Dispatcher {
     this.#publish(boardId);
 
     if (policy === 'unattended') void this.pump(boardId);
-    return this.state(boardId);
-  }
-
-  setAutonomy(boardId: string, autonomy: AgentAutonomy): BoardDispatchState {
-    this.#stateFor(boardId).autonomy = autonomy;
-    this.#publish(boardId);
     return this.state(boardId);
   }
 
@@ -568,25 +547,15 @@ export class Dispatcher {
    * Called for every event, so it must stay cheap: two indexed aggregates and a
    * comparison. It exists because the checks in `#settle` only run when a session
    * finishes, and the failure worth catching is the one that never finishes.
+   *
+   * The event's name is not read. Progress is judged from the run's own totals,
+   * so no single event needs to mean anything on its own.
    */
-  observe(runId: string, eventName: string, now = Date.now()): void {
+  observe(runId: string, now = Date.now()): void {
     const bound = this.#runningCardFor(runId);
     if (bound === null) return;
 
     const { boardId, cardId } = bound;
-    const state = this.#stateFor(boardId);
-
-    // Copilot: the agent has asked for something only the operator can give.
-    // Letting it continue means it either guesses or waits until morning.
-    if (state.autonomy === 'copilot' && ASKS_FOR_OPERATOR.has(eventName)) {
-      this.#stop(
-        boardId,
-        cardId,
-        'needs-operator',
-        `The agent raised ${eventName} and this board is in copilot mode, so it was stopped rather than left to decide on your behalf.`,
-      );
-      return;
-    }
 
     const progress = progressOf(this.database.sqlite, runId);
     if (progress === null) return;
