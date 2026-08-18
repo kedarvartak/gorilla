@@ -52,6 +52,19 @@ export interface Brief {
   readonly nothingNew: boolean;
 }
 
+/**
+ * Whether an entry may still be stated as fact.
+ *
+ * A rejected entry is kept - deleting the operator's own evidence of what the
+ * model got wrong would destroy the record doc 12's repair path reads from - but
+ * it stops appearing in the sections that assert things. A brief that keeps
+ * asserting a claim after the operator has said it is wrong teaches them to stop
+ * believing the brief, which costs more than the claim was worth.
+ */
+function isAsserted(entry: StoredEntry): boolean {
+  return entry.operatorStatus !== 'rejected';
+}
+
 function isUnseen(entry: StoredEntry, input: BriefInput): boolean {
   if (input.lastSeenAt === null) return true;
   const at = input.entryTimes[entry.id];
@@ -72,7 +85,7 @@ function statementOf(entry: LedgerEntry): string {
  * when there are thirty seconds, which is the original failure returning.
  */
 function sinceYouLastLooked(input: BriefInput): BriefSection {
-  const unseen = input.entries.filter((entry) => isUnseen(entry, input));
+  const unseen = input.entries.filter((entry) => isUnseen(entry, input) && isAsserted(entry));
 
   if (input.lastSeenAt === null) {
     return {
@@ -124,7 +137,7 @@ function sinceYouLastLooked(input: BriefInput): BriefSection {
   return { title: 'Since you last looked', lines, empty: false };
 }
 
-function stateOfTheWork(input: BriefInput): BriefSection {
+function stateOfTheWork(input: BriefInput, rejected: number): BriefSection {
   const lines = [`${input.cardTitle} is ${input.cardStatus}, after ${input.runCount} run(s).`];
 
   if (input.goalVerdict !== null) lines.push(`Goal evaluator: ${input.goalVerdict}`);
@@ -140,6 +153,15 @@ function stateOfTheWork(input: BriefInput): BriefSection {
 
   if (input.branch !== null && input.branch !== undefined && input.branch !== '') {
     lines.push(`Work is on branch ${input.branch} and has not been merged.`);
+  }
+
+  if (rejected > 0) {
+    // Stated rather than hidden: "you overruled three of these" is itself
+    // something the operator wants to know on returning to a card.
+    lines.push(
+      `You rejected ${String(rejected)} entr${rejected === 1 ? 'y' : 'ies'}; ` +
+        'they are kept on the card but are no longer stated as fact below.',
+    );
   }
 
   if (
@@ -238,19 +260,27 @@ function continuity(input: BriefInput): BriefSection {
 
 export function buildBrief(input: BriefInput): Brief {
   const since = sinceYouLastLooked(input);
-  const unseenCount = input.entries.filter((entry) => isUnseen(entry, input)).length;
+  const unseenCount = input.entries.filter(
+    (entry) => isUnseen(entry, input) && isAsserted(entry),
+  ).length;
+
+  // Rejected entries drop out of every section below. They remain on the card,
+  // and the count of them is stated rather than hidden, because "the operator
+  // overruled three of these" is itself worth knowing.
+  const asserted = input.entries.filter(isAsserted);
+  const rejected = input.entries.length - asserted.length;
 
   const sections: BriefSection[] = [
     since,
-    stateOfTheWork(input),
+    stateOfTheWork(input, rejected),
     listSection(
       'Decisions',
-      input.entries.filter((entry) => entry.kind === 'decision'),
+      asserted.filter((entry) => entry.kind === 'decision'),
       'No decisions recorded.',
     ),
     listSection(
       'Assumptions in force',
-      input.entries.filter(
+      asserted.filter(
         (entry) =>
           entry.kind === 'assumption' &&
           (entry.supersededBy === null || entry.supersededBy === undefined),
@@ -260,7 +290,7 @@ export function buildBrief(input: BriefInput): Brief {
     blastRadius(input),
     listSection(
       'Risks and open questions',
-      input.entries.filter((entry) => entry.kind === 'risk' || entry.kind === 'question'),
+      asserted.filter((entry) => entry.kind === 'risk' || entry.kind === 'question'),
       'Nothing outstanding.',
     ),
     continuity(input),
