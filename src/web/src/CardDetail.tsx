@@ -779,9 +779,16 @@ export function CardDetail({
                 Review and close
               </h4>
 
-              {detail.workspace === null ? (
+              {detail.card.mergedAt !== null ? (
+                <p className="mb-2 font-mono text-[11px] text-ok">
+                  Merged into {detail.card.mergedInto ?? 'the target branch'} from{' '}
+                  {detail.card.mergedBranch ?? 'its branch'} on{' '}
+                  {new Date(detail.card.mergedAt).toLocaleString()}.
+                </p>
+              ) : detail.workspace === null ? (
                 <p className="font-mono text-[11px] text-dim">
-                  No worktree. This card has no isolated branch, so there is nothing to merge.
+                  No worktree, and the board has not merged this card. If it is finished, the work
+                  reached the target some other way.
                 </p>
               ) : (
                 <div className="mb-2 font-mono text-[11px]">
@@ -799,7 +806,7 @@ export function CardDetail({
               )}
 
               <div className="flex flex-wrap gap-2">
-                {detail.workspace === null ? null : (
+                {detail.workspace === null || detail.card.mergedAt !== null ? null : (
                   <button
                     type="button"
                     className="rounded border border-ok/50 px-2 py-0.5 font-mono text-[11px] text-ok hover:bg-ok/10 disabled:opacity-40"

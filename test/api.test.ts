@@ -545,3 +545,30 @@ describe('autonomy over the API', () => {
     expect(bad.body.field).toBe('autonomy');
   });
 });
+
+describe('the merged marker', () => {
+  it('is absent on a card nobody merged', async () => {
+    const id = await makeCard('Never merged');
+    const card = await json<{ mergedAt: number | null; mergedInto: string | null }>(
+      'GET',
+      `/api/cards/${id}`,
+    );
+
+    // Null is the fact "the board did not merge this", not a missing value.
+    expect(card.body.mergedAt).toBeNull();
+    expect(card.body.mergedInto).toBeNull();
+  });
+
+  it('stays absent when the operator just marks a card done', async () => {
+    const id = await makeCard('Finished another way');
+    const done = await json<{ status: string; mergedAt: number | null }>(
+      'PATCH',
+      `/api/cards/${id}`,
+      { status: 'done' },
+    );
+
+    // The ambiguity this exists to remove: done, but not merged by the board.
+    expect(done.body.status).toBe('done');
+    expect(done.body.mergedAt).toBeNull();
+  });
+});

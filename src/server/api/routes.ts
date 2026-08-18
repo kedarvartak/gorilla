@@ -8,7 +8,14 @@ import { createDefaultColumns } from '../cards/defaults.js';
 import { describeGuardrails, parseGuardrails } from '../cards/guardrails.js';
 import { blockersFor, dispatchableCards } from '../cards/eligibility.js';
 import { canonicaliseCwd } from '../ingest/binding.js';
-import { boards, cardDependencies, columns, runs, type Card } from '../db/schema.js';
+import {
+  boards,
+  cardDependencies,
+  cards as cardsTable,
+  columns,
+  runs,
+  type Card,
+} from '../db/schema.js';
 import {
   addDependency,
   CardError,
@@ -805,14 +812,32 @@ export function registerReviewRoutes(app: FastifyInstance, context: AppContext):
       .all()
       .find((column) => column.isTerminal);
 
+    const mergedAt = Date.now();
+
     for (const step of report.steps) {
-      if (step.outcome !== 'merged' || terminal === undefined) continue;
+      if (step.outcome !== 'merged') continue;
+
+      // Recorded before the move, and independently of it. A card that cannot
+      // change column - usually an unfinished dependency - has still been
+      // merged, and losing that fact would leave it reading as merely `done`.
+      context.database.db
+        .update(cardsTable)
+        .set({
+          mergedAt,
+          mergedInto: report.into,
+          mergedBranch: step.branch,
+          updatedAt: mergedAt,
+        })
+        .where(eq(cardsTable.id, step.cardId))
+        .run();
+
+      if (terminal === undefined) continue;
+
       try {
         moveCard(context.database, step.cardId, terminal.id, 0);
         updateCard(context.database, step.cardId, { status: 'done' });
       } catch {
-        // A card that cannot move - usually an unfinished dependency - is
-        // still merged. The report is the record; the column is a convenience.
+        // The report is the record; the column is a convenience.
         continue;
       }
     }
@@ -1062,6 +1087,10 @@ export function registerBriefRoutes(app: FastifyInstance, context: AppContext): 
         compactions,
         runCount: cardRuns.length,
         branch: workspace?.branch ?? null,
+        merged:
+          card.mergedAt === null || card.mergedInto === null || card.mergedBranch === null
+            ? null
+            : { at: card.mergedAt, into: card.mergedInto, branch: card.mergedBranch },
         extractionNote: extraction.note,
       });
 

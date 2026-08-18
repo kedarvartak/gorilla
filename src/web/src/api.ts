@@ -32,6 +32,13 @@ export interface Card {
   /** Used only for windows that escalate - compaction, and manual re-extraction. */
   readonly synthesisModel: string | null;
   readonly lastSeenAt: number | null;
+  /**
+   * Set only when the board merged this card's branch. `done` on its own means
+   * finished some other way, which is a different thing to tell the operator.
+   */
+  readonly mergedAt: number | null;
+  readonly mergedInto: string | null;
+  readonly mergedBranch: string | null;
   readonly updatedAt: number;
   readonly guardrailDetail: readonly GuardrailDetail[];
 }

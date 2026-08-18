@@ -344,3 +344,36 @@ describe('a brief that would otherwise be unreadable', () => {
     expect(since?.lines.filter((line) => line.startsWith('REVERSED:')).length).toBe(12);
   });
 });
+
+describe('a card the board has merged', () => {
+  const base: BriefInput = {
+    cardTitle: 'Merged card',
+    cardStatus: 'done',
+    lastSeenAt: null,
+    entries: [],
+    entryTimes: {},
+    changedFiles: [],
+    changedButUnmentioned: [],
+    verify: null,
+    goalVerdict: null,
+    compactions: 0,
+    runCount: 1,
+    branch: 'gorilla/merged-card',
+  };
+
+  it('never still reads "has not been merged"', () => {
+    const brief = buildBrief({
+      ...base,
+      merged: { at: Date.UTC(2026, 0, 2, 3, 4), into: 'main', branch: 'gorilla/merged-card' },
+    });
+
+    const markdown = renderBrief(brief);
+    expect(markdown).toContain('Merged into main from gorilla/merged-card');
+    expect(markdown).not.toContain('has not been merged');
+  });
+
+  it('still says so when it has a branch and no merge', () => {
+    const markdown = renderBrief(buildBrief(base));
+    expect(markdown).toContain('has not been merged');
+  });
+});
