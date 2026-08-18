@@ -6,6 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { buildApp } from '../src/server/app.js';
+import { PENDING_TTL_MS, PendingBindings } from '../src/server/binding/pending.js';
 import { openDatabase, type DatabaseHandle } from '../src/server/db/client.js';
 import {
   claimableCards,
@@ -290,5 +291,73 @@ describe('the /gorilla:claim command', () => {
 
   it('tells the agent claiming changes attribution only', () => {
     expect(command).toContain('does not start or change any work');
+  });
+});
+
+describe('a launched binding at concurrency above one', () => {
+  it('keys the expectation on the session’s own directory, not the board’s', () => {
+    const pending = new PendingBindings();
+
+    // Since U2 the child runs in the card's worktree, so that is the cwd the
+    // session reports. An expectation filed under the board's checkout is
+    // looked up under a path nothing ever sends.
+    pending.expect('/repo/.gorilla/worktrees/card-a', 'card-a');
+
+    expect(pending.claim('/repo')).toBeNull();
+    expect(pending.claim('/repo/.gorilla/worktrees/card-a')).toBe('card-a');
+  });
+
+  it('is unambiguous for two cards, whichever session starts first', () => {
+    const pending = new PendingBindings();
+
+    pending.expect('/repo/.gorilla/worktrees/card-a', 'card-a');
+    pending.expect('/repo/.gorilla/worktrees/card-b', 'card-b');
+
+    // Reverse order to the launches: the second card's session wins the race.
+    // One worktree per card means order cannot matter.
+    expect(pending.claim('/repo/.gorilla/worktrees/card-b')).toBe('card-b');
+    expect(pending.claim('/repo/.gorilla/worktrees/card-a')).toBe('card-a');
+  });
+
+  it('refuses to answer when two launches share one directory', () => {
+    // Only possible with isolation off. Guessing would attach a night's work to
+    // the wrong card and say nothing; an unbound session becomes a provisional
+    // card, which is visible and correctable.
+    const pending = new PendingBindings();
+    pending.expect('/repo', 'card-a');
+    pending.expect('/repo', 'card-b');
+
+    expect(pending.liveCount('/repo')).toBe(2);
+    expect(pending.claim('/repo')).toBeNull();
+  });
+
+  it('answers again once the ambiguity clears', () => {
+    const pending = new PendingBindings();
+    pending.expect('/repo', 'card-a');
+    pending.expect('/repo', 'card-b');
+    pending.release('/repo', 'card-b');
+
+    expect(pending.claim('/repo')).toBe('card-a');
+  });
+
+  it('does not let an expired expectation make a directory look ambiguous', () => {
+    const pending = new PendingBindings();
+    pending.expect('/repo', 'stale', 1_000);
+    pending.expect('/repo', 'card-a', 1_000 + PENDING_TTL_MS);
+
+    // The stale launch never produced a session. It must not block the
+    // directory for ever, nor capture an unrelated session later.
+    expect(pending.claim('/repo', 1_000 + PENDING_TTL_MS + 1)).toBe('card-a');
+  });
+
+  it('releases by directory and card together', () => {
+    const pending = new PendingBindings();
+    pending.expect('/w/a', 'card-a');
+    pending.expect('/w/b', 'card-b');
+
+    pending.release('/w/a', 'card-a');
+
+    expect(pending.claim('/w/a')).toBeNull();
+    expect(pending.claim('/w/b')).toBe('card-b');
   });
 });
