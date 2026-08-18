@@ -24,6 +24,7 @@ import {
   type DispatchState,
 } from './api.js';
 import { CardDetail } from './CardDetail.js';
+import { Digest } from './Digest.js';
 import { CardTile } from './CardTile.js';
 
 /**
@@ -99,6 +100,7 @@ export function Board(): ReactElement {
   const [title, setTitle] = useState('');
   const [newPriority, setNewPriority] = useState<Card['priority']>('normal');
   const [openCardId, setOpenCardId] = useState<string | null>(null);
+  const [digestOpen, setDigestOpen] = useState(false);
   const [runnable, setRunnable] = useState<ReadonlySet<string>>(new Set());
 
   const load = useCallback(async () => {
@@ -231,7 +233,7 @@ export function Board(): ReactElement {
   }
 
   return (
-    <main className="flex h-full flex-col">
+    <main className="relative flex h-full flex-col">
       <header className="flex flex-wrap items-baseline gap-x-6 gap-y-1 border-b border-line bg-panel px-4 py-2.5">
         <h1 className="font-mono text-[13px] uppercase tracking-wider text-accent">Gorilla</h1>
         <span className="font-mono text-[12px] text-dim">{board.name}</span>
@@ -330,6 +332,15 @@ export function Board(): ReactElement {
           </select>
         </label>
 
+        <button
+          type="button"
+          className="rounded border border-line bg-panel-2 px-2 py-1 text-text hover:border-dim"
+          title="Every active card, ranked by what needs you first."
+          onClick={() => setDigestOpen(true)}
+        >
+          digest
+        </button>
+
         <div className="ml-auto flex items-center gap-2">
           {/* Set at creation, because priority is a statement about the batch
               and the moment you are describing the work is when you know it. */}
@@ -402,6 +413,17 @@ export function Board(): ReactElement {
           ))}
         </div>
       </DndContext>
+
+      {!digestOpen ? null : (
+        <Digest
+          boardId={board.id}
+          onOpen={(cardId) => {
+            setDigestOpen(false);
+            setOpenCardId(cardId);
+          }}
+          onClose={() => setDigestOpen(false)}
+        />
+      )}
 
       {openCardId === null ? null : (
         <CardDetail
