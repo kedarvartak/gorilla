@@ -227,3 +227,74 @@ describe('recording that the board merged a card', () => {
     expect(report.merged).toBe(0);
   });
 });
+
+describe('refusing a merge that would land nothing', () => {
+  it('refuses a branch with no commits the target lacks', async () => {
+    // The failure this exists to prevent: git merges an ancestor cleanly,
+    // reports "already up to date", and the board called that merged.
+    git(repo, 'branch', 'gorilla/empty', 'main');
+
+    const report = await mergeBranches({
+      repoCwd: repo,
+      cards: [card('empty', 'gorilla/empty')],
+      into: 'main',
+    });
+
+    expect(report.merged).toBe(0);
+    expect(report.clean).toBe(false);
+    expect(report.stoppedAt?.outcome).toBe('nothing-to-merge');
+    expect(report.stoppedAt?.detail).toContain('never committed');
+  });
+
+  it('refuses when the work is uncommitted in the worktree', async () => {
+    // Exactly what happened on the first real end-to-end run: the agent wrote a
+    // module and its tests, never committed them, and the board merged the empty
+    // branch and reported success while the work sat on disk.
+    const worktree = join(dir, 'wt');
+    git(repo, 'branch', 'gorilla/dirty', 'main');
+    execFileSync('git', ['worktree', 'add', '-q', worktree, 'gorilla/dirty'], { cwd: repo });
+    writeFileSync(join(worktree, 'new-module.ts'), 'export const real = 1;\n');
+
+    const report = await mergeBranches({
+      repoCwd: repo,
+      cards: [{ cardId: 'dirty', title: 'dirty', branch: 'gorilla/dirty', worktree }],
+      into: 'main',
+    });
+
+    expect(report.merged).toBe(0);
+    expect(report.stoppedAt?.outcome).toBe('uncommitted');
+    expect(report.stoppedAt?.detail).toContain('would land nothing and report success');
+  });
+
+  it('merges normally once the work is committed', async () => {
+    const worktree = join(dir, 'wt2');
+    git(repo, 'branch', 'gorilla/committed', 'main');
+    execFileSync('git', ['worktree', 'add', '-q', worktree, 'gorilla/committed'], { cwd: repo });
+    writeFileSync(join(worktree, 'real.txt'), 'work\n');
+    git(worktree, 'add', '.');
+    git(worktree, 'commit', '-qm', 'real work');
+
+    const report = await mergeBranches({
+      repoCwd: repo,
+      cards: [{ cardId: 'ok', title: 'ok', branch: 'gorilla/committed', worktree }],
+      into: 'main',
+    });
+
+    expect(report.clean).toBe(true);
+    expect(report.merged).toBe(1);
+    expect(readFileSync(join(repo, 'real.txt'), 'utf8')).toBe('work\n');
+  });
+
+  it('does not attempt later cards once one is refused', async () => {
+    git(repo, 'branch', 'gorilla/empty', 'main');
+    branchWith('gorilla/good', 'good.txt', 'fine\n');
+
+    const report = await mergeBranches({
+      repoCwd: repo,
+      cards: [card('empty', 'gorilla/empty'), card('good', 'gorilla/good')],
+      into: 'main',
+    });
+
+    expect(report.steps[1]?.outcome).toBe('skipped');
+  });
+});
