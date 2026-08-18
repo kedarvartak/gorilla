@@ -22,7 +22,16 @@ import { runVerify, type VerifyResult } from '../verify/run.js';
  * which is strictly worse than one merge and one named culprit.
  */
 
-export type MergeOutcome = 'merged' | 'conflicted' | 'verify-failed' | 'skipped' | 'errored';
+export type MergeOutcome =
+  | 'merged'
+  | 'conflicted'
+  | 'verify-failed'
+  | 'skipped'
+  | 'errored'
+  // The branch has nothing the target does not already have.
+  | 'nothing-to-merge'
+  // The work exists, but only as uncommitted changes in the worktree.
+  | 'uncommitted';
 
 export interface MergeStep {
   readonly cardId: string;
@@ -35,8 +44,19 @@ export interface MergeStep {
 
 export interface MergeRequest {
   readonly repoCwd: string;
-  /** Cards to merge, in the order the operator wants them applied. */
-  readonly cards: readonly { cardId: string; title: string; branch: string }[];
+  /**
+   * Cards to merge, in the order the operator wants them applied.
+   *
+   * `worktree` is optional only because a card can be merged without one. When
+   * it is given, the tree is checked for uncommitted work before the merge -
+   * see `mergeBranches` for why that check is not optional in spirit.
+   */
+  readonly cards: readonly {
+    cardId: string;
+    title: string;
+    branch: string;
+    worktree?: string;
+  }[];
   /** Branch to merge into. Defaults to the current branch. */
   readonly into?: string;
   /** Run after every merge. Usually the project's test command. */
@@ -56,6 +76,35 @@ export interface MergeReport {
 async function currentBranch(git: SimpleGit): Promise<string> {
   const status = await git.status();
   return status.current ?? 'HEAD';
+}
+
+/**
+ * How many commits a branch has that the target does not.
+ *
+ * Returns -1 when it cannot be determined - an unknown branch, a missing
+ * target - so the caller can tell "no commits" from "no answer" and let the
+ * merge itself produce the real error.
+ */
+async function commitsAhead(git: SimpleGit, into: string, branch: string): Promise<number> {
+  try {
+    const raw = await git.raw(['rev-list', '--count', `${into}..${branch}`]);
+    const count = Number(raw.trim());
+    return Number.isFinite(count) ? count : -1;
+  } catch {
+    return -1;
+  }
+}
+
+/** Uncommitted entries in a card's worktree, or 0 when there is no worktree to check. */
+async function uncommittedIn(worktree: string | undefined): Promise<number> {
+  if (worktree === undefined || !existsSync(worktree)) return 0;
+  try {
+    return (await simpleGit(worktree).status()).files.length;
+  } catch {
+    // Unreadable is not the same as clean, but refusing every merge because a
+    // status call failed would be worse than the risk it guards against.
+    return 0;
+  }
 }
 
 /**
@@ -130,6 +179,45 @@ export async function mergeBranches(request: MergeRequest): Promise<MergeReport>
         outcome: 'skipped',
         detail: 'Not attempted: an earlier card stopped the merge.',
       });
+      continue;
+    }
+
+    // Uncommitted work is the failure that made these checks necessary. An
+    // agent wrote a module and its tests, never committed them, and the board
+    // merged the empty branch, ran the target's own unchanged tests, and
+    // reported "merged and verified". The work was still sitting in the
+    // worktree. Reporting success for a merge that moved nothing is the false
+    // completion this product exists to prevent, so it is refused rather than
+    // warned about.
+    const dirty = await uncommittedIn(card.worktree);
+
+    if (dirty > 0) {
+      stoppedAt = {
+        ...card,
+        outcome: 'uncommitted',
+        detail:
+          `${String(dirty)} uncommitted change(s) in this card's worktree. They are not on ` +
+          `${card.branch}, so merging it would land nothing and report success. Commit them ` +
+          'in the worktree, then merge again.',
+      };
+      steps.push(stoppedAt);
+      continue;
+    }
+
+    // A branch with nothing ahead of the target merges cleanly and changes
+    // nothing. Git calls that "already up to date"; an operator reading
+    // "merged" would call it done.
+    const ahead = await commitsAhead(git, into, card.branch);
+
+    if (ahead === 0) {
+      stoppedAt = {
+        ...card,
+        outcome: 'nothing-to-merge',
+        detail:
+          `${card.branch} has no commits that ${into} does not already have, so there is ` +
+          'nothing to merge. Either the work was never committed, or it has already landed.',
+      };
+      steps.push(stoppedAt);
       continue;
     }
 

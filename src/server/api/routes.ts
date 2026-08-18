@@ -783,7 +783,7 @@ export function registerReviewRoutes(app: FastifyInstance, context: AppContext):
     }
 
     const manager = context.dispatcher.worktreesFor(board.cwd);
-    const cards: { cardId: string; title: string; branch: string }[] = [];
+    const cards: { cardId: string; title: string; branch: string; worktree?: string }[] = [];
     const missing: string[] = [];
 
     for (const cardId of cardIds) {
@@ -796,6 +796,10 @@ export function registerReviewRoutes(app: FastifyInstance, context: AppContext):
         cardId,
         title: getCard(context.database, cardId).title,
         branch: workspace.branch,
+        // Passed so the reviewer can refuse a merge whose work is still sitting
+        // uncommitted in the worktree, which once produced a card reading
+        // "merged and verified" with nothing on the branch at all.
+        worktree: workspace.path,
       });
     }
 
