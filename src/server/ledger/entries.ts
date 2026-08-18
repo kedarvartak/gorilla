@@ -48,3 +48,7 @@ export type OperatorStatus = (typeof OPERATOR_STATUSES)[number];
 export function isModelKind(value: unknown): value is ModelKind {
   return typeof value === 'string' && (MODEL_KINDS as readonly string[]).includes(value);
 }
+
+export function isOperatorStatus(value: unknown): value is OperatorStatus {
+  return typeof value === 'string' && (OPERATOR_STATUSES as readonly string[]).includes(value);
+}

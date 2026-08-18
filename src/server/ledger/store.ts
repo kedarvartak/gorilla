@@ -246,3 +246,9 @@ export function setOperatorStatus(
     .where(eq(ledgerEntries.id, entryId))
     .run();
 }
+
+/** One stored entry by id, or undefined. Used to check a judgement can land. */
+export function storedEntryById(handle: DatabaseHandle, entryId: string): StoredEntry | undefined {
+  const row = handle.db.select().from(ledgerEntries).where(eq(ledgerEntries.id, entryId)).get();
+  return row === undefined ? undefined : toStored(row);
+}

@@ -177,6 +177,16 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  /** The operator's verdict on one synthesised claim. Nothing is deleted. */
+  judgeEntry: (
+    entryId: string,
+    body: { status: 'accepted' | 'rejected' | 'corrected'; statement?: string },
+  ) =>
+    request<unknown>(`/api/ledger/${entryId}/status`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
   dispatchable: (boardId: string) =>
     request<{ id: string; title: string }[]>(`/api/boards/${boardId}/dispatchable`),
 };
