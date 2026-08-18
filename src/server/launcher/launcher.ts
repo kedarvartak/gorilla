@@ -34,6 +34,8 @@ export interface LaunchOptions {
   readonly guardrails: GuardrailSet;
   readonly goalCondition?: string | null;
   readonly prompt?: string | null;
+  /** The card's own branch, so the agent knows to commit to it. */
+  readonly branch?: string | null;
   readonly agentModel?: string | null;
   readonly agentEffort?: string | null;
   readonly permissionMode?: string | null;
@@ -96,6 +98,7 @@ function writeLaunchFiles(options: LaunchOptions): {
       title: options.title,
       body: options.body,
       guardrails: options.guardrails,
+      ...(options.branch === undefined ? {} : { branch: options.branch }),
       ...(options.acceptedEntries === undefined
         ? {}
         : { acceptedEntries: options.acceptedEntries }),

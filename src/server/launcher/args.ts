@@ -110,6 +110,8 @@ export function buildArgs(spec: LaunchSpec): string[] {
 }
 
 export interface CardContextInput {
+  /** The card's own branch, when it has an isolated worktree. */
+  readonly branch?: string | null;
   readonly title: string;
   readonly body: string;
   readonly guardrails: GuardrailSet;
@@ -131,6 +133,21 @@ export function renderCardContext(input: CardContextInput): string {
 
   if (input.body.trim() !== '') {
     lines.push(input.body.trim(), '');
+  }
+
+  if (input.branch !== undefined && input.branch !== null && input.branch !== '') {
+    // Said plainly because it was not said at all, and agents cannot be
+    // expected to infer that their working directory is a throwaway worktree
+    // whose contents reach nobody until they are committed.
+    lines.push(
+      '## Your branch',
+      '',
+      `You are working in an isolated git worktree on the branch \`${input.branch}\`.`,
+      'Nothing you write reaches anyone until it is committed to that branch.',
+      'Commit your work before you finish, in whatever pieces make sense.',
+      'Do not merge, rebase, push, or switch branches - the board does that after review.',
+      '',
+    );
   }
 
   const described = describeGuardrails(input.guardrails);
