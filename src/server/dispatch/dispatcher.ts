@@ -11,6 +11,7 @@ import { describeVerify, runVerify, type VerifyResult } from '../verify/run.js';
 import { outstandingSurprises } from '../ledger/outstanding.js';
 import { assessStall, DEFAULT_STALL, progressOf, type StallThresholds } from './stall.js';
 import { WorktreeManager } from '../worktree/manager.js';
+import { commitWorkspace } from '../worktree/commit.js';
 import {
   launch,
   LaunchRegistry,
@@ -75,6 +76,8 @@ export interface DispatcherEvents {
   readonly onRunStarted?: (boardId: string, cardId: string, sessionId: string | null) => void;
   readonly onRunFinished?: (boardId: string, cardId: string, result: LaunchResult) => void;
   readonly onVerified?: (boardId: string, cardId: string, result: VerifyResult) => void;
+  /** Files the board committed on the card's behalf when its run ended. */
+  readonly onCommitted?: (boardId: string, cardId: string, files: number) => void;
 }
 
 interface BoardState {
@@ -135,6 +138,8 @@ export class Dispatcher {
   readonly #lastVerify = new Map<string, VerifyResult>();
   readonly #worktrees = new Map<string, WorktreeManager>();
   readonly #pumping = new Set<string>();
+  /** Set by shutdown, so work already in flight stops touching the database. */
+  #closed = false;
   #stopped = false;
   #executable: string | undefined;
 
@@ -455,6 +460,7 @@ export class Dispatcher {
         body: card.body,
         guardrails: parseGuardrails(card.guardrails),
         goalCondition: card.goalCondition,
+        branch: this.#worktreesFor(board.cwd).workspaceFor(cardId)?.branch ?? null,
         agentModel: card.agentModel,
         agentEffort: card.agentEffort,
         permissionMode: card.permissionMode,
@@ -478,14 +484,23 @@ export class Dispatcher {
     this.#publish(boardId);
 
     void running.result.then(
-      (result) => void this.#settle(boardId, cardId, result),
-      () => void this.#settle(boardId, cardId, null),
+      // Caught, not just voided. `#settle` is fire-and-forget and does real
+      // asynchronous work - committing, verifying - so a board that shuts down
+      // while one is in flight would otherwise raise an unhandled rejection,
+      // which Node turns into a process exit. The board must not die because a
+      // run happened to finish at the wrong moment.
+      (result) => void this.#settle(boardId, cardId, result).catch(() => undefined),
+      () => void this.#settle(boardId, cardId, null).catch(() => undefined),
     );
 
     return running;
   }
 
   async #settle(boardId: string, cardId: string, result: LaunchResult | null): Promise<void> {
+    // Nothing to settle into. Shutdown closes the database, and a settle that
+    // began before it would otherwise query a closed connection.
+    if (this.#closed) return;
+
     const state = this.#stateFor(boardId);
     state.running.delete(cardId);
 
@@ -558,6 +573,13 @@ export class Dispatcher {
       this.#publish(boardId);
       return;
     }
+
+    // Before verify, so what the board checks is what the branch holds. A run
+    // that finished with work still uncommitted has produced a branch the
+    // reviewer will refuse and an operator who reasonably believed it was done
+    // - which happened twice before anything told the agent it had a branch.
+    await this.#commitWork(boardId, cardId, card.title);
+    if (this.#closed) return;
 
     // The board runs the card's verify command itself. Until now `verify` was
     // displayed as a hard guardrail and never executed, which is the failure
@@ -692,6 +714,27 @@ export class Dispatcher {
     const outcomes = row.outcomes ?? 0;
 
     return { achievedNothing: intents > 0 && outcomes === 0, unresolved: intents - outcomes };
+  }
+
+  /**
+   * Commits whatever the run left uncommitted, onto the card's own branch.
+   *
+   * The floor under the instruction in the launch context, not a replacement
+   * for it: an agent that commits as it goes writes better messages than this
+   * can. This only ensures that "the card finished" and "the work is on the
+   * branch" cannot come apart.
+   */
+  async #commitWork(boardId: string, cardId: string, cardTitle: string): Promise<void> {
+    const board = this.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
+    if (board === undefined) return;
+
+    const workspace = this.#worktreesFor(board.cwd).workspaceFor(cardId);
+    // No worktree means the card ran in the board's own checkout, where
+    // committing on the operator's behalf would sweep up their work too.
+    if (workspace === undefined) return;
+
+    const result = await commitWorkspace({ cwd: workspace.path, cardId, cardTitle });
+    if (result.committed) this.events.onCommitted?.(boardId, cardId, result.files);
   }
 
   #moveToReview(boardId: string, cardId: string): void {
