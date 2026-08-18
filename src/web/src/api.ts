@@ -99,6 +99,12 @@ export interface MergeReport {
   readonly summary: readonly string[];
 }
 
+export interface ResolveResult {
+  readonly outcome: 'resolved' | 'still-conflicted' | 'verify-failed' | 'not-merging' | 'errored';
+  readonly detail: string;
+  readonly files: readonly string[];
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...init,
@@ -110,7 +116,16 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
       error?: string;
       field?: string;
       reach?: string;
+      detail?: string;
+      outcome?: string;
     };
+
+    // A resolver that could not finish reports why, and that detail is the whole
+    // message. Replacing it with "Request failed: 409" would throw away the only
+    // part the operator can act on.
+    if (typeof body.outcome === 'string' && typeof body.detail === 'string') {
+      throw new Error(body.detail);
+    }
 
     // The API names the field; carrying it through means the interface can put
     // the message where the operator is looking.
@@ -199,6 +214,22 @@ export const api = {
     body: { cardIds: readonly string[]; into?: string; verify?: string | null },
   ) =>
     request<MergeReport>(`/api/boards/${boardId}/review/merge`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  /**
+   * Resolves the conflict the board is sitting in, then commits the merge.
+   *
+   * A conflict is the ordinary cost of parallel agents, so the board does the
+   * work rather than handing it back. Judged from git, never from the resolver's
+   * own account of itself.
+   */
+  resolveConflicts: (
+    boardId: string,
+    body: { branch?: string; into?: string; verify?: string | null },
+  ) =>
+    request<ResolveResult>(`/api/boards/${boardId}/review/resolve`, {
       method: 'POST',
       body: JSON.stringify(body),
     }),

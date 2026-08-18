@@ -57,6 +57,7 @@ import {
   type GateCard,
 } from '../review/gate.js';
 import { describeMergeReport, mergeBranches, mergeTargetFor } from '../review/merge.js';
+import { isMerging, resolveConflicts } from '../review/resolve.js';
 
 /**
  * REST for boards, columns and cards.
@@ -898,6 +899,46 @@ export function registerReviewRoutes(app: FastifyInstance, context: AppContext):
       missing,
       summary: describeMergeReport(report),
     });
+  });
+
+  /**
+   * Resolving the conflict the board is sitting in.
+   *
+   * A conflict is the ordinary cost of two agents working in parallel, so
+   * stopping there made the one merge action fail on exactly the mornings it was
+   * most needed. The board resolves it instead, then judges the result from the
+   * repository rather than from what the resolver claims.
+   */
+  app.post<{
+    Params: { boardId: string };
+    Body: { branch?: string; into?: string; verify?: string | null };
+  }>('/api/boards/:boardId/review/resolve', async (request, reply) => {
+    const board = context.database.db
+      .select()
+      .from(boards)
+      .where(eq(boards.id, request.params.boardId))
+      .get();
+
+    if (board === undefined) return reply.code(404).send({ error: 'No such board.' });
+
+    if (!isMerging(board.cwd)) {
+      return reply.code(409).send({
+        error: 'This repository is not part way through a merge, so there is nothing to resolve.',
+      });
+    }
+
+    const result = await resolveConflicts({
+      repoCwd: board.cwd,
+      branch: request.body?.branch ?? 'the card branch',
+      into: request.body?.into ?? (await mergeTargetFor(board.cwd)) ?? 'HEAD',
+      verifyCommand: request.body?.verify ?? null,
+    });
+
+    publish(context, 'review-resolved', { boardId: board.id, ...result });
+
+    // 409 for anything short of resolved: the caller asked for a merge to be
+    // completed, and a report that it was not is not a success.
+    return reply.code(result.outcome === 'resolved' ? 200 : 409).send(result);
   });
 
   /** What is waiting to be merged: finished cards that still have a worktree. */
