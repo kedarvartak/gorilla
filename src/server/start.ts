@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 
 import { eq } from 'drizzle-orm';
 
-import { buildApp } from './app.js';
+import { buildApp, contextOf } from './app.js';
 import { createDefaultColumns } from './cards/defaults.js';
 import { canonicaliseCwd } from './ingest/binding.js';
 import { boards } from './db/schema.js';
@@ -69,7 +69,21 @@ export interface RunningServer {
   readonly board: EnsuredBoard | null;
   /** What startup found left open, so `serve` can say so rather than hide it. */
   readonly reconciled: string | null;
+  /** Worktrees rediscovered on disk. */
+  readonly adopted: number;
   stop(): Promise<void>;
+}
+
+/** Repopulates each board's worktree map from what git reports on disk. */
+async function adoptWorktrees(app: FastifyInstance, database: DatabaseHandle): Promise<number> {
+  const context = contextOf(app);
+  if (context === undefined) return 0;
+
+  let total = 0;
+  for (const board of database.db.select().from(boards).all()) {
+    total += await context.dispatcher.worktreesFor(board.cwd).adopt();
+  }
+  return total;
 }
 
 export async function startServer(options: StartOptions = {}): Promise<RunningServer> {
@@ -95,6 +109,12 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
     ...(options.extractionModel === undefined ? {} : { extractionModel: options.extractionModel }),
   });
 
+  // Worktrees are durable and git already tracks them, so the board asks rather
+  // than remembering. Without this a restart forgets every isolated branch: the
+  // reviewer refuses to merge work that is sitting right there, and a
+  // re-dispatched card falls back to running in the operator's own checkout.
+  const adopted = await adoptWorktrees(app, database);
+
   await app.listen({ port, host });
 
   return {
@@ -102,6 +122,7 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
     database,
     board,
     reconciled,
+    adopted,
     url: `http://${host}:${port}`,
     stop: async () => {
       await app.close();

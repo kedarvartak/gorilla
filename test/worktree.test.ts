@@ -276,3 +276,45 @@ describe('dispatching into a worktree', () => {
     expect(secondWorkspace?.baseRef).toBe(firstWorkspace?.branch);
   });
 });
+
+describe('rediscovering worktrees after a restart', () => {
+  it('finds a worktree that a previous process created', async () => {
+    const first = new WorktreeManager(repo);
+    const made = await first.create('card-1', 'Some work');
+    expect('path' in made).toBe(true);
+
+    // A fresh manager is exactly what a restarted board has: an empty map, and
+    // a worktree sitting on disk that git already knows about.
+    const afterRestart = new WorktreeManager(repo);
+    expect(afterRestart.workspaceFor('card-1')).toBeUndefined();
+
+    expect(await afterRestart.adopt()).toBe(1);
+    const found = afterRestart.workspaceFor('card-1');
+    expect(found?.branch).toContain('card-1');
+    expect(found?.created).toBe(false);
+  });
+
+  it('ignores worktrees that are not the board’s', async () => {
+    const outside = join(dir, 'unrelated');
+    execFileSync('git', ['worktree', 'add', '-q', '-b', 'someone-elses', outside], { cwd: repo });
+
+    const manager = new WorktreeManager(repo);
+    expect(await manager.adopt()).toBe(0);
+    expect(manager.list()).toHaveLength(0);
+  });
+
+  it('does not overwrite what it already knows', async () => {
+    const manager = new WorktreeManager(repo);
+    await manager.create('card-1', 'Some work');
+
+    // Adoption is a repair for a cold start, not a refresh that could clobber
+    // the baseRef a live create recorded.
+    expect(await manager.adopt()).toBe(0);
+    expect(manager.workspaceFor('card-1')?.created).toBe(true);
+  });
+
+  it('is quiet when the board directory is not a repository', async () => {
+    const manager = new WorktreeManager(join(dir, 'not-a-repo'));
+    expect(await manager.adopt()).toBe(0);
+  });
+});

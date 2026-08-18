@@ -60,6 +60,9 @@ export const serveCommand: Command = {
     // Said out loud rather than fixed silently: a run the board closed by
     // deduction is a run whose end time is an estimate.
     if (server.reconciled !== null) process.stderr.write(`  ${server.reconciled}\n`);
+    if (server.adopted > 0) {
+      process.stderr.write(`  Rediscovered ${String(server.adopted)} card worktree(s).\n`);
+    }
     if (board !== null) {
       process.stderr.write(
         `  board "${board.name}" ${board.created ? 'created for' : 'observing'} ${board.cwd}\n`,
