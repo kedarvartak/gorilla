@@ -65,6 +65,23 @@ export function CardTile({
     >
       <div className="flex items-start justify-between gap-2">
         <span className="text-text leading-snug">
+          {/* The order to work in, so it does not have to be reconstructed from
+              priority and the dependency graph by eye. Dimmed when blocked: the
+              number still says where it sits, but it cannot be started yet. */}
+          {card.rank === null ? null : (
+            <span
+              className={`mr-1.5 font-mono text-[11px] ${
+                card.rankBlocked ? 'text-dim' : 'text-info'
+              }`}
+              title={
+                card.rankBlocked
+                  ? `${String(card.rank)} in the order, but blocked until its dependencies finish`
+                  : `${String(card.rank)} in the order to work in`
+              }
+            >
+              {card.rank}.
+            </span>
+          )}
           {/* Priority sits before the title because it changes what runs next,
               and the operator scans titles. `normal` shows nothing: a chip on
               every card conveys no ordering at all. */}

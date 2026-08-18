@@ -7,6 +7,7 @@ import type { AppContext } from '../app.js';
 import { createDefaultColumns } from '../cards/defaults.js';
 import { describeGuardrails, parseGuardrails } from '../cards/guardrails.js';
 import { blockersFor, dispatchableCards } from '../cards/eligibility.js';
+import { executionOrder } from '../cards/order.js';
 import { canonicaliseCwd } from '../ingest/binding.js';
 import {
   boards,
@@ -158,7 +159,23 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
   });
 
   app.get<{ Params: { boardId: string } }>('/api/boards/:boardId/cards', (request) => {
-    return listCards(context.database, request.params.boardId).map(present);
+    // Ranked here rather than in the interface: the order has to agree with what
+    // the dispatcher does next, and two implementations of that rule would drift.
+    const order = new Map(
+      executionOrder(context.database.db, request.params.boardId).map((entry) => [
+        entry.cardId,
+        entry,
+      ]),
+    );
+
+    return listCards(context.database, request.params.boardId).map((card) => {
+      const ranked = order.get(card.id);
+      return {
+        ...present(card),
+        rank: ranked?.rank ?? null,
+        rankBlocked: ranked?.blocked ?? false,
+      };
+    });
   });
 
   app.get<{ Params: { boardId: string } }>('/api/boards/:boardId/dispatchable', (request) => {
