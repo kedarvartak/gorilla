@@ -153,10 +153,18 @@ export function registerIngestRoutes(app: FastifyInstance, context: AppContext):
       context.broadcaster.publish('hook', {
         id: written.seq,
         runId: written.runId,
+        // Attributed at the source. Without it the activity view can show that
+        // something is happening but not which card it is happening to, which
+        // is most of what the operator wants from it.
+        cardId: written.cardId,
         sessionId,
         event,
         receivedAt,
         toolName: readString(payload, 'tool_name'),
+        // The one field that turns "Edit" into something recognisable.
+        target:
+          readString(asRecord(payload['tool_input']), 'file_path') ??
+          readString(asRecord(payload['tool_input']), 'command'),
         agentId: readString(payload, 'agent_id'),
         cwd,
         durationMs: Number(durationMs.toFixed(2)),

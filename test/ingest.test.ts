@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/server/app.js';
 import { openDatabase, type DatabaseHandle } from '../src/server/db/client.js';
 import { canonicaliseCwd } from '../src/server/ingest/binding.js';
+import { EventStore } from '../src/server/ingest/store.js';
 import { clearRecordedLatencies, recordedLatencies } from '../src/server/ingest/routes.js';
 import { HOOK_DEFINITIONS } from '../src/hooks/definitions.js';
 
@@ -279,5 +280,56 @@ describe('latency', () => {
     expect(quantile(handler, 0.5)).toBeLessThan(5);
 
     expect(quantile(handler, 0.99)).toBeLessThan(onSharedRunner ? 250 : 25);
+  });
+});
+
+describe('what the live feed needs from an event', () => {
+  it('attributes an event to its card', async () => {
+    await post('SessionStart', { ...basePayload('SessionStart'), source: 'startup' });
+
+    const run = database.sqlite
+      .prepare('SELECT id, board_id FROM runs WHERE session_id = ?')
+      .get(SESSION) as { id: string; board_id: string };
+
+    const column = database.sqlite.prepare('SELECT id FROM columns LIMIT 1').get() as
+      { id: string } | undefined;
+
+    if (column === undefined) return;
+
+    const cardId = 'card-under-watch';
+    database.sqlite
+      .prepare(
+        'INSERT INTO cards (id, board_id, column_id, title, position, created_at, updated_at) VALUES (?,?,?,?,?,?,?)',
+      )
+      .run(cardId, run.board_id, column.id, 'Watched card', 0, Date.now(), Date.now());
+    database.sqlite.prepare('UPDATE runs SET card_id = ? WHERE id = ?').run(cardId, run.id);
+
+    const written = new EventStore(database.sqlite).write({
+      eventName: 'PostToolUse',
+      sessionId: SESSION,
+      cwd: CWD,
+      transcriptPath: null,
+      payload: { tool_name: 'Edit' },
+      receivedAt: Date.now(),
+    });
+
+    // Carried on the write rather than looked up per subscriber, so the live
+    // feed can say which card an event belongs to without a query per event.
+    expect(written.cardId).toBe(cardId);
+  });
+
+  it('reports no card for a session nothing has claimed', async () => {
+    await post('SessionStart', { ...basePayload('SessionStart'), source: 'startup' });
+
+    const written = new EventStore(database.sqlite).write({
+      eventName: 'PostToolUse',
+      sessionId: SESSION,
+      cwd: CWD,
+      transcriptPath: null,
+      payload: {},
+      receivedAt: Date.now(),
+    });
+
+    expect(written.cardId).toBeNull();
   });
 });
