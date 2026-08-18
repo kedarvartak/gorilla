@@ -8,6 +8,7 @@ import type { DatabaseHandle } from '../db/client.js';
 import { boards, cards, columns, runs } from '../db/schema.js';
 import type { PendingBindings } from '../binding/pending.js';
 import { describeVerify, runVerify, type VerifyResult } from '../verify/run.js';
+import { outstandingSurprises } from '../ledger/outstanding.js';
 import { assessStall, DEFAULT_STALL, progressOf, type StallThresholds } from './stall.js';
 import { WorktreeManager } from '../worktree/manager.js';
 import {
@@ -48,7 +49,10 @@ export type HaltReason =
   // The run stopped getting anywhere: refused calls, or silence.
   | 'stalled'
   // Copilot mode: the agent asked for something only the operator can give.
-  | 'needs-operator';
+  | 'needs-operator'
+  // A finished card has surprises nobody has judged, so the queue stopped
+  // rather than starting the next card on top of them.
+  | 'unacknowledged-surprises';
 
 export interface HaltState {
   readonly reason: HaltReason;
@@ -83,6 +87,14 @@ interface BoardState {
   concurrency: number;
   running: Map<string, RunningLaunch>;
   completed: Set<string>;
+  /**
+   * Cards that finished under this dispatcher and may still have something
+   * outstanding. Distinct from `completed`, which `resume` clears: this set is
+   * what makes the gate a gate. If clearing the halt also emptied it, an
+   * operator could dismiss the stop without reading anything, and a control
+   * that is dismissed by the act of noticing it is a notification.
+   */
+  awaitingAck: Set<string>;
   halted: HaltState | null;
 }
 
@@ -133,6 +145,7 @@ export class Dispatcher {
   readonly #lastVerify = new Map<string, VerifyResult>();
   readonly #worktrees = new Map<string, WorktreeManager>();
   readonly #pumping = new Set<string>();
+  #stopped = false;
   #executable: string | undefined;
 
   /** Loosened in tests that need a stall detected without waiting minutes. */
@@ -169,6 +182,7 @@ export class Dispatcher {
       concurrency: DEFAULT_CONCURRENCY,
       running: new Map(),
       completed: new Set(),
+      awaitingAck: new Set(),
       halted: null,
     };
     this.#boards.set(boardId, created);
@@ -228,6 +242,11 @@ export class Dispatcher {
   /**
    * Clears a halt. Deliberately explicit: the operator has to say they have
    * looked, which is the whole point of stopping.
+   *
+   * It does not clear `awaitingAck`. Resuming past an unacknowledged surprise
+   * re-halts on the next pump, because the gate is retired by judging the
+   * surprise rather than by pressing resume - otherwise the only cost of
+   * skipping the review would be one extra click.
    */
   resume(boardId: string): BoardDispatchState {
     this.#stateFor(boardId).halted = null;
@@ -247,9 +266,66 @@ export class Dispatcher {
     }
   }
 
+  /**
+   * The queue gate (doc 08, P4).
+   *
+   * Layer one showed the operator what was surprising and layer three declined
+   * to merge it. Neither costs anything at 3am, when the operator who would
+   * rather not review simply does not look. This one does: the queue stops, so
+   * skipping the review costs progress instead of costing nothing.
+   *
+   * Halts and returns true when a finished card still has something nobody has
+   * judged. Cards whose surprises have all been acknowledged drop out of the
+   * set as they are checked, so the gate opens by itself once the reading is
+   * done rather than needing a second gesture.
+   *
+   * Like the merge gate, this is the board declining to start work, not a lock:
+   * anyone can run `claude` in the worktree by hand. Saying otherwise would be
+   * asserting a guarantee this cannot keep (R10).
+   */
+  async #gateOnSurprises(boardId: string): Promise<boolean> {
+    const state = this.#stateFor(boardId);
+    if (state.awaitingAck.size === 0) return false;
+
+    const board = this.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
+
+    for (const cardId of [...state.awaitingAck]) {
+      const surprises = await outstandingSurprises({
+        database: this.database,
+        cardId,
+        cwd: board === undefined ? undefined : this.#workspacePath(board.cwd, cardId),
+      });
+
+      if (surprises.length === 0) {
+        state.awaitingAck.delete(cardId);
+        continue;
+      }
+
+      const card = getCard(this.database, cardId);
+      const counted =
+        surprises.length === 1 ? '1 surprise' : `${String(surprises.length)} surprises`;
+
+      // The count, not the list: the halt is a stop sign, and the card's brief
+      // is where the surprises are already presented in full.
+      this.#halt(boardId, {
+        reason: 'unacknowledged-surprises',
+        cardId,
+        cardTitle: card.title,
+        detail:
+          `"${card.title}" finished with ${counted} nobody has judged, so the queue stopped ` +
+          'rather than starting the next card on top of them. Judge them on the card, then resume.',
+        at: Date.now(),
+      });
+      return true;
+    }
+
+    return false;
+  }
+
   /** Starts eligible cards up to the concurrency limit. */
   async pump(boardId: string): Promise<string[]> {
     const state = this.#stateFor(boardId);
+    if (this.#stopped) return [];
     if (state.halted !== null) return [];
     if (state.mode !== 'automatic') return [];
 
@@ -261,6 +337,14 @@ export class Dispatcher {
     const started: string[] = [];
 
     while (state.running.size < state.concurrency && state.halted === null) {
+      // The queue gate (P4). Asked before every start, not once per pump: a
+      // card that finishes while this loop is running is exactly the case the
+      // gate exists for.
+      if (await this.#gateOnSurprises(boardId)) break;
+      // The gate reads git, so the dispatcher can be shut down underneath it.
+      // Starting a card after that would touch a database nobody owns any more.
+      if (this.#stopped) break;
+
       const next = dispatchableCards(this.database.db, boardId)[0];
       if (next === undefined) break;
 
@@ -502,6 +586,7 @@ export class Dispatcher {
     const verify = await this.#verify(boardId, cardId);
 
     state.completed.add(cardId);
+    state.awaitingAck.add(cardId);
 
     if (verify?.status === 'failed' || verify?.status === 'errored') {
       this.#halt(boardId, {
@@ -666,6 +751,7 @@ export class Dispatcher {
   }
 
   async shutdown(): Promise<void> {
+    this.#stopped = true;
     await this.#registry.cancelAll();
   }
 }
