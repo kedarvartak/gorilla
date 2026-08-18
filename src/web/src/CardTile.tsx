@@ -95,7 +95,21 @@ export function CardTile({
       </div>
 
       <div className="mt-1.5 flex items-center gap-3 font-mono text-[11px]">
-        <span className={status.className}>{status.label}</span>
+        {/* "merged" replaces "done" rather than sitting beside it: a card the
+            board merged and a card the operator marked finished are different
+            outcomes, and showing both words would restate the ambiguity. */}
+        {card.mergedAt === null ? (
+          <span className={status.className}>{status.label}</span>
+        ) : (
+          <span
+            className="text-ok"
+            title={`Merged into ${card.mergedInto ?? 'the target branch'} from ${
+              card.mergedBranch ?? 'its branch'
+            } on ${new Date(card.mergedAt).toLocaleString()}`}
+          >
+            merged
+          </span>
+        )}
 
         {card.agentModel === null ? null : <span className="text-dim">{card.agentModel}</span>}
 

@@ -28,6 +28,8 @@ export interface BriefInput {
   readonly compactions: number;
   readonly runCount: number;
   readonly branch?: string | null;
+  /** When the board merged this card's branch, and where. Null means it did not. */
+  readonly merged?: { at: number; into: string; branch: string } | null;
   /**
    * Why the ledger looks the way it does, when it is not the full picture: no
    * API key, an exhausted budget, a failed call. Rendered rather than returned
@@ -151,7 +153,14 @@ function stateOfTheWork(input: BriefInput, rejected: number): BriefSection {
     );
   }
 
-  if (input.branch !== null && input.branch !== undefined && input.branch !== '') {
+  if (input.merged !== null && input.merged !== undefined) {
+    // Said before the branch line, and instead of it: a card that has been
+    // merged must never still read "has not been merged".
+    lines.push(
+      `Merged into ${input.merged.into} from ${input.merged.branch} on ` +
+        `${new Date(input.merged.at).toLocaleString()}.`,
+    );
+  } else if (input.branch !== null && input.branch !== undefined && input.branch !== '') {
     lines.push(`Work is on branch ${input.branch} and has not been merged.`);
   }
 

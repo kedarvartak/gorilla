@@ -193,3 +193,37 @@ describe('the report', () => {
     expect(text).toContain('working tree is left as it is');
   });
 });
+
+describe('recording that the board merged a card', () => {
+  it('is the difference between merged and merely done', async () => {
+    branchWith('gorilla/one', 'one.txt', 'first\n');
+
+    const report = await mergeBranches({
+      repoCwd: repo,
+      cards: [card('one', 'gorilla/one')],
+      into: 'main',
+    });
+
+    // The report is what the API writes onto the card. `done` covers "the board
+    // merged this", "it landed another way" and "it was never needed"; only the
+    // first can name a branch and a target.
+    expect(report.steps[0]?.outcome).toBe('merged');
+    expect(report.into).toBe('main');
+    expect(report.steps[0]?.branch).toBe('gorilla/one');
+  });
+
+  it('names nothing for a card that did not merge', async () => {
+    branchWith('gorilla/bad', 'broken.txt', 'x\n');
+
+    const report = await mergeBranches({
+      repoCwd: repo,
+      cards: [card('bad', 'gorilla/bad')],
+      into: 'main',
+      verifyCommand: 'test ! -f broken.txt',
+    });
+
+    // A verify failure must not leave the card looking merged.
+    expect(report.steps[0]?.outcome).toBe('verify-failed');
+    expect(report.merged).toBe(0);
+  });
+});

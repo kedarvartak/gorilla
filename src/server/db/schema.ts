@@ -231,6 +231,21 @@ export const cards = sqliteTable(
     lastSeenAt: integer('last_seen_at'),
     acknowledgedAt: integer('acknowledged_at'),
 
+    /**
+     * Set only when the board itself merged this card's branch.
+     *
+     * `done` alone is ambiguous: it covers "the board merged this", "the work
+     * landed another way", and "this was never needed". Those want different
+     * things from the operator, and a status that cannot tell them apart makes
+     * a finished board unreadable. When these are null the card is finished and
+     * the board did not merge it, which is a fact rather than an absence.
+     */
+    mergedAt: integer('merged_at'),
+    /** The branch it was merged into, named because it is not always main. */
+    mergedInto: text('merged_into'),
+    /** The card's own branch, kept after the worktree is gone. */
+    mergedBranch: text('merged_branch'),
+
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
