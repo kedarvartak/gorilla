@@ -31,7 +31,15 @@ import { checkReality, describeReality } from '../ledger/reality.js';
 import { describeVerify } from '../verify/run.js';
 import { buildBrief, renderBrief } from '../brief/brief.js';
 import type { StoredEntry } from '../ledger/dedupe.js';
-import { cursorFor, entryTimesFor, storedEntriesFor } from '../ledger/store.js';
+import {
+  cursorFor,
+  entryTimesFor,
+  setOperatorStatus,
+  storedEntriesFor,
+  storedEntryById,
+} from '../ledger/store.js';
+import { isOperatorStatus, OPERATOR_STATUSES } from '../ledger/entries.js';
+import { surprisesFor } from '../ledger/surprises.js';
 import { describeMergeReport, mergeBranches, mergeTargetFor } from '../review/merge.js';
 
 /**
@@ -904,6 +912,60 @@ function extractionStateFor(context: AppContext, runIds: readonly string[]): Ext
 }
 
 export function registerBriefRoutes(app: FastifyInstance, context: AppContext): void {
+  /**
+   * The operator's verdict on one entry (doc 12, P2).
+   *
+   * `setOperatorStatus` has existed since the ledger was written and had no
+   * caller at all, so the board asserted things at the operator with no way to
+   * say "that is wrong". A synthesised claim nobody can correct is worse than
+   * one nobody made: it teaches the operator to stop reading.
+   *
+   * Nothing is deleted. A rejection is evidence about the model, and doc 12's
+   * repair path reads only from these verdicts.
+   */
+  app.post<{ Params: { entryId: string }; Body: { status?: unknown; statement?: unknown } }>(
+    '/api/ledger/:entryId/status',
+    (request, reply) => {
+      const { entryId } = request.params;
+      const status = request.body?.status;
+
+      if (!isOperatorStatus(status)) {
+        return reply.code(400).send({
+          error: `Status must be one of ${OPERATOR_STATUSES.join(', ')}.`,
+          field: 'status',
+        });
+      }
+
+      const existing = storedEntryById(context.database, entryId);
+      if (existing === undefined) {
+        return reply.code(404).send({ error: `No such ledger entry: ${entryId}` });
+      }
+
+      const statement = request.body?.statement;
+
+      if (status === 'corrected' && typeof statement !== 'string') {
+        // Correcting without saying what it should be would leave the entry
+        // marked as fixed and still wrong, which is worse than leaving it.
+        return reply.code(400).send({
+          error: 'A corrected entry needs the statement it should read instead.',
+          field: 'statement',
+        });
+      }
+
+      setOperatorStatus(
+        context.database,
+        entryId,
+        status,
+        typeof statement === 'string' ? statement : undefined,
+      );
+
+      const updated = storedEntryById(context.database, entryId);
+      publish(context, 'ledger-judged', { entryId, status });
+
+      return reply.send(updated);
+    },
+  );
+
   app.get<{ Params: { cardId: string } }>('/api/cards/:cardId/brief', async (request, reply) => {
     try {
       const card = getCard(context.database, request.params.cardId);
@@ -1003,7 +1065,15 @@ export function registerBriefRoutes(app: FastifyInstance, context: AppContext): 
         extractionNote: extraction.note,
       });
 
-      return reply.send({ ...brief, markdown: renderBrief(brief), extraction });
+      // The set the operator would regret not reading, carried alongside the
+      // brief so the interface never has to work out what is outstanding.
+      const surprises = surprisesFor({
+        cardId: card.id,
+        entries,
+        changedButUnmentioned: reality?.changedButUnmentioned ?? [],
+      });
+
+      return reply.send({ ...brief, markdown: renderBrief(brief), extraction, surprises });
     } catch (error) {
       return fail(reply, error);
     }
