@@ -332,6 +332,8 @@ export function CardDetail({
 
   const [merging, setMerging] = useState(false);
   const [mergeReport, setMergeReport] = useState<MergeReport | null>(null);
+  /** Set only when the gate declined. Judgement is offered here and nowhere else. */
+  const [mergeRefusal, setMergeRefusal] = useState<{ summary: string; reach: string } | null>(null);
 
   /**
    * Merges this card alone.
@@ -345,6 +347,7 @@ export function CardDetail({
     if (detail === null) return;
     setMerging(true);
     setMergeReport(null);
+    setMergeRefusal(null);
 
     void api
       .mergeCards(detail.card.boardId, {
@@ -359,7 +362,12 @@ export function CardDetail({
       .then(async (response) => {
         if (response.ok) setDetail((await response.json()) as Detail);
       })
-      .catch((cause: Error) => setError(cause.message))
+      .catch((cause: Error & { refusal?: { summary: string; reach: string } }) => {
+        // A refusal is not an error to report at the top of the pane: it is the
+        // gate working, and it comes with something to do about it.
+        if (cause.refusal !== undefined) setMergeRefusal(cause.refusal);
+        else setError(cause.message);
+      })
       .finally(() => setMerging(false));
   }, [cardId, detail]);
 
@@ -605,14 +613,18 @@ export function CardDetail({
                   </p>
                 )}
 
-                {brief.surprises.length === 0 ? null : (
-                  <div className="mb-3 rounded border border-accent/40 bg-accent/5 px-2 py-1.5">
-                    <h4 className="mb-1 font-mono text-[11px] uppercase tracking-wider text-accent">
-                      Needs your judgement ({brief.surprises.length})
+                {mergeRefusal === null ? null : (
+                  <div className="mb-3 rounded border border-warn/50 bg-warn/10 px-2 py-1.5">
+                    <h4 className="mb-1 font-mono text-[11px] uppercase tracking-wider text-warn">
+                      The merge was refused
                     </h4>
-                    {/* Only the entries worth an interruption: a reversal, an
-                        assumption nothing verified, a file nobody mentioned.
-                        Everything else in the brief is optional reading. */}
+                    <p className="mb-1 leading-snug text-text">{mergeRefusal.summary}</p>
+                    <p className="mb-2 font-mono text-[10px] text-dim">{mergeRefusal.reach}</p>
+
+                    {/* Judgement appears here and nowhere else. Asking on every
+                        card view is a standing request the operator learns to
+                        scroll past; asking at the moment it blocks something is
+                        a question with a reason attached. */}
                     <ul className="flex flex-col gap-2">
                       {brief.surprises.map((surprise) => (
                         <li key={surprise.id} className="leading-snug">

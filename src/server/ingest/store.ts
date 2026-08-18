@@ -25,12 +25,21 @@ export interface IngestOutput {
   readonly boardId: string;
   readonly seq: number;
   readonly runCreated: boolean;
+  /**
+   * The card this event belongs to, when the run is bound to one.
+   *
+   * Carried on the write rather than looked up by subscribers, so the live
+   * activity view can attribute an event without a query per event, and so
+   * "which card is this" has the same answer everywhere.
+   */
+  readonly cardId: string | null;
 }
 
 export class EventStore {
   readonly #binding: BindingResolver;
   readonly #bumpSeq: Database.Statement<[string], { last_seq: number }>;
   readonly #insertEvent: Database.Statement<[string, string, number, string, number, string]>;
+  readonly #cardOf: Database.Statement<[string], { card_id: string | null }>;
   readonly #write: (input: IngestInput) => IngestOutput;
 
   constructor(private readonly sqlite: Database.Database) {
@@ -39,6 +48,7 @@ export class EventStore {
     this.#bumpSeq = sqlite.prepare(
       'UPDATE runs SET last_seq = last_seq + 1 WHERE id = ? RETURNING last_seq',
     );
+    this.#cardOf = sqlite.prepare('SELECT card_id FROM runs WHERE id = ?');
     this.#insertEvent = sqlite.prepare(
       'INSERT INTO events (run_id, session_id, seq, event_name, received_at, payload) VALUES (?, ?, ?, ?, ?, ?)',
     );
@@ -65,6 +75,7 @@ export class EventStore {
         boardId: run.boardId,
         seq: bumped.last_seq,
         runCreated: run.created,
+        cardId: this.#cardOf.get(run.runId)?.card_id ?? null,
       };
     });
   }

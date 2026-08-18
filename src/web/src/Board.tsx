@@ -25,6 +25,7 @@ import {
 } from './api.js';
 import { CardDetail } from './CardDetail.js';
 import { Digest } from './Digest.js';
+import { Activity } from './Activity.js';
 import { CardTile } from './CardTile.js';
 
 /**
@@ -101,6 +102,7 @@ export function Board(): ReactElement {
   const [newPriority, setNewPriority] = useState<Card['priority']>('normal');
   const [openCardId, setOpenCardId] = useState<string | null>(null);
   const [digestOpen, setDigestOpen] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
   const [runnable, setRunnable] = useState<ReadonlySet<string>>(new Set());
 
   const load = useCallback(async () => {
@@ -321,6 +323,17 @@ export function Board(): ReactElement {
           digest
         </button>
 
+        <button
+          type="button"
+          className={`rounded border px-2 py-1 hover:border-dim ${
+            activityOpen ? 'border-info text-info' : 'border-line bg-panel-2 text-text'
+          }`}
+          title="What the agents are doing right now, as it happens."
+          onClick={() => setActivityOpen(!activityOpen)}
+        >
+          activity
+        </button>
+
         <div className="ml-auto flex items-center gap-2">
           {/* Set at creation, because priority is a statement about the batch
               and the moment you are describing the work is when you know it. */}
@@ -403,6 +416,19 @@ export function Board(): ReactElement {
           }}
           onClose={() => setDigestOpen(false)}
         />
+      )}
+
+      {!activityOpen ? null : (
+        <div className="h-56 shrink-0">
+          <Activity
+            live={live}
+            titleFor={(cardId) =>
+              cardId === null
+                ? 'unbound session'
+                : (cards.find((card) => card.id === cardId)?.title ?? 'unknown card')
+            }
+          />
+        </div>
       )}
 
       {openCardId === null ? null : (

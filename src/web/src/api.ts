@@ -106,13 +106,29 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { error?: string; field?: string };
+    const body = (await response.json().catch(() => ({}))) as {
+      error?: string;
+      field?: string;
+      reach?: string;
+    };
+
     // The API names the field; carrying it through means the interface can put
     // the message where the operator is looking.
     const error = new Error(body.error ?? `Request failed: ${response.status}`);
     if (body.field !== undefined) {
       (error as Error & { field?: string }).field = body.field;
     }
+
+    // A merge gate refusal is not a failure to report as an error: it is the
+    // gate working, and it arrives with something the operator can act on. The
+    // `reach` field is what distinguishes it - the gate states its own limits.
+    if (typeof body.reach === 'string') {
+      (error as Error & { refusal?: { summary: string; reach: string } }).refusal = {
+        summary: body.error ?? 'The merge was refused.',
+        reach: body.reach,
+      };
+    }
+
     throw error;
   }
 
