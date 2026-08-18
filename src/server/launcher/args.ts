@@ -115,6 +115,12 @@ export interface CardContextInput {
   readonly guardrails: GuardrailSet;
   /** Ledger entries the operator has accepted or promoted (Phase 2 onward). */
   readonly acceptedEntries?: readonly string[];
+  /**
+   * Ledger entries the operator has rejected. Sent so the next run does not
+   * re-arrive at a claim already overruled - the whole point of a two-way
+   * sync loop rather than a one-way report (P5).
+   */
+  readonly rejectedEntries?: readonly string[];
   /** What previous runs on this card established. */
   readonly previousRuns?: readonly string[];
 }
@@ -147,6 +153,15 @@ export function renderCardContext(input: CardContextInput): string {
   if (input.acceptedEntries !== undefined && input.acceptedEntries.length > 0) {
     lines.push('## Established on this card', '');
     for (const entry of input.acceptedEntries) lines.push(`- ${entry}`);
+    lines.push('');
+  }
+
+  if (input.rejectedEntries !== undefined && input.rejectedEntries.length > 0) {
+    // Marked overruled, not omitted: a run that never sees the rejection is a
+    // run that can re-propose the same claim and cost the operator a second
+    // review of something they already answered.
+    lines.push('## Overruled by the operator', '');
+    for (const entry of input.rejectedEntries) lines.push(`- ${entry} (overruled by the operator)`);
     lines.push('');
   }
 

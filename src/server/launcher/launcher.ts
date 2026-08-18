@@ -39,6 +39,7 @@ export interface LaunchOptions {
   readonly permissionMode?: string | null;
   readonly cardId?: string | null;
   readonly acceptedEntries?: readonly string[];
+  readonly rejectedEntries?: readonly string[];
   readonly previousRuns?: readonly string[];
   /** Overridable for tests. Defaults to `claude`. */
   readonly executable?: string;
@@ -99,6 +100,9 @@ function writeLaunchFiles(options: LaunchOptions): {
       ...(options.acceptedEntries === undefined
         ? {}
         : { acceptedEntries: options.acceptedEntries }),
+      ...(options.rejectedEntries === undefined
+        ? {}
+        : { rejectedEntries: options.rejectedEntries }),
       ...(options.previousRuns === undefined ? {} : { previousRuns: options.previousRuns }),
     }),
     'utf8',

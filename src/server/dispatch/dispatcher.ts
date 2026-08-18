@@ -9,6 +9,7 @@ import { boards, cards, columns, runs } from '../db/schema.js';
 import type { PendingBindings } from '../binding/pending.js';
 import { describeVerify, runVerify, type VerifyResult } from '../verify/run.js';
 import { outstandingSurprises } from '../ledger/outstanding.js';
+import { storedEntriesFor } from '../ledger/store.js';
 import { assessStall, DEFAULT_STALL, progressOf, type StallThresholds } from './stall.js';
 import { WorktreeManager } from '../worktree/manager.js';
 import {
@@ -430,6 +431,23 @@ export class Dispatcher {
     return null;
   }
 
+  /**
+   * The operator's verdicts on this card's ledger entries, split into what a
+   * launched run should treat as established and what it should treat as
+   * settled-against. A rejected entry is kept rather than deleted (doc 12), so
+   * this reads the same table the brief and the merge gate already read.
+   */
+  #judgementsFor(cardId: string): { accepted: string[]; rejected: string[] } {
+    const entries = storedEntriesFor(this.database, cardId);
+    const accepted = entries
+      .filter((entry) => entry.operatorStatus === 'accepted')
+      .map((entry) => entry.statement);
+    const rejected = entries
+      .filter((entry) => entry.operatorStatus === 'rejected')
+      .map((entry) => entry.statement);
+    return { accepted, rejected };
+  }
+
   dispatch(boardId: string, cardId: string): RunningLaunch | null {
     const state = this.#stateFor(boardId);
     const card = getCard(this.database, cardId);
@@ -463,6 +481,11 @@ export class Dispatcher {
 
     updateCard(this.database, cardId, { status: 'running' });
 
+    // What the operator has already judged on this card, fed back so a run
+    // acts on a correction instead of re-arriving at a claim already settled
+    // (P5). Cards with no judgements yet get neither section.
+    const { accepted, rejected } = this.#judgementsFor(cardId);
+
     // Registered before the child starts. SessionStart fires before the
     // launcher can read the session id from the stream, so without this the
     // hook path infers a provisional card and the run is attributed to a
@@ -480,6 +503,8 @@ export class Dispatcher {
         agentEffort: card.agentEffort,
         permissionMode: card.permissionMode,
         cardId,
+        ...(accepted.length === 0 ? {} : { acceptedEntries: accepted }),
+        ...(rejected.length === 0 ? {} : { rejectedEntries: rejected }),
         ...(this.#executable === undefined ? {} : { executable: this.#executable }),
         onSessionId: (sessionId) => {
           // Belt and braces: if the run already exists and is unbound, or was

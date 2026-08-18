@@ -157,6 +157,19 @@ describe('card context', () => {
     expect(context).toContain('Run 1 added the endpoint');
   });
 
+  it('marks rejected entries as overruled by the operator', () => {
+    const context = renderCardContext({
+      title: 'T',
+      body: '',
+      guardrails: EMPTY_GUARDRAILS,
+      acceptedEntries: ['The schema is append-only'],
+      rejectedEntries: ['Retry logic belongs in the client'],
+    });
+
+    expect(context).toContain('The schema is append-only');
+    expect(context).toContain('Retry logic belongs in the client (overruled by the operator)');
+  });
+
   it('omits empty sections rather than leaving headings', () => {
     const context = renderCardContext({ title: 'T', body: '', guardrails: EMPTY_GUARDRAILS });
     expect(context).not.toContain('## Constraints');
