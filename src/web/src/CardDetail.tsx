@@ -103,6 +103,15 @@ interface BriefSection {
   readonly empty: boolean;
 }
 
+interface Surprise {
+  readonly id: string;
+  readonly kind: 'superseded' | 'assumption' | 'unmentioned-change';
+  readonly headline: string;
+  readonly detail?: string;
+  readonly why: string;
+  readonly target: { type: 'entry'; entryId: string } | { type: 'path'; path: string };
+}
+
 interface Brief {
   readonly headline: string;
   readonly sections: readonly BriefSection[];
@@ -113,6 +122,8 @@ interface Brief {
     readonly tokensSpent: number;
     readonly note: string | null;
   };
+  /** What the operator would regret not reading, still unjudged. */
+  readonly surprises: readonly Surprise[];
 }
 
 interface Workspace {
@@ -352,6 +363,28 @@ export function CardDetail({
       .finally(() => setMerging(false));
   }, [cardId, detail]);
 
+  /**
+   * Records a verdict, then re-reads the brief.
+   *
+   * Refetched rather than patched locally: rejecting an entry changes which
+   * sections assert what, and recomputing that here would be a second
+   * implementation of the rule that could drift from the server's.
+   */
+  const judge = useCallback(
+    (target: Surprise['target'], status: 'accepted' | 'rejected') => {
+      if (target.type !== 'entry') return;
+
+      void api
+        .judgeEntry(target.entryId, { status })
+        .then(() => fetch(`/api/cards/${cardId}/brief`))
+        .then(async (response) => {
+          if (response.ok) setBrief((await response.json()) as Brief);
+        })
+        .catch((cause: Error) => setError(cause.message));
+    },
+    [cardId],
+  );
+
   /** Save a model choice, then re-read the card so the rail shows what is stored. */
   const patch = useCallback(
     (body: Parameters<typeof api.updateCard>[1]) => {
@@ -570,6 +603,48 @@ export function CardDetail({
                   <p className="mb-3 rounded border border-warn/40 bg-warn/10 px-2 py-1.5 text-[11px] text-warn">
                     {brief.extraction.note}
                   </p>
+                )}
+
+                {brief.surprises.length === 0 ? null : (
+                  <div className="mb-3 rounded border border-accent/40 bg-accent/5 px-2 py-1.5">
+                    <h4 className="mb-1 font-mono text-[11px] uppercase tracking-wider text-accent">
+                      Needs your judgement ({brief.surprises.length})
+                    </h4>
+                    {/* Only the entries worth an interruption: a reversal, an
+                        assumption nothing verified, a file nobody mentioned.
+                        Everything else in the brief is optional reading. */}
+                    <ul className="flex flex-col gap-2">
+                      {brief.surprises.map((surprise) => (
+                        <li key={surprise.id} className="leading-snug">
+                          <div className="text-text">{surprise.headline}</div>
+                          <div className="font-mono text-[10px] text-dim">{surprise.why}</div>
+                          {surprise.target.type === 'path' ? (
+                            <div className="font-mono text-[10px] text-dim">
+                              Not an entry, so there is nothing to accept: open the file.
+                            </div>
+                          ) : (
+                            <div className="mt-0.5 flex gap-2">
+                              <button
+                                type="button"
+                                className="rounded border border-ok/50 px-1.5 font-mono text-[10px] text-ok hover:bg-ok/10"
+                                onClick={() => judge(surprise.target, 'accepted')}
+                              >
+                                accept
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded border border-warn/50 px-1.5 font-mono text-[10px] text-warn hover:bg-warn/10"
+                                title="Kept on the card, but no longer stated as fact in the brief."
+                                onClick={() => judge(surprise.target, 'rejected')}
+                              >
+                                reject
+                              </button>
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
 
                 {brief.sections.map((section) => (
