@@ -8,6 +8,11 @@ import { getCard } from '../api/cards.js';
 import { canonicaliseCwd } from './binding.js';
 import { triggerFor } from '../ledger/service.js';
 import { applyRunLifecycle } from './lifecycle.js';
+import { parseGuardrails } from '../cards/guardrails.js';
+import { ledgerEntries } from '../db/schema.js';
+import { buildRepairBlock, eligibleForRepair, repairIsEmpty } from '../context/repair.js';
+import { storedEntriesFor } from '../ledger/store.js';
+import type { Card } from '../db/schema.js';
 
 /**
  * `POST /hooks/:event` - the hook path (doc 07).
@@ -194,7 +199,9 @@ export function registerIngestRoutes(app: FastifyInstance, context: AppContext):
     // else gets an explicit no-op: an empty object neither allows nor denies,
     // leaving Claude Code's own behaviour intact.
     if (event === 'SessionStart') {
-      void reply.code(200).send(sessionStartResponse(context, sessionId, cwd));
+      void reply
+        .code(200)
+        .send(sessionStartResponse(context, sessionId, cwd, readString(payload, 'source')));
       return;
     }
 
@@ -208,16 +215,25 @@ export function registerIngestRoutes(app: FastifyInstance, context: AppContext):
 }
 
 /**
- * The reply to a starting session (doc 07 section 3).
+ * The reply to a starting session (doc 07 section 3, doc 12 output 3).
  *
- * Two jobs: tell the operator the board is watching and how to bind a card,
- * and make sure an unclaimed session still lands somewhere. Never throws - a
- * failure here would mean a session that cannot start.
+ * Three jobs now. Tell the operator the board is watching and how to bind a
+ * card; make sure an unclaimed session still lands somewhere; and, when this
+ * `SessionStart` is the one that follows a compaction, hand the agent back what
+ * the compaction took.
+ *
+ * That last one is the highest-leverage thing the board does. Everything else
+ * makes the operator better informed after the fact; this makes the agent less
+ * likely to do the wrong thing in the first place, using material already
+ * captured for another purpose, at the cost of one hook response.
+ *
+ * Never throws - a failure here would mean a session that cannot start.
  */
 function sessionStartResponse(
   context: AppContext,
   sessionId: string,
   cwd: string,
+  source: string | null,
 ): Record<string, unknown> {
   try {
     const board = boardForCwd(context.database, canonicaliseCwd(cwd));
@@ -229,6 +245,12 @@ function sessionStartResponse(
         ? null
         : getCard(context.database, run.cardId);
 
+    // A card the operator chose, as opposed to a provisional one the board
+    // invented. Only the first is worth repairing against or greeting as bound:
+    // a provisional card holds a session's events so none are lost, and telling
+    // its session it is "bound" would hide the fact that nobody claimed it.
+    let claimed = bound;
+
     if (bound === null && run !== null) {
       // A launch the board is expecting takes precedence over inference.
       // Without this, a dispatched session is captured by a provisional card
@@ -237,6 +259,7 @@ function sessionStartResponse(
 
       if (expected !== null) {
         claim(context.database, sessionId, expected);
+        claimed = getCard(context.database, expected);
       } else {
         // Otherwise it is a terminal session, and an event with nowhere to go
         // is the blind spot this product exists to remove (doc 05).
@@ -244,13 +267,56 @@ function sessionStartResponse(
       }
     }
 
+    const repair =
+      source === 'compact' && claimed !== null
+        ? repairFor(context, claimed, run?.id ?? null)
+        : null;
+
     return {
       hookSpecificOutput: {
         hookEventName: 'SessionStart',
-        additionalContext: sessionStartContext(context.database, board.id, board.name, bound),
+        additionalContext:
+          repair ?? sessionStartContext(context.database, board.id, board.name, claimed),
       },
     };
   } catch {
     return {};
+  }
+}
+
+/**
+ * The repair block for a card whose session has just been compacted.
+ *
+ * Eligibility is decided here, where the run each entry came from is known, and
+ * enforced by `eligibleForRepair`. Returns null when there is nothing certain
+ * enough to say, because a session start that injects nothing is strictly better
+ * than one that injects something stale: the agent will act on whatever it is
+ * handed (doc 12).
+ */
+function repairFor(context: AppContext, card: Card, runId: string | null): string | null {
+  try {
+    const runOf = new Map(
+      context.database.db
+        .select({ id: ledgerEntries.id, runId: ledgerEntries.runId })
+        .from(ledgerEntries)
+        .all()
+        .map((row) => [row.id, row.runId] as const),
+    );
+
+    const entries = storedEntriesFor(context.database, card.id).filter((entry) =>
+      eligibleForRepair(entry, { runId, entryRunId: runOf.get(entry.id) ?? null }),
+    );
+
+    const block = buildRepairBlock({
+      cardTitle: card.title,
+      guardrails: parseGuardrails(card.guardrails),
+      entries,
+    });
+
+    return repairIsEmpty(block) ? null : block.text;
+  } catch {
+    // A failure here must not stop the session. Falling through to the ordinary
+    // greeting loses the repair and nothing else.
+    return null;
   }
 }
