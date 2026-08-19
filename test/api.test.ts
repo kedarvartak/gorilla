@@ -303,8 +303,11 @@ describe('dependencies', () => {
 
 describe('dispatchable', () => {
   it('lists only unblocked ready cards', async () => {
-    const blocker = await makeCard('blocker');
-    const blocked = await makeCard('blocked');
+    // Both need a goal condition: a card without one is not dispatchable,
+    // because dispatching it can only halt the queue with `no-goal`.
+    const goal = '`npm test` exits 0, or stop after 20 turns';
+    const blocker = await makeCard('blocker', { goalCondition: goal });
+    const blocked = await makeCard('blocked', { goalCondition: goal });
     await json('POST', `/api/cards/${blocked}/dependencies`, { dependsOn: blocker });
 
     for (const id of [blocker, blocked]) {
@@ -548,5 +551,67 @@ describe('the merged marker', () => {
     // The ambiguity this exists to remove: done, but not merged by the board.
     expect(done.body.status).toBe('done');
     expect(done.body.mergedAt).toBeNull();
+  });
+});
+
+describe('making a card dispatchable from the interface', () => {
+  it('a title-only card becomes dispatchable once given a goal', async () => {
+    const ready = columnIds['Ready'] ?? '';
+    const id = await makeCard('Title only', { columnId: ready });
+
+    const before = await json<{ id: string }[]>('GET', `/api/boards/${boardId}/dispatchable`);
+    expect(before.body.map((entry) => entry.id)).not.toContain(id);
+
+    await json('PATCH', `/api/cards/${id}`, {
+      goalCondition: '`npm test` exits 0, verified by showing its output, or stop after 20 turns',
+    });
+
+    // The dead end this closes: the Add button made cards that could never run,
+    // and every real one had to be created by curl.
+    const after = await json<{ id: string }[]>('GET', `/api/boards/${boardId}/dispatchable`);
+    expect(after.body.map((entry) => entry.id)).toContain(id);
+  });
+
+  it('accepts a whole guardrail set and keeps the enforcement split', async () => {
+    const id = await makeCard('Guarded');
+
+    const patched = await json<{
+      guardrails: { scope: string[]; prohibit: string[]; verify: string | null };
+      guardrailDetail: { text: string; enforcement: string }[];
+    }>('PATCH', `/api/cards/${id}`, {
+      guardrails: {
+        scope: ['src/server/'],
+        prohibit: ['src/db/schema.ts', 'do not over-engineer'],
+        verify: 'npm test',
+      },
+    });
+
+    expect(patched.body.guardrails.verify).toBe('npm test');
+    expect(patched.body.guardrails.scope).toEqual(['src/server/']);
+
+    // The point of editing them at all: a path prohibition is enforced and a
+    // sentence of advice is not, and the interface must be able to say which.
+    const byText = new Map(
+      patched.body.guardrailDetail.map((rail) => [rail.text, rail.enforcement]),
+    );
+    expect(byText.get('Do not src/db/schema.ts')).toBe('hard');
+    expect(byText.get('Do not do not over-engineer')).toBe('advisory');
+  });
+
+  it('replaces the set rather than merging into it', async () => {
+    const id = await makeCard('Replaced', {
+      guardrails: { scope: ['old/'], verify: 'old command' },
+    });
+
+    const patched = await json<{ guardrails: { scope: string[]; verify: string | null } }>(
+      'PATCH',
+      `/api/cards/${id}`,
+      { guardrails: { scope: ['new/'], verify: 'new command' } },
+    );
+
+    // The interface sends the whole set for this reason: a partial write would
+    // silently drop rules the operator still believed were in force.
+    expect(patched.body.guardrails.scope).toEqual(['new/']);
+    expect(patched.body.guardrails.verify).toBe('new command');
   });
 });

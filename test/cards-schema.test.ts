@@ -59,6 +59,9 @@ function card(title: string, columnName = 'Ready', status = 'idle'): string {
       title,
       position: 0,
       status: status as 'idle',
+      // A card with no goal condition is not dispatchable, by design: dispatch
+      // refuses it and halts. These fixtures are about the other rules.
+      goalCondition: '`npm test` exits 0, or stop after 20 turns',
       createdAt: Date.now(),
       updatedAt: Date.now(),
     })
@@ -369,14 +372,28 @@ describe('priority', () => {
   it('actually reorders the dispatch queue', () => {
     board();
     const ready = columnNamed('Ready');
-    createCard(handle, { boardId: BOARD, columnId: ready, title: 'first added', index: 0 });
-    createCard(handle, { boardId: BOARD, columnId: ready, title: 'second added', index: 1 });
+    const goal = '`npm test` exits 0, or stop after 20 turns';
+    createCard(handle, {
+      boardId: BOARD,
+      columnId: ready,
+      title: 'first added',
+      index: 0,
+      goalCondition: goal,
+    });
+    createCard(handle, {
+      boardId: BOARD,
+      columnId: ready,
+      title: 'second added',
+      index: 1,
+      goalCondition: goal,
+    });
     createCard(handle, {
       boardId: BOARD,
       columnId: ready,
       title: 'urgent, added last',
       index: 2,
       priority: 'high',
+      goalCondition: goal,
     });
 
     const order = dispatchableCards(handle.db, BOARD).map((entry) => entry.title);
@@ -390,18 +407,58 @@ describe('priority', () => {
   it('sends low-priority cards to the back', () => {
     board();
     const ready = columnNamed('Ready');
+    const goal = '`npm test` exits 0, or stop after 20 turns';
     createCard(handle, {
       boardId: BOARD,
       columnId: ready,
       title: 'deprioritised',
       index: 0,
       priority: 'low',
+      goalCondition: goal,
     });
-    createCard(handle, { boardId: BOARD, columnId: ready, title: 'ordinary', index: 1 });
+    createCard(handle, {
+      boardId: BOARD,
+      columnId: ready,
+      title: 'ordinary',
+      index: 1,
+      goalCondition: goal,
+    });
 
     expect(dispatchableCards(handle.db, BOARD).map((entry) => entry.title)).toEqual([
       'ordinary',
       'deprioritised',
     ]);
+  });
+});
+
+describe('a card with no goal condition', () => {
+  it('is not dispatchable, because dispatching it can only halt', () => {
+    board();
+    const ready = columnNamed('Ready');
+    createCard(handle, { boardId: BOARD, columnId: ready, title: 'title only' });
+    createCard(handle, {
+      boardId: BOARD,
+      columnId: ready,
+      title: 'ready to run',
+      goalCondition: '`npm test` exits 0, or stop after 20 turns',
+    });
+
+    // Offering a run button that can only stop the queue is worse than offering
+    // none, and under automatic mode one such card would poison the batch.
+    expect(dispatchableCards(handle.db, BOARD).map((entry) => entry.title)).toEqual([
+      'ready to run',
+    ]);
+  });
+
+  it('does not count whitespace as a goal', () => {
+    board();
+    createCard(handle, {
+      boardId: BOARD,
+      columnId: columnNamed('Ready'),
+      title: 'blank goal',
+      goalCondition: '   ',
+    });
+
+    expect(dispatchableCards(handle.db, BOARD)).toHaveLength(0);
   });
 });

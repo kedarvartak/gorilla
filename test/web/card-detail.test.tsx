@@ -25,6 +25,8 @@ const card: Card = {
 
 const detail = {
   card,
+  // The server parses the set, so the interface never re-derives the shape.
+  guardrails: { scope: [], prohibit: [], allowTools: [], verify: null, maxTurns: null },
   verify: null,
   verifyNote: null,
   guardrailDetail: [],

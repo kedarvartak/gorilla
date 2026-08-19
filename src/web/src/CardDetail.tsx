@@ -132,8 +132,18 @@ interface Workspace {
   readonly git: { branch: string; dirty: number; ahead: number } | null;
 }
 
+export interface GuardrailSet {
+  readonly scope: readonly string[];
+  readonly prohibit: readonly string[];
+  readonly allowTools: readonly string[];
+  readonly verify: string | null;
+  readonly maxTurns: number | null;
+}
+
 interface Detail {
   readonly card: Card;
+  /** Parsed by the server, so the interface never re-implements the shape. */
+  readonly guardrails: GuardrailSet;
   readonly verify: VerifyReport | null;
   readonly verifyNote: string | null;
   readonly guardrailDetail: readonly GuardrailDetail[];
@@ -184,6 +194,88 @@ const KIND_COLOUR: Record<string, string> = {
   question: 'text-accent',
   verdict: 'text-ok',
 };
+
+/**
+ * A comma-separated list, as the operator typed it.
+ *
+ * Empty entries are dropped rather than stored: a trailing comma is a typing
+ * artefact, and an empty prohibition would render as a rule that forbids nothing.
+ */
+function asList(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== '');
+}
+
+/**
+ * One editable field, saved on blur or Enter rather than per keystroke.
+ *
+ * Per-keystroke saving would write a partial goal condition to the card, and a
+ * card is dispatchable the moment it has one - so a half-typed condition is a
+ * card that can be picked up saying something the operator did not mean.
+ */
+function TextField({
+  label,
+  value,
+  placeholder,
+  invalid = false,
+  invalidNote,
+  onSave,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  invalid?: boolean;
+  invalidNote?: string;
+  onSave: (value: string) => void;
+}): ReactElement {
+  const [draft, setDraft] = useState(value);
+  const [editing, setEditing] = useState(false);
+
+  // Reset when the stored value changes underneath - another tab, or a run.
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [value, editing]);
+
+  const commit = (): void => {
+    setEditing(false);
+    if (draft.trim() !== value) onSave(draft.trim());
+  };
+
+  return (
+    <>
+      <textarea
+        className={`w-full resize-y rounded border bg-panel-2 px-1 py-0.5 font-mono text-[11px] text-text placeholder:text-dim ${
+          invalid ? 'border-warn/60' : 'border-line'
+        }`}
+        rows={1}
+        value={draft}
+        aria-label={label}
+        placeholder={placeholder}
+        onFocus={() => setEditing(true)}
+        onChange={(changed) => setDraft(changed.target.value)}
+        onBlur={commit}
+        onKeyDown={(key) => {
+          // Enter saves; Shift+Enter is a newline, since a goal condition is
+          // often a sentence long enough to want one.
+          if (key.key === 'Enter' && !key.shiftKey) {
+            key.preventDefault();
+            (key.target as HTMLTextAreaElement).blur();
+          }
+          if (key.key === 'Escape') {
+            setDraft(value);
+            setEditing(false);
+            (key.target as HTMLTextAreaElement).blur();
+          }
+        }}
+      />
+      {invalid && invalidNote !== undefined && !editing ? (
+        <div className="font-mono text-[10px] text-warn">{invalidNote}</div>
+      ) : null}
+    </>
+  );
+}
 
 /** One labelled select over a nullable card field, saving on change. */
 function FieldSelect({
@@ -582,9 +674,74 @@ export function CardDetail({
                 title="Used only for windows that escalate - compaction, and manual re-extraction. Not the model that does the work."
                 onPick={(synthesisModel) => patch({ synthesisModel })}
               />
-              <dt className="text-dim">goal</dt>
-              <dd className={detail.card.goalCondition === null ? 'text-warn' : ''}>
-                {detail.card.goalCondition ?? 'not set - cannot be dispatched'}
+              <dt
+                className="text-dim"
+                title="What /goal is given. Without one, the card cannot be dispatched."
+              >
+                goal
+              </dt>
+              <dd>
+                {/* Editable, because a card added from the board header has no
+                    goal and therefore cannot be dispatched - the Add button led
+                    to a dead end, and every real card had to be made by curl. */}
+                <TextField
+                  label="goal condition"
+                  value={detail.card.goalCondition ?? ''}
+                  placeholder="measurable end state, a stated check, and a turn bound"
+                  invalid={detail.card.goalCondition === null}
+                  invalidNote="Not set, so this card cannot be dispatched."
+                  onSave={(next) => patch({ goalCondition: next === '' ? null : next })}
+                />
+              </dd>
+              <dt
+                className="text-dim"
+                title="A command the board runs itself after the run. Hard: the card halts if it does not pass."
+              >
+                verify
+              </dt>
+              <dd>
+                <TextField
+                  label="verify command"
+                  value={detail.verifyCommand ?? ''}
+                  placeholder="npm test"
+                  onSave={(next) =>
+                    patch({
+                      guardrails: { ...detail.guardrails, verify: next === '' ? null : next },
+                    })
+                  }
+                />
+              </dd>
+              <dt
+                className="text-dim"
+                title="Paths the agent should confine itself to. Advisory: it is prompt text, not a rule."
+              >
+                scope
+              </dt>
+              <dd>
+                <TextField
+                  label="scope paths"
+                  value={detail.guardrails.scope.join(', ')}
+                  placeholder="src/server/, test/"
+                  onSave={(next) =>
+                    patch({ guardrails: { ...detail.guardrails, scope: asList(next) } })
+                  }
+                />
+              </dd>
+              <dt
+                className="text-dim"
+                title="Hard where a rule names a path or a command pattern, advisory otherwise. The list below says which."
+              >
+                prohibit
+              </dt>
+              <dd>
+                <TextField
+                  label="prohibitions"
+                  value={detail.guardrails.prohibit.join(', ')}
+                  placeholder="src/db/schema.ts, Bash(git push *)"
+                  onSave={(next) =>
+                    patch({ guardrails: { ...detail.guardrails, prohibit: asList(next) } })
+                  }
+                />
               </dd>
             </dl>
 
