@@ -473,6 +473,23 @@ export function CardDetail({
    */
   const conflicted = mergeReport?.stoppedAt?.outcome === 'conflicted';
 
+  /** Things on this card nobody has read yet. The gate refuses a merge on these. */
+  const outstanding = brief?.surprises.length ?? 0;
+
+  /**
+   * Whether the outstanding set is actually stopping something.
+   *
+   * The distinction matters for where judgement is asked for. A card with no
+   * worktree, or one already merged, has nothing blocked, so raising it there
+   * would be the standing nag this was moved away from. A card whose merge is
+   * disabled has to explain itself, or the disabled button is a wall.
+   */
+  const mergeBlocked =
+    outstanding > 0 &&
+    detail !== null &&
+    detail.workspace !== null &&
+    detail.card.mergedAt === null;
+
   /**
    * Resolves the conflict and completes the merge.
    *
@@ -809,18 +826,28 @@ export function CardDetail({
                   </p>
                 )}
 
-                {mergeRefusal === null ? null : (
+                {mergeRefusal === null && !mergeBlocked ? null : (
                   <div className="mb-3 rounded border border-warn/50 bg-warn/10 px-2 py-1.5">
                     <h4 className="mb-1 font-mono text-[11px] uppercase tracking-wider text-warn">
-                      The merge was refused
+                      {mergeRefusal === null
+                        ? `Merge is blocked: ${String(outstanding)} to read`
+                        : 'The merge was refused'}
                     </h4>
-                    <p className="mb-1 leading-snug text-text">{mergeRefusal.summary}</p>
-                    <p className="mb-2 font-mono text-[10px] text-dim">{mergeRefusal.reach}</p>
+                    <p className="mb-1 leading-snug text-text">
+                      {mergeRefusal?.summary ??
+                        'These have not been read yet. Accept or reject each and the merge becomes available.'}
+                    </p>
+                    <p className="mb-2 font-mono text-[10px] text-dim">
+                      {mergeRefusal?.reach ??
+                        'This is the board declining to merge for you, not a lock on the repository. ' +
+                          'A `git merge` run in a terminal will merge this branch with nothing to stop it.'}
+                    </p>
 
-                    {/* Judgement appears here and nowhere else. Asking on every
-                        card view is a standing request the operator learns to
-                        scroll past; asking at the moment it blocks something is
-                        a question with a reason attached. */}
+                    {/* Shown when it is stopping something, and not otherwise.
+                        Asking on every card view is a standing request the
+                        operator learns to scroll past; asking beside a disabled
+                        button is a question with its reason attached - and
+                        without it, the disabled button would be a wall. */}
                     <ul className="flex flex-col gap-2">
                       {brief.surprises.map((surprise) => (
                         <li key={surprise.id} className="leading-snug">
@@ -1034,17 +1061,27 @@ export function CardDetail({
                   <button
                     type="button"
                     className="rounded border border-ok/50 px-2 py-0.5 font-mono text-[11px] text-ok hover:bg-ok/10 disabled:opacity-40"
-                    disabled={merging}
+                    // Disabled rather than left to fail. The gate refuses this
+                    // request anyway, and a button that looks available and
+                    // answers 409 teaches the operator that the board is
+                    // unreliable rather than that something needs reading.
+                    disabled={merging || outstanding > 0}
                     title={
-                      detail.verifyCommand === null
-                        ? 'Merges without running anything afterwards: this card has no verify command.'
-                        : `Merges, then runs ${detail.verifyCommand}. Stops and leaves the conflict in place if it does not pass.`
+                      outstanding > 0
+                        ? `${String(outstanding)} thing(s) on this card have not been read yet. ` +
+                          'Accept or reject each below and this becomes available. ' +
+                          'A `git merge` run in a terminal is not prevented by this.'
+                        : detail.verifyCommand === null
+                          ? 'Merges without running anything afterwards: this card has no verify command.'
+                          : `Merges, then runs ${detail.verifyCommand}. Stops and leaves the conflict in place if it does not pass.`
                     }
                     onClick={mergeThisCard}
                   >
                     {merging
                       ? 'merging…'
-                      : `merge into ${detail.mergeTarget ?? 'the current branch'}`}
+                      : outstanding > 0
+                        ? `merge blocked - ${String(outstanding)} to read`
+                        : `merge into ${detail.mergeTarget ?? 'the current branch'}`}
                   </button>
                 )}
 
