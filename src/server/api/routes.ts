@@ -8,6 +8,7 @@ import { createDefaultColumns } from '../cards/defaults.js';
 import { describeGuardrails, parseGuardrails } from '../cards/guardrails.js';
 import { blockersFor, dispatchableCards } from '../cards/eligibility.js';
 import { executionOrder } from '../cards/order.js';
+import { assessStaleness, mergedPaths } from '../cards/staleness.js';
 import { canonicaliseCwd } from '../ingest/binding.js';
 import {
   boards,
@@ -631,6 +632,40 @@ export function registerCardDetailRoutes(app: FastifyInstance, context: AppConte
               claimedPaths: claimed,
             });
 
+      // Whether the card still describes work that needs doing. Read here
+      // rather than on the board, because it costs a git call per merged card
+      // and the board lists everything at once.
+      const board2 = context.database.db
+        .select()
+        .from(boards)
+        .where(eq(boards.id, card.boardId))
+        .get();
+
+      const mergedCards = context.database.db
+        .select()
+        .from(cardsTable)
+        .where(eq(cardsTable.boardId, card.boardId))
+        .all()
+        .filter((other) => other.id !== card.id && other.mergedAt !== null);
+
+      const staleness =
+        board2 === undefined
+          ? null
+          : assessStaleness({
+              cardTitle: card.title,
+              body: card.body,
+              guardrails,
+              runCount: cardRuns.length,
+              repoCwd: board2.cwd,
+              merged: await Promise.all(
+                mergedCards.map(async (other) => ({
+                  title: other.title,
+                  verify: parseGuardrails(other.guardrails).verify,
+                  paths: await mergedPaths(board2.cwd, other.mergedBranch),
+                })),
+              ),
+            });
+
       const verify = context.dispatcher.verifyResultFor(card.id);
 
       // The isolated branch this card's work is sitting on, unmerged. Without
@@ -657,6 +692,7 @@ export function registerCardDetailRoutes(app: FastifyInstance, context: AppConte
         verify: verify ?? null,
         verifyNote: verify === undefined ? null : describeVerify(verify),
         blockers: blockersFor(context.database.db, card.id),
+        staleness,
         runs: ledgers,
         reality,
         realityNotes: reality === null ? [] : describeReality(reality),
