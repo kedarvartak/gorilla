@@ -48,6 +48,7 @@ function card(
       position: over.position ?? handle.db.select().from(cards).all().length,
       priority: over.priority ?? 'normal',
       status: (over.status ?? 'idle') as 'idle',
+      goalCondition: '`npm test` exits 0, or stop after 20 turns',
       createdAt: Date.now(),
       updatedAt: Date.now(),
     })

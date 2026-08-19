@@ -180,6 +180,14 @@ export const api = {
       synthesisModel: string | null;
       priority: Card['priority'];
       status: Card['status'];
+      /** Replaces the whole set: the server reparses it, so a partial would drop rules. */
+      guardrails: {
+        scope?: readonly string[];
+        prohibit?: readonly string[];
+        allowTools?: readonly string[];
+        verify?: string | null;
+        maxTurns?: number | null;
+      };
     }>,
   ) => request<Card>(`/api/cards/${cardId}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
