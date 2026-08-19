@@ -140,10 +140,26 @@ export interface GuardrailSet {
   readonly maxTurns: number | null;
 }
 
+/**
+ * What a card's guardrails are when the response does not carry them.
+ *
+ * The pane reads an API response, which is foreign data like any other: an older
+ * server, or a field renamed, must degrade what the rail can edit rather than
+ * throw while rendering. Requiring the field crashed every test that did not
+ * happen to include it, which is the same fragility one layer up.
+ */
+const NO_GUARDRAILS: GuardrailSet = {
+  scope: [],
+  prohibit: [],
+  allowTools: [],
+  verify: null,
+  maxTurns: null,
+};
+
 interface Detail {
   readonly card: Card;
   /** Parsed by the server, so the interface never re-implements the shape. */
-  readonly guardrails: GuardrailSet;
+  readonly guardrails?: GuardrailSet;
   readonly verify: VerifyReport | null;
   readonly verifyNote: string | null;
   readonly guardrailDetail: readonly GuardrailDetail[];
@@ -476,6 +492,9 @@ export function CardDetail({
   /** Things on this card nobody has read yet. The gate refuses a merge on these. */
   const outstanding = brief?.surprises.length ?? 0;
 
+  /** The card's guardrails, or an empty set when the response omits them. */
+  const rails = detail?.guardrails ?? NO_GUARDRAILS;
+
   /**
    * Whether the outstanding set is actually stopping something.
    *
@@ -723,7 +742,7 @@ export function CardDetail({
                   placeholder="npm test"
                   onSave={(next) =>
                     patch({
-                      guardrails: { ...detail.guardrails, verify: next === '' ? null : next },
+                      guardrails: { ...rails, verify: next === '' ? null : next },
                     })
                   }
                 />
@@ -737,11 +756,9 @@ export function CardDetail({
               <dd>
                 <TextField
                   label="scope paths"
-                  value={detail.guardrails.scope.join(', ')}
+                  value={rails.scope.join(', ')}
                   placeholder="src/server/, test/"
-                  onSave={(next) =>
-                    patch({ guardrails: { ...detail.guardrails, scope: asList(next) } })
-                  }
+                  onSave={(next) => patch({ guardrails: { ...rails, scope: asList(next) } })}
                 />
               </dd>
               <dt
@@ -753,11 +770,9 @@ export function CardDetail({
               <dd>
                 <TextField
                   label="prohibitions"
-                  value={detail.guardrails.prohibit.join(', ')}
+                  value={rails.prohibit.join(', ')}
                   placeholder="src/db/schema.ts, Bash(git push *)"
-                  onSave={(next) =>
-                    patch({ guardrails: { ...detail.guardrails, prohibit: asList(next) } })
-                  }
+                  onSave={(next) => patch({ guardrails: { ...rails, prohibit: asList(next) } })}
                 />
               </dd>
             </dl>
