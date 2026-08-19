@@ -156,8 +156,22 @@ const NO_GUARDRAILS: GuardrailSet = {
   maxTurns: null,
 };
 
+interface StaleFinding {
+  readonly signal: string;
+  readonly detail: string;
+  readonly evidence: readonly string[];
+}
+
+interface Staleness {
+  readonly suspect: boolean;
+  readonly findings: readonly StaleFinding[];
+  readonly advice: string | null;
+}
+
 interface Detail {
   readonly card: Card;
+  /** Whether this card still describes work that needs doing. */
+  readonly staleness?: Staleness | null;
   /** Parsed by the server, so the interface never re-implements the shape. */
   readonly guardrails?: GuardrailSet;
   readonly verify: VerifyReport | null;
@@ -798,6 +812,31 @@ export function CardDetail({
                   </li>
                 ))}
               </ul>
+            )}
+
+            {detail.staleness?.suspect !== true ? null : (
+              /* A suspicion, never a verdict. The board says what it noticed and
+                 what to look at; archiving a card it believed was finished would
+                 eventually archive one that was not, and an operator burned that
+                 way stops trusting the surface. */
+              <div className="mb-3 rounded border border-accent/50 bg-accent/5 px-2 py-1.5">
+                <h4 className="mb-1 font-mono text-[11px] uppercase tracking-wider text-accent">
+                  This card may already be done
+                </h4>
+                {detail.staleness.findings.map((finding) => (
+                  <p key={finding.signal} className="mb-1 leading-snug text-text">
+                    {finding.detail}
+                    {finding.evidence.length === 0 ? null : (
+                      <span className="ml-1 font-mono text-[10px] text-dim">
+                        ({finding.evidence.slice(0, 4).join(', ')})
+                      </span>
+                    )}
+                  </p>
+                ))}
+                {detail.staleness.advice === null ? null : (
+                  <p className="font-mono text-[10px] text-dim">{detail.staleness.advice}</p>
+                )}
+              </div>
             )}
 
             {detail.blockers.length > 0 ? (
