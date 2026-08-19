@@ -95,13 +95,26 @@ const PRIORITY_RANK = sql`CASE ${cards.priority} WHEN 'high' THEN 0 WHEN 'normal
  * well-defined, and a card marked high priority genuinely runs before its
  * neighbours. Priority that did not reorder the queue would be a label the
  * operator trusted and the system ignored (R10).
+ *
+ * A card with no goal condition is excluded, because dispatching one cannot
+ * succeed: `dispatch` refuses it and halts the queue with `no-goal`. Reporting
+ * it as dispatchable meant the interface offered a run button that could only
+ * stop the queue, and under automatic mode a single title-only card would poison
+ * the whole batch.
  */
 export function dispatchableCards(db: Db, boardId: string): { id: string; title: string }[] {
   const ready = db
     .select({ id: cards.id, title: cards.title })
     .from(cards)
     .innerJoin(columns, eq(cards.columnId, columns.id))
-    .where(and(eq(cards.boardId, boardId), eq(columns.isReady, true), eq(cards.status, 'idle')))
+    .where(
+      and(
+        eq(cards.boardId, boardId),
+        eq(columns.isReady, true),
+        eq(cards.status, 'idle'),
+        sql`trim(coalesce(${cards.goalCondition}, '')) <> ''`,
+      ),
+    )
     .orderBy(columns.position, PRIORITY_RANK, cards.position)
     .all();
 
