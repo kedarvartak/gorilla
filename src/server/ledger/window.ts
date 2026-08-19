@@ -1,6 +1,8 @@
 import type Database from 'better-sqlite3';
 import { createHash } from 'node:crypto';
 
+import { parseObject, readString, toolInput, toolPath } from '../json.js';
+
 /**
  * The extraction window: the slice of a run handed to one model call (doc 08).
  *
@@ -71,42 +73,14 @@ export const NARRATIVE_FLOOR_CHARS = 240;
 const DECISION_SHAPED =
   /\b(decid|chose|choos|instead of|rather than|because|so that|trade-?off|assum|risk|blocked|cannot|can't|won't|will not|deliberat|on purpose|reverted|superseded)/i;
 
-function parsePayload(raw: string): Record<string, unknown> {
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-function readString(source: Record<string, unknown>, key: string): string | null {
-  const value = source[key];
-  return typeof value === 'string' && value !== '' ? value : null;
-}
-
-function toolInput(payload: Record<string, unknown>): Record<string, unknown> {
-  const input = payload['tool_input'];
-  return typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : {};
-}
-
-function pathOf(payload: Record<string, unknown>): string | null {
-  const input = toolInput(payload);
-  return (
-    readString(input, 'file_path') ?? readString(input, 'filePath') ?? readString(input, 'path')
-  );
-}
-
 /** One line per event: enough for the model to cite it, short enough to afford. */
 function renderEvent(row: WindowEventRow): string {
-  const payload = parsePayload(row.payload);
+  const payload = parseObject(row.payload);
   const parts: string[] = [`#${row.id} ${row.event_name}`];
 
   if (row.tool_name !== null) parts.push(row.tool_name);
 
-  const path = pathOf(payload);
+  const path = toolPath(payload);
   const command = readString(toolInput(payload), 'command');
   const error = readString(payload, 'tool_error') ?? readString(payload, 'error_type');
   const denial = readString(payload, 'denial_reason');
@@ -167,11 +141,11 @@ export function buildWindow(input: WindowInput): ExtractionWindow {
   let mutatingToolCalls = 0;
 
   for (const row of rows) {
-    const payload = parsePayload(row.payload);
+    const payload = parseObject(row.payload);
     if (row.event_name === 'PostToolUse' && row.tool_name !== null) {
       if (MUTATING_TOOLS.has(row.tool_name)) mutatingToolCalls += 1;
     }
-    const path = pathOf(payload);
+    const path = toolPath(payload);
     if (path !== null) filePaths.add(path);
   }
 

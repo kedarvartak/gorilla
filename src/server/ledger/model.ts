@@ -1,3 +1,4 @@
+import { asRecord, numberOr } from '../json.js';
 import type { ExtractionWindow, WindowTrigger } from './window.js';
 
 /**
@@ -213,14 +214,4 @@ export function parseAnthropicResponse(body: unknown): ExtractionResponse {
   }
 
   return { entries: [], usage };
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function numberOr(value: unknown, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }

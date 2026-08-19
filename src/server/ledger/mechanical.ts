@@ -1,5 +1,7 @@
 import type Database from 'better-sqlite3';
 
+import { parseObject, readString, toolInput, toolPath } from '../json.js';
+
 /**
  * The mechanical ledger (P11).
  *
@@ -32,37 +34,8 @@ interface EventRow {
   received_at: number;
 }
 
-function parsePayload(raw: string): Record<string, unknown> {
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-function readString(source: Record<string, unknown>, key: string): string | null {
-  const value = source[key];
-  return typeof value === 'string' && value !== '' ? value : null;
-}
-
-/** Edit and Write name the file differently across payload shapes. */
-function filePathFrom(payload: Record<string, unknown>): string | null {
-  const input = payload['tool_input'];
-  if (typeof input !== 'object' || input === null) return null;
-
-  const record = input as Record<string, unknown>;
-  return (
-    readString(record, 'file_path') ?? readString(record, 'filePath') ?? readString(record, 'path')
-  );
-}
-
 function commandFrom(payload: Record<string, unknown>): string | null {
-  const input = payload['tool_input'];
-  if (typeof input !== 'object' || input === null) return null;
-  return readString(input as Record<string, unknown>, 'command');
+  return readString(toolInput(payload), 'command');
 }
 
 /**
@@ -100,7 +73,7 @@ export function changeEntries(input: MechanicalLedgerInput): MechanicalEntry[] {
   const byFile = new Map<string, { ids: number[]; tools: Set<string> }>();
 
   for (const row of rows) {
-    const path = filePathFrom(parsePayload(row.payload));
+    const path = toolPath(parseObject(row.payload));
     if (path === null) continue;
 
     const existing = byFile.get(path) ?? { ids: [], tools: new Set<string>() };
@@ -132,7 +105,7 @@ export function commandEntries(input: MechanicalLedgerInput): MechanicalEntry[] 
   const seen = new Set<string>();
 
   for (const row of rows) {
-    const command = commandFrom(parsePayload(row.payload));
+    const command = commandFrom(parseObject(row.payload));
     if (command === null) continue;
 
     for (const { pattern, what } of MATERIAL_COMMANDS) {
@@ -176,7 +149,7 @@ export function riskEntries(input: MechanicalLedgerInput): MechanicalEntry[] {
     .all(input.runId) as EventRow[];
 
   for (const row of failures) {
-    const payload = parsePayload(row.payload);
+    const payload = parseObject(row.payload);
     const reason =
       readString(payload, 'tool_error') ?? readString(payload, 'error_type') ?? 'unspecified';
 
@@ -202,7 +175,7 @@ export function riskEntries(input: MechanicalLedgerInput): MechanicalEntry[] {
     entries.push({
       kind: 'risk',
       statement: `${row.tool_name ?? 'A tool'} call was denied`,
-      detail: readString(parsePayload(row.payload), 'denial_reason') ?? 'no reason given',
+      detail: readString(parseObject(row.payload), 'denial_reason') ?? 'no reason given',
       sourceEventIds: [row.id],
     });
   }

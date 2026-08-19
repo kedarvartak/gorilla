@@ -1,5 +1,7 @@
 import type Database from 'better-sqlite3';
 
+import { readString } from '../json.js';
+
 /**
  * Closing a run (doc 05).
  *
@@ -21,12 +23,6 @@ import type Database from 'better-sqlite3';
 
 /** Set when the board deduced the end rather than being told about it. */
 export const INTERRUPTED = 'interrupted';
-
-function readString(payload: unknown, key: string): string | null {
-  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return null;
-  const value = (payload as Record<string, unknown>)[key];
-  return typeof value === 'string' && value !== '' ? value : null;
-}
 
 export interface RunLifecycleResult {
   readonly closed: boolean;
