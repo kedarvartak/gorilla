@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { asc, eq } from 'drizzle-orm';
 
 import type { DatabaseHandle } from '../db/client.js';
+import { parseNumbers, parseStrings } from '../json.js';
 import { extractionCursors, ledgerEntries } from '../db/schema.js';
 import type { LedgerEntry, OperatorStatus } from './entries.js';
 import { mergeCandidates, type StoredEntry } from './dedupe.js';
@@ -19,15 +20,6 @@ import { mergeCandidates, type StoredEntry } from './dedupe.js';
  * replaces it.
  */
 
-function parseArray(raw: string): unknown[] {
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
 function toStored(row: typeof ledgerEntries.$inferSelect): StoredEntry {
   return {
     id: row.id,
@@ -35,10 +27,8 @@ function toStored(row: typeof ledgerEntries.$inferSelect): StoredEntry {
     statement: row.statement,
     ...(row.detail === null ? {} : { detail: row.detail }),
     ...(row.alternative === null ? {} : { alternative: row.alternative }),
-    filePaths: parseArray(row.filePaths).filter((path): path is string => typeof path === 'string'),
-    sourceEventIds: parseArray(row.sourceEventIds).filter(
-      (id): id is number => typeof id === 'number',
-    ),
+    filePaths: parseStrings(row.filePaths),
+    sourceEventIds: parseNumbers(row.sourceEventIds),
     origin: row.origin,
     ...(row.confidence === null ? {} : { confidence: row.confidence / 100 }),
     ...(row.model === null ? {} : { model: row.model }),
@@ -104,12 +94,7 @@ export function recordEntries(
       const row = handle.db.select().from(ledgerEntries).where(eq(ledgerEntries.id, id)).get();
       if (row === undefined) continue;
 
-      const combined = [
-        ...new Set([
-          ...parseArray(row.sourceEventIds).filter((v): v is number => typeof v === 'number'),
-          ...extra,
-        ]),
-      ];
+      const combined = [...new Set([...parseNumbers(row.sourceEventIds), ...extra])];
 
       handle.db
         .update(ledgerEntries)
