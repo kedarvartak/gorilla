@@ -143,6 +143,18 @@ export function CardTile({
           </span>
         ) : null}
 
+        {!card.looksFinished ? null : (
+          /* Shown on the tile because a signal only visible after opening a
+             card is a signal nobody sees: an operator with fifteen cards will
+             not open fifteen cards. */
+          <span
+            className="text-accent"
+            title="Every file this card names already exists and it has never run. Open it to see why the board thinks so."
+          >
+            may be done
+          </span>
+        )}
+
         {card.goalCondition === null ? (
           <span className="text-warn" title="Cannot be dispatched without a goal condition">
             no goal

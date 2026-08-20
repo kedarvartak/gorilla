@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
@@ -613,5 +613,52 @@ describe('making a card dispatchable from the interface', () => {
     // silently drop rules the operator still believed were in force.
     expect(patched.body.guardrails.scope).toEqual(['new/']);
     expect(patched.body.guardrails.verify).toBe('new command');
+  });
+});
+
+describe('staleness on the board', () => {
+  it('marks a card whose files all exist and which never ran', async () => {
+    // The shape of a card describing something already built: it names files,
+    // they are all there, and nothing was ever dispatched against it.
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(join(dir, 'src', 'already.ts'), 'export const built = true;\n');
+
+    await makeCard('Already built', { body: 'Change `src/already.ts`.' });
+
+    const cards = await json<{ title: string; looksFinished: boolean }[]>(
+      'GET',
+      `/api/boards/${boardId}/cards`,
+    );
+
+    const card = cards.body.find((entry) => entry.title === 'Already built');
+    expect(card?.looksFinished).toBe(true);
+  });
+
+  it('does not mark a card that names nothing on disk', async () => {
+    await makeCard('Genuinely new', { body: 'Create `src/does-not-exist-yet.ts`.' });
+
+    const cards = await json<{ title: string; looksFinished: boolean }[]>(
+      'GET',
+      `/api/boards/${boardId}/cards`,
+    );
+
+    expect(cards.body.find((entry) => entry.title === 'Genuinely new')?.looksFinished).toBe(false);
+  });
+
+  it('never marks a finished card', async () => {
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(join(dir, 'src', 'finished.ts'), 'x\n');
+
+    const id = await makeCard('Done already', { body: 'Change `src/finished.ts`.' });
+    await json('PATCH', `/api/cards/${id}`, { status: 'done' });
+
+    // A "may be done" flag on a done card is noise at best and a contradiction
+    // at worst.
+    const cards = await json<{ title: string; looksFinished: boolean }[]>(
+      'GET',
+      `/api/boards/${boardId}/cards`,
+    );
+
+    expect(cards.body.find((entry) => entry.title === 'Done already')?.looksFinished).toBe(false);
   });
 });

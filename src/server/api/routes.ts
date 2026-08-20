@@ -8,7 +8,7 @@ import { createDefaultColumns } from '../cards/defaults.js';
 import { describeGuardrails, parseGuardrails } from '../cards/guardrails.js';
 import { blockersFor, dispatchableCards } from '../cards/eligibility.js';
 import { executionOrder } from '../cards/order.js';
-import { assessStaleness, mergedPaths } from '../cards/staleness.js';
+import { assessStaleness, looksFinished, mergedPaths } from '../cards/staleness.js';
 import { canonicaliseCwd } from '../ingest/binding.js';
 import {
   boards,
@@ -180,12 +180,45 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
       ]),
     );
 
+    const board = context.database.db
+      .select()
+      .from(boards)
+      .where(eq(boards.id, request.params.boardId))
+      .get();
+
+    // One query for every card's run count rather than one per card: the board
+    // lists everything at once, and this endpoint is on every page load.
+    const runCounts = new Map(
+      context.database.db
+        .select({ cardId: runs.cardId })
+        .from(runs)
+        .all()
+        .reduce((counts, row) => {
+          if (row.cardId !== null) counts.set(row.cardId, (counts.get(row.cardId) ?? 0) + 1);
+          return counts;
+        }, new Map<string, number>()),
+    );
+
     return listCards(context.database, request.params.boardId).map((card) => {
       const ranked = order.get(card.id);
+
       return {
         ...present(card),
         rank: ranked?.rank ?? null,
         rankBlocked: ranked?.blocked ?? false,
+        // The cheap signal only. The card's own view does the full comparison
+        // against merged work, which costs a git call per merged card.
+        looksFinished:
+          board !== undefined &&
+          card.mergedAt === null &&
+          card.status !== 'done' &&
+          card.status !== 'abandoned' &&
+          looksFinished({
+            body: card.body,
+            guardrails: parseGuardrails(card.guardrails),
+            runCount: runCounts.get(card.id) ?? 0,
+            repoCwd: board.cwd,
+          }),
       };
     });
   });
