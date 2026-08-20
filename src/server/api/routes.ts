@@ -40,7 +40,8 @@ import { claim, claimableCards, mergeCard } from '../binding/attach.js';
 import { buildMechanicalLedger } from '../ledger/mechanical.js';
 import { checkReality, describeReality } from '../ledger/reality.js';
 import { describeVerify } from '../verify/run.js';
-import { buildBrief, renderBrief } from '../brief/brief.js';
+import { buildBrief, renderBrief, type Brief } from '../brief/brief.js';
+import { briefToMarkdown, exportFilename } from '../brief/markdown.js';
 import type { StoredEntry } from '../ledger/dedupe.js';
 import {
   cursorFor,
@@ -1485,6 +1486,54 @@ export function registerBriefRoutes(app: FastifyInstance, context: AppContext): 
       });
 
       return reply.send({ ...brief, markdown: renderBrief(brief), extraction, surprises });
+    } catch (error) {
+      return fail(reply, error);
+    }
+  });
+
+  /**
+   * The brief as a file (doc 08, export).
+   *
+   * Built by asking the brief route rather than rebuilding it here. Two paths
+   * that computed a brief separately would eventually disagree, and the export
+   * is precisely the copy that gets pasted somewhere the board cannot correct
+   * it later.
+   */
+  app.get<{ Params: { cardId: string } }>('/api/cards/:cardId/brief.md', async (request, reply) => {
+    try {
+      const card = getCard(context.database, request.params.cardId);
+      const board = context.database.db
+        .select()
+        .from(boards)
+        .where(eq(boards.id, card.boardId))
+        .get();
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/cards/${card.id}/brief`,
+      });
+
+      if (response.statusCode !== 200) {
+        return reply.code(response.statusCode).send(response.json());
+      }
+
+      const markdown = briefToMarkdown({
+        brief: response.json<Brief>(),
+        cardId: card.id,
+        boardName: board?.name ?? 'unknown board',
+        generatedAt: Date.now(),
+      });
+
+      // Sent as a file rather than as JSON holding a string: the operator asked
+      // for something to keep, and a filename they can find again among thirty
+      // downloads is part of that.
+      return reply
+        .header('content-type', 'text/markdown; charset=utf-8')
+        .header(
+          'content-disposition',
+          `attachment; filename="${exportFilename(card.title, card.id)}"`,
+        )
+        .send(markdown);
     } catch (error) {
       return fail(reply, error);
     }

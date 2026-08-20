@@ -372,6 +372,7 @@ export function CardDetail({
 }): ReactElement {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [brief, setBrief] = useState<Brief | null>(null);
+  const [copied, setCopied] = useState(false);
   const [showEntries, setShowEntries] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [timelineRunId, setTimelineRunId] = useState<string | null>(null);
@@ -573,6 +574,26 @@ export function CardDetail({
     },
     [cardId],
   );
+
+  /**
+   * Puts the exported brief on the clipboard.
+   *
+   * Fetched rather than assembled from `brief.markdown`: the export carries a
+   * provenance footer the on-screen text does not, and a copy that silently
+   * differed from the download would be two exports claiming to be one.
+   */
+  const copyMarkdown = useCallback(async (): Promise<void> => {
+    try {
+      const response = await fetch(`/api/cards/${cardId}/brief.md`);
+      if (!response.ok) throw new Error(`Could not export the brief: ${String(response.status)}`);
+
+      await navigator.clipboard.writeText(await response.text());
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2_000);
+    } catch (cause) {
+      setError((cause as Error).message);
+    }
+  }, [cardId]);
 
   /** Save a model choice, then re-read the card so the rail shows what is stored. */
   const patch = useCallback(
@@ -867,6 +888,28 @@ export function CardDetail({
                 <pre className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap font-mono text-[10px] text-dim">
                   {detail.verify.output}
                 </pre>
+              </div>
+            )}
+
+            {brief === null ? null : (
+              // A brief that stays on this screen is a brief the rest of the
+              // team never reads. The two exits are copy, for a pull request
+              // body or a message, and download, for something kept.
+              <div className="mb-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  className="rounded border border-line px-2 py-0.5 font-mono text-[11px] text-dim hover:text-text"
+                  onClick={() => void copyMarkdown()}
+                >
+                  {copied ? 'copied' : 'copy markdown'}
+                </button>
+                <a
+                  className="rounded border border-line px-2 py-0.5 font-mono text-[11px] text-dim hover:text-text"
+                  href={`/api/cards/${cardId}/brief.md`}
+                  download
+                >
+                  download .md
+                </a>
               </div>
             )}
 
