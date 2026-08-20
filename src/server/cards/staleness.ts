@@ -178,3 +178,29 @@ export async function mergedPaths(repoCwd: string, branch: string | null): Promi
     return [];
   }
 }
+
+/**
+ * The cheap half, for the board.
+ *
+ * The full check compares against every merged card, which costs a git call
+ * each and is fine when one card is open. The board lists everything at once,
+ * so it gets only the signal that needs no git at all: the files this card
+ * names, and whether they are already there.
+ *
+ * That is also the only signal that raises the flag on its own, so the board
+ * and the card agree about which cards are suspect - they differ only in how
+ * much they can say about why.
+ */
+export function looksFinished(input: {
+  body: string;
+  guardrails: GuardrailSet;
+  runCount: number;
+  repoCwd: string;
+}): boolean {
+  if (input.runCount > 0) return false;
+
+  const paths = claimedPaths(input);
+  if (paths.length === 0 || !existsSync(input.repoCwd)) return false;
+
+  return paths.every((path) => existsSync(`${input.repoCwd}/${path}`));
+}

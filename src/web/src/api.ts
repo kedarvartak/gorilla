@@ -49,6 +49,13 @@ export interface Card {
   readonly rank: number | null;
   /** True when something it depends on is still unfinished. */
   readonly rankBlocked: boolean;
+  /**
+   * Every file this card names already exists and it has never run.
+   *
+   * A suspicion the board can compute without a git call, so it can be shown on
+   * every tile. The card's own view says more about why.
+   */
+  readonly looksFinished: boolean;
 }
 
 export interface Column {

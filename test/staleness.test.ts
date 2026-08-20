@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { assessStaleness, claimedPaths, mergedPaths } from '../src/server/cards/staleness.js';
+import {
+  assessStaleness,
+  claimedPaths,
+  looksFinished,
+  mergedPaths,
+} from '../src/server/cards/staleness.js';
 import { EMPTY_GUARDRAILS, parseGuardrails } from '../src/server/cards/guardrails.js';
 
 /**
@@ -179,5 +184,42 @@ describe('what a merged card changed', () => {
     // than a failure to report.
     expect(await mergedPaths(dir, 'gorilla/gone')).toEqual([]);
     expect(await mergedPaths(dir, null)).toEqual([]);
+  });
+});
+
+describe('the cheap signal the board uses', () => {
+  it('agrees with the full check about which cards are suspect', () => {
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(join(dir, 'src', 'built.ts'), 'x\n');
+
+    const card = { body: 'Implement `src/built.ts`.', guardrails: EMPTY_GUARDRAILS, repoCwd: dir };
+
+    // The board and the card must not disagree about which cards are flagged.
+    // They differ only in how much they can say about why.
+    expect(looksFinished({ ...card, runCount: 0 })).toBe(true);
+    expect(assessStaleness({ ...base(card), runCount: 0 }).suspect).toBe(true);
+  });
+
+  it('needs no git call, so it can run for every card on every load', () => {
+    // Nothing here touches a repository: the full check compares against every
+    // merged card at a git call each, which is fine for one open card and not
+    // for a board of fifteen.
+    expect(
+      looksFinished({ body: '', guardrails: EMPTY_GUARDRAILS, runCount: 0, repoCwd: dir }),
+    ).toBe(false);
+  });
+
+  it('stays quiet for a card that has run', () => {
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(join(dir, 'src', 'built.ts'), 'x\n');
+
+    expect(
+      looksFinished({
+        body: 'Implement `src/built.ts`.',
+        guardrails: EMPTY_GUARDRAILS,
+        runCount: 1,
+        repoCwd: dir,
+      }),
+    ).toBe(false);
   });
 });
