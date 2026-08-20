@@ -112,6 +112,8 @@ export function buildArgs(spec: LaunchSpec): string[] {
 export interface CardContextInput {
   /** The card's own branch, when it has an isolated worktree. */
   readonly branch?: string | null;
+  /** Rules true of the project rather than of this card (doc 12, output 2). */
+  readonly invariants?: readonly string[];
   readonly title: string;
   readonly body: string;
   readonly guardrails: GuardrailSet;
@@ -152,6 +154,19 @@ export function renderCardContext(input: CardContextInput): string {
       'Nothing you write reaches anyone until it is committed to that branch.',
       'Commit your work before you finish, in whatever pieces make sense.',
       'Do not merge, rebase, push, or switch branches - the board does that after review.',
+      '',
+    );
+  }
+
+  if (input.invariants !== undefined && input.invariants.length > 0) {
+    // Separated from the card's own constraints on purpose. An agent that
+    // cannot tell a project rule from a card rule will either treat a standing
+    // rule as this task's peculiarity, or treat this task's peculiarity as a
+    // standing rule and carry it into the next card.
+    lines.push(
+      '## Rules for this project, true of every card',
+      '',
+      ...input.invariants.map((rule) => `- ${rule}`),
       '',
     );
   }

@@ -117,6 +117,35 @@ export const events = sqliteTable(
   ],
 );
 
+/**
+ * A rule that is true of the project rather than of one card (doc 12, output 2).
+ *
+ * Guardrails belong to a card because they are about the work it is doing.
+ * Some rules are not: the migration must be additive, the hook path must not
+ * block. Repeating those on every card is how they drift, and a rule stated
+ * five ways is one nobody can rely on.
+ *
+ * Kept as its own table rather than a column of JSON on the board, because an
+ * invariant carries provenance - which card discovered it - and a JSON blob
+ * would make that a second thing to keep in step.
+ */
+export const invariants = sqliteTable(
+  'invariants',
+  {
+    id: text('id').primaryKey(),
+    boardId: text('board_id')
+      .notNull()
+      .references(() => boards.id, { onDelete: 'cascade' }),
+    statement: text('statement').notNull(),
+    /** The card this came from, when it was promoted rather than typed. */
+    sourceCardId: text('source_card_id'),
+    createdAt: integer('created_at').notNull(),
+  },
+  (table) => [index('invariants_board').on(table.boardId)],
+);
+
+export type Invariant = typeof invariants.$inferSelect;
+
 export type Board = typeof boards.$inferSelect;
 export type NewBoard = typeof boards.$inferInsert;
 export type Run = typeof runs.$inferSelect;
