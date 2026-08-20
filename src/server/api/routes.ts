@@ -45,10 +45,12 @@ import {
   cursorFor,
   entryTimesFor,
   setOperatorStatus,
+  markPromoted,
   storedEntriesFor,
   storedEntryById,
 } from '../ledger/store.js';
 import { isOperatorStatus, OPERATOR_STATUSES } from '../ledger/entries.js';
+import { promoteToGuardrail, PromotionError } from '../ledger/promote.js';
 import { surprisesFor, type Surprise } from '../ledger/surprises.js';
 import {
   acknowledgedPaths,
@@ -975,6 +977,69 @@ export function registerReviewRoutes(app: FastifyInstance, context: AppContext):
     // 409 for anything short of resolved: the caller asked for a merge to be
     // completed, and a report that it was not is not a success.
     return reply.code(result.outcome === 'resolved' ? 200 : 409).send(result);
+  });
+
+  /**
+   * Promoting a judged entry into a rule (doc 12, output 1).
+   *
+   * The step that makes judgement compound. Without it an accepted assumption
+   * reaches the next run as context and evaporates; as a guardrail it constrains.
+   */
+  app.post<{
+    Params: { entryId: string };
+    Body: { target?: unknown; rule?: unknown };
+  }>('/api/ledger/:entryId/promote', (request, reply) => {
+    const { entryId } = request.params;
+    const target = request.body?.target;
+
+    if (target !== 'scope' && target !== 'prohibit' && target !== 'verify') {
+      return reply
+        .code(400)
+        .send({ error: 'Promote to scope, prohibit or verify.', field: 'target' });
+    }
+
+    const entry = storedEntryById(context.database, entryId);
+    if (entry === undefined) {
+      return reply.code(404).send({ error: `No such ledger entry: ${entryId}` });
+    }
+
+    const owner = context.database.db
+      .select()
+      .from(ledgerEntries)
+      .where(eq(ledgerEntries.id, entryId))
+      .get();
+
+    if (owner === undefined) return reply.code(404).send({ error: 'No such ledger entry.' });
+
+    try {
+      const card = getCard(context.database, owner.cardId);
+      const rule = typeof request.body?.rule === 'string' ? request.body.rule : '';
+
+      const result = promoteToGuardrail(parseGuardrails(card.guardrails), {
+        entry,
+        target,
+        rule,
+      });
+
+      const updated = updateCard(context.database, card.id, { guardrails: result.guardrails });
+      markPromoted(context.database, entryId, rule.trim());
+
+      publish(context, 'card-updated', present(updated));
+
+      // The enforcement kind travels with the answer. An operator shown an
+      // enforced rule when the board could only manage prompt text has been
+      // told a protection exists that does not (R10).
+      return reply.send({
+        card: present(updated),
+        enforcement: result.enforcement,
+        detail: result.detail,
+      });
+    } catch (error) {
+      if (error instanceof PromotionError) {
+        return reply.code(400).send({ error: error.message, field: error.field });
+      }
+      return fail(reply, error);
+    }
   });
 
   /** What is waiting to be merged: finished cards that still have a worktree. */

@@ -1,0 +1,1 @@
+ALTER TABLE `ledger_entries` ADD `promoted_to` text;
