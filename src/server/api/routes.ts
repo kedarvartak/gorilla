@@ -42,6 +42,7 @@ import { checkReality, describeReality } from '../ledger/reality.js';
 import { describeVerify } from '../verify/run.js';
 import { buildBrief, renderBrief, type Brief } from '../brief/brief.js';
 import { briefToMarkdown, exportFilename } from '../brief/markdown.js';
+import { durationOf, summariseSubagents } from '../agents/subagents.js';
 import type { StoredEntry } from '../ledger/dedupe.js';
 import {
   cursorFor,
@@ -1486,6 +1487,42 @@ export function registerBriefRoutes(app: FastifyInstance, context: AppContext): 
       });
 
       return reply.send({ ...brief, markdown: renderBrief(brief), extraction, surprises });
+    } catch (error) {
+      return fail(reply, error);
+    }
+  });
+
+  /**
+   * What the subagents on this card did (doc 05).
+   *
+   * A subagent is the one place work happens and leaves the operator nothing to
+   * read: its context is discarded when it stops, and the parent keeps only the
+   * message it returned. Files edited inside one otherwise turn up in the blast
+   * radius attributed to a session that did not edit them.
+   */
+  app.get<{ Params: { cardId: string } }>('/api/cards/:cardId/subagents', (request, reply) => {
+    try {
+      const card = getCard(context.database, request.params.cardId);
+
+      const cardRuns = context.database.db
+        .select({ id: runs.id })
+        .from(runs)
+        .where(eq(runs.cardId, card.id))
+        .orderBy(asc(runs.startedAt))
+        .all();
+
+      const summaries = cardRuns.flatMap((run) =>
+        summariseSubagents(context.database.sqlite, run.id).map((summary) => ({
+          ...summary,
+          runId: run.id,
+          // Null when the board never saw it start, which is every subagent
+          // that ran before the hooks were configured. A duration inferred
+          // from the first tool call would look measured and be guessed.
+          durationMs: durationOf(summary),
+        })),
+      );
+
+      return reply.send(summaries);
     } catch (error) {
       return fail(reply, error);
     }
