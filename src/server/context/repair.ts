@@ -174,6 +174,30 @@ export function buildRepairBlock(input: RepairInput): RepairBlock {
   return { text: render(chosen), trimmed, overSpecified };
 }
 
+/**
+ * The operator's corrections, which outrank anything the model said.
+ *
+ * Doc 12 asks for corrections queued and delivered on resume. They are not part
+ * of the repair block because they are not repair: repair hands back what the
+ * agent knew and lost, while a correction tells it something it never knew and
+ * got wrong. Handing them over in the same breath would blur whose words are
+ * whose, and the whole value of a correction is that it is the operator's.
+ */
+export function buildCorrectionBlock(input: {
+  cardTitle: string;
+  corrections: readonly { statement: string }[];
+}): string | null {
+  if (input.corrections.length === 0) return null;
+
+  return [
+    `The operator has corrected the record on "${input.cardTitle}" since your last run.`,
+    'These are their words, not a summary of yours, and they replace whatever you',
+    'previously believed on these points.',
+    '',
+    ...input.corrections.map((entry) => `- ${entry.statement}`),
+  ].join('\n');
+}
+
 /** True when there is nothing worth saying, so the board stays quiet. */
 export function repairIsEmpty(block: RepairBlock): boolean {
   return !block.text.includes('##');

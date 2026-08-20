@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 
 import type { DatabaseHandle } from '../db/client.js';
 import { parseNumbers, parseStrings } from '../json.js';
@@ -246,4 +246,44 @@ export function markPromoted(handle: DatabaseHandle, entryId: string, rule: stri
     .set({ promotedTo: rule })
     .where(eq(ledgerEntries.id, entryId))
     .run();
+}
+
+/**
+ * Corrections the operator has made and the agent has not been told about.
+ *
+ * Undelivered rather than recent: a correction made three weeks ago that never
+ * reached a run is still news to the agent, and one made an hour ago that was
+ * already delivered is not.
+ */
+export function undeliveredCorrections(
+  handle: DatabaseHandle,
+  cardId: string,
+): { id: string; statement: string }[] {
+  return handle.db
+    .select({ id: ledgerEntries.id, statement: ledgerEntries.statement })
+    .from(ledgerEntries)
+    .where(
+      and(
+        eq(ledgerEntries.cardId, cardId),
+        eq(ledgerEntries.operatorStatus, 'corrected'),
+        isNull(ledgerEntries.correctionDeliveredAt),
+      ),
+    )
+    .orderBy(asc(ledgerEntries.createdAt))
+    .all();
+}
+
+/** Marks corrections as said, so the next session start does not repeat them. */
+export function markCorrectionsDelivered(
+  handle: DatabaseHandle,
+  entryIds: readonly string[],
+  now = Date.now(),
+): void {
+  for (const id of entryIds) {
+    handle.db
+      .update(ledgerEntries)
+      .set({ correctionDeliveredAt: now })
+      .where(eq(ledgerEntries.id, id))
+      .run();
+  }
 }

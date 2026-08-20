@@ -10,8 +10,17 @@ import { triggerFor } from '../ledger/service.js';
 import { applyRunLifecycle } from './lifecycle.js';
 import { parseGuardrails } from '../cards/guardrails.js';
 import { ledgerEntries } from '../db/schema.js';
-import { buildRepairBlock, eligibleForRepair, repairIsEmpty } from '../context/repair.js';
-import { storedEntriesFor } from '../ledger/store.js';
+import {
+  buildCorrectionBlock,
+  buildRepairBlock,
+  eligibleForRepair,
+  repairIsEmpty,
+} from '../context/repair.js';
+import {
+  markCorrectionsDelivered,
+  storedEntriesFor,
+  undeliveredCorrections,
+} from '../ledger/store.js';
 import type { Card } from '../db/schema.js';
 
 /**
@@ -272,11 +281,22 @@ function sessionStartResponse(
         ? repairFor(context, claimed, run?.id ?? null)
         : null;
 
+    // Delivered on every kind of session start, not only after a compaction.
+    // A correction is news the agent has never had, so the sooner it arrives
+    // the less work gets built on the thing it corrects (doc 12).
+    const corrections = claimed === null ? null : correctionsFor(context, claimed);
+
     return {
       hookSpecificOutput: {
         hookEventName: 'SessionStart',
-        additionalContext:
+        // Corrections lead. They are the operator's own words and they outrank
+        // both the greeting and anything the model previously established.
+        additionalContext: [
+          corrections,
           repair ?? sessionStartContext(context.database, board.id, board.name, claimed),
+        ]
+          .filter((part) => part !== null)
+          .join('\n\n'),
       },
     };
   } catch {
@@ -317,6 +337,34 @@ function repairFor(context: AppContext, card: Card, runId: string | null): strin
   } catch {
     // A failure here must not stop the session. Falling through to the ordinary
     // greeting loses the repair and nothing else.
+    return null;
+  }
+}
+
+/**
+ * The operator's undelivered corrections for a card, said once.
+ *
+ * Marked as delivered as they are handed over. A correction that reappeared
+ * every session start would teach the agent to skim the block it most needs to
+ * read, and would leave the operator unable to tell whether theirs had landed.
+ */
+function correctionsFor(context: AppContext, card: Card): string | null {
+  try {
+    const pending = undeliveredCorrections(context.database, card.id);
+    if (pending.length === 0) return null;
+
+    const block = buildCorrectionBlock({ cardTitle: card.title, corrections: pending });
+    if (block === null) return null;
+
+    markCorrectionsDelivered(
+      context.database,
+      pending.map((entry) => entry.id),
+    );
+
+    return block;
+  } catch {
+    // Losing a correction costs the agent one piece of context; throwing here
+    // would cost it the whole session.
     return null;
   }
 }

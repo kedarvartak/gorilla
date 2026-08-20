@@ -11,6 +11,7 @@ import { claim } from '../src/server/binding/attach.js';
 import { ledgerEntries } from '../src/server/db/schema.js';
 
 import {
+  buildCorrectionBlock,
   buildRepairBlock,
   DEFAULT_REPAIR_CHARS,
   eligibleForRepair,
@@ -320,5 +321,125 @@ describe('through the hook, which is the path that had never run', () => {
 
     const body = await hook('SessionStart', { source: 'compact' });
     expect(body).not.toContain('The exporter is unused');
+  });
+});
+
+describe('corrections, which are the operator speaking', () => {
+  it('says whose words they are', () => {
+    const block = buildCorrectionBlock({
+      cardTitle: 'A card',
+      corrections: [{ statement: 'The exporter is also called from the scheduler' }],
+    });
+
+    // The whole value of a correction is that it is the operator's. Blurring
+    // that into the repair block would lose the one thing that makes it outrank
+    // whatever the model established.
+    expect(block).toContain('The operator has corrected the record');
+    expect(block).toContain('their words, not a summary of yours');
+    expect(block).toContain('also called from the scheduler');
+  });
+
+  it('is nothing at all when there are none', () => {
+    expect(buildCorrectionBlock({ cardTitle: 'A card', corrections: [] })).toBeNull();
+  });
+});
+
+describe('delivering a correction through the hook', () => {
+  let dir2: string;
+  let database2: DatabaseHandle;
+  let app2: FastifyInstance;
+  let cardId2: string;
+
+  async function hook2(payload: Record<string, unknown> = {}): Promise<string> {
+    const response = await app2.inject({
+      method: 'POST',
+      url: '/hooks/SessionStart',
+      payload: {
+        session_id: 'session-c',
+        cwd: dir2,
+        hook_event_name: 'SessionStart',
+        source: 'startup',
+        ...payload,
+      },
+    });
+    return response.body;
+  }
+
+  beforeEach(async () => {
+    dir2 = mkdtempSync(join(tmpdir(), 'gorilla-correct-'));
+    database2 = openDatabase({ path: join(dir2, 'c.db') });
+    app2 = buildApp({ database: database2, logger: false });
+    await app2.ready();
+
+    await app2.inject({ method: 'POST', url: '/api/boards', payload: { name: 't', cwd: dir2 } });
+    const boards = await app2.inject({ method: 'GET', url: '/api/boards' });
+    const boardId = (boards.json() as { id: string }[])[0]?.id ?? '';
+
+    const card = await app2.inject({
+      method: 'POST',
+      url: `/api/boards/${boardId}/cards`,
+      payload: { title: 'Corrected card' },
+    });
+    cardId2 = (card.json() as { id: string }).id;
+
+    await hook2();
+    claim(database2, 'session-c', cardId2);
+  });
+
+  afterEach(async () => {
+    await app2.close();
+    database2.close();
+    rmSync(dir2, { recursive: true, force: true });
+  });
+
+  function correctedEntry(statement: string): string {
+    const id = randomUUID();
+    const run = database2.sqlite
+      .prepare('SELECT id FROM runs WHERE session_id = ?')
+      .get('session-c') as { id: string };
+
+    database2.db
+      .insert(ledgerEntries)
+      .values({
+        id,
+        cardId: cardId2,
+        runId: run.id,
+        kind: 'assumption',
+        statement,
+        sourceEventIds: '[1]',
+        origin: 'model',
+        operatorStatus: 'corrected',
+        createdAt: Date.now(),
+      })
+      .run();
+
+    return id;
+  }
+
+  it('reaches the next session start', async () => {
+    correctedEntry('The exporter is also called from the scheduler');
+
+    const body = await hook2();
+    expect(body).toContain('The operator has corrected the record');
+    expect(body).toContain('also called from the scheduler');
+  });
+
+  it('is said once and not again', async () => {
+    correctedEntry('The migration is not reversible');
+
+    expect(await hook2()).toContain('not reversible');
+
+    // A correction that reappeared every session start would teach the agent to
+    // skim the block it most needs to read, and leave the operator unable to
+    // tell whether theirs had landed.
+    expect(await hook2()).not.toContain('not reversible');
+  });
+
+  it('does not crowd out the ordinary greeting', async () => {
+    correctedEntry('Something worth knowing');
+
+    const body = await hook2();
+    expect(body).toContain('Something worth knowing');
+    expect(body).toContain('Gorilla board');
   });
 });
