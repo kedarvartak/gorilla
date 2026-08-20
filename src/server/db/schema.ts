@@ -341,6 +341,15 @@ export const ledgerEntries = sqliteTable(
      */
     promotedTo: text('promoted_to'),
 
+    /**
+     * When the operator's correction was last handed to a session.
+     *
+     * A correction is worth saying once. Repeating it every session start would
+     * teach the agent to skim the block it most needs to read, and an operator
+     * whose correction keeps reappearing cannot tell whether it landed.
+     */
+    correctionDeliveredAt: integer('correction_delivered_at'),
+
     operatorStatus: text('operator_status', {
       enum: ['unreviewed', 'accepted', 'rejected', 'corrected'],
     })

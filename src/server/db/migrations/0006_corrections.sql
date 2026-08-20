@@ -1,0 +1,1 @@
+ALTER TABLE `ledger_entries` ADD `correction_delivered_at` integer;
