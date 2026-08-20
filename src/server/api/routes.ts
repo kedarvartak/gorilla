@@ -43,6 +43,12 @@ import { describeVerify } from '../verify/run.js';
 import { buildBrief, renderBrief, type Brief } from '../brief/brief.js';
 import { briefToMarkdown, exportFilename } from '../brief/markdown.js';
 import { durationOf, summariseSubagents } from '../agents/subagents.js';
+import {
+  classify,
+  describeWait,
+  lastActivityByCard,
+  DEFAULT_WINDOW_MS,
+} from '../cards/activity.js';
 import type { StoredEntry } from '../ledger/dedupe.js';
 import {
   cursorFor,
@@ -1577,10 +1583,20 @@ export function registerBriefRoutes(app: FastifyInstance, context: AppContext): 
   });
 
   /** The morning view: every active card, ordered by significance not time. */
-  app.get<{ Params: { boardId: string } }>(
+  app.get<{ Params: { boardId: string }; Querystring: { since?: string } }>(
     '/api/boards/:boardId/digest',
     async (request, reply) => {
       const cards = listCards(context.database, request.params.boardId);
+
+      // What moved overnight, kept apart from what was already sitting there.
+      // Without the split a card blocked for three days reads exactly like one
+      // that failed an hour ago, the list only grows, and "while you were away"
+      // stops being true.
+      const now = Date.now();
+      const requested = Number(request.query.since);
+      const cutoff =
+        Number.isFinite(requested) && requested > 0 ? requested : now - DEFAULT_WINDOW_MS;
+      const activity = lastActivityByCard(context.database.sqlite, request.params.boardId);
 
       const digest = await Promise.all(
         cards
@@ -1592,6 +1608,8 @@ export function registerBriefRoutes(app: FastifyInstance, context: AppContext): 
             });
             const brief: { headline: string; unseenCount: number } = response.json();
 
+            const recency = classify(activity.get(card.id) ?? null, cutoff, now);
+
             return {
               cardId: card.id,
               title: card.title,
@@ -1599,17 +1617,27 @@ export function registerBriefRoutes(app: FastifyInstance, context: AppContext): 
               unseen: brief.unseenCount,
               headline: brief.headline,
               verify: context.dispatcher.verifyResultFor(card.id)?.status ?? null,
+              ...recency,
+              waitedFor: recency.waitingForMs === null ? null : describeWait(recency.waitingForMs),
             };
           }),
       );
 
-      // A failed verify outranks a quiet completion; unseen outranks seen.
+      // A failed verify outranks a quiet completion; unseen outranks seen. A
+      // card that moved outranks one that did not at every level of urgency:
+      // the standing backlog is real, but it is not news, and it was not what
+      // the operator opened this screen to find out.
       const rank = (entry: (typeof digest)[number]): number =>
+        (entry.recency === 'moved' ? 10_000 : 0) +
         (entry.verify === 'failed' || entry.verify === 'errored' ? 1000 : 0) +
         (entry.status === 'blocked' ? 500 : 0) +
         entry.unseen;
 
-      return reply.send(digest.sort((a, b) => rank(b) - rank(a)));
+      return reply.send({
+        since: cutoff,
+        generatedAt: now,
+        entries: digest.sort((a, b) => rank(b) - rank(a)),
+      });
     },
   );
 }
