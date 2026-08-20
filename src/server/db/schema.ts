@@ -332,6 +332,15 @@ export const ledgerEntries = sqliteTable(
     /** Points at the entry that reversed this one. Never deleted. */
     supersededBy: text('superseded_by'),
     /** The operator's judgement, which is the only human-verified signal here. */
+    /**
+     * The guardrail this entry became, when the operator promoted it.
+     *
+     * Recorded so promotion is not offered twice and so a rule can be traced
+     * back to the run that discovered it - a guardrail whose origin is unknown
+     * is one nobody dares remove.
+     */
+    promotedTo: text('promoted_to'),
+
     operatorStatus: text('operator_status', {
       enum: ['unreviewed', 'accepted', 'rejected', 'corrected'],
     })

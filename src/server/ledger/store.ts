@@ -36,6 +36,7 @@ function toStored(row: typeof ledgerEntries.$inferSelect): StoredEntry {
     // Carried, not derived: without it nothing downstream can tell an entry the
     // operator has already judged from one still waiting to be read.
     operatorStatus: row.operatorStatus,
+    promotedTo: row.promotedTo,
   };
 }
 
@@ -236,4 +237,13 @@ export function setOperatorStatus(
 export function storedEntryById(handle: DatabaseHandle, entryId: string): StoredEntry | undefined {
   const row = handle.db.select().from(ledgerEntries).where(eq(ledgerEntries.id, entryId)).get();
   return row === undefined ? undefined : toStored(row);
+}
+
+/** Records that an entry became a rule, so it is not offered for promotion twice. */
+export function markPromoted(handle: DatabaseHandle, entryId: string, rule: string): void {
+  handle.db
+    .update(ledgerEntries)
+    .set({ promotedTo: rule })
+    .where(eq(ledgerEntries.id, entryId))
+    .run();
 }

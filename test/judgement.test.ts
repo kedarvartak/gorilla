@@ -194,3 +194,63 @@ describe('what a rejection changes', () => {
     expect(after.body.unseenCount).toBeLessThan(wasUnseen + 1);
   });
 });
+
+describe('promoting a judged entry into a rule', () => {
+  it('turns an accepted entry into an enforced prohibition', async () => {
+    const id = entry({ kind: 'assumption', statement: 'Nothing else writes the schema' });
+    await json('POST', `/api/ledger/${id}/status`, { status: 'accepted' });
+
+    const promoted = await json<{
+      enforcement: string;
+      detail: string;
+      card: { guardrailDetail: { text: string; enforcement: string }[] };
+    }>('POST', `/api/ledger/${id}/promote`, { target: 'prohibit', rule: 'src/db/schema.ts' });
+
+    expect(promoted.status).toBe(200);
+    expect(promoted.body.enforcement).toBe('hard');
+    // The card now carries it, which is what the launcher writes into the
+    // settings overlay as a deny rule.
+    expect(
+      promoted.body.card.guardrailDetail.some(
+        (rail) => rail.text.includes('schema.ts') && rail.enforcement === 'hard',
+      ),
+    ).toBe(true);
+  });
+
+  it('refuses to promote something nobody has read', async () => {
+    const id = entry();
+    const refused = await json<{ field: string }>('POST', `/api/ledger/${id}/promote`, {
+      target: 'prohibit',
+      rule: 'src/db/schema.ts',
+    });
+
+    expect(refused.status).toBe(400);
+    expect(refused.body.field).toBe('entry');
+  });
+
+  it('will not promote the same entry twice', async () => {
+    const id = entry();
+    await json('POST', `/api/ledger/${id}/status`, { status: 'accepted' });
+    await json('POST', `/api/ledger/${id}/promote`, { target: 'scope', rule: 'src/one/' });
+
+    const second = await json('POST', `/api/ledger/${id}/promote`, {
+      target: 'scope',
+      rule: 'src/two/',
+    });
+
+    // Recorded on the entry, so a rule can be traced back to the run that
+    // discovered it - and so the operator is not offered it again.
+    expect(second.status).toBe(400);
+  });
+
+  it('refuses a target the guardrail set does not have', async () => {
+    const id = entry();
+    const refused = await json<{ field: string }>('POST', `/api/ledger/${id}/promote`, {
+      target: 'whatever',
+      rule: 'x',
+    });
+
+    expect(refused.status).toBe(400);
+    expect(refused.body.field).toBe('target');
+  });
+});

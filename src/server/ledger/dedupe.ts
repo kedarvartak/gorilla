@@ -30,6 +30,8 @@ export interface StoredEntry extends LedgerEntry {
    * is outstanding.
    */
   readonly operatorStatus?: OperatorStatus;
+  /** The guardrail this entry became, so promotion is not offered twice. */
+  readonly promotedTo?: string | null;
 }
 
 export type MergeAction = 'inserted' | 'duplicate' | 'supersedes';
