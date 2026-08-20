@@ -49,6 +49,9 @@ function stubFetch(): void {
       if (url.endsWith('/brief')) {
         return new Response('not found', { status: 404 });
       }
+      if (url.endsWith('/subagents')) {
+        return new Response('[]', { status: 200 });
+      }
       if (url.endsWith('/seen')) {
         return new Response('{}', { status: 200 });
       }

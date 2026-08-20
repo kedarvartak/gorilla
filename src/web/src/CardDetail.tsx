@@ -112,6 +112,23 @@ interface Surprise {
   readonly target: { type: 'entry'; entryId: string } | { type: 'path'; path: string };
 }
 
+/**
+ * One subagent's work (doc 05).
+ *
+ * A subagent's context is discarded when it stops and the parent keeps only the
+ * message it returned, so files edited inside one otherwise arrive in the blast
+ * radius attributed to a session that did not edit them.
+ */
+interface Subagent {
+  readonly agentId: string;
+  readonly agentType: string | null;
+  readonly toolCalls: number;
+  readonly files: readonly string[];
+  readonly result: string | null;
+  readonly durationMs: number | null;
+  readonly finished: boolean;
+}
+
 interface Brief {
   readonly headline: string;
   readonly sections: readonly BriefSection[];
@@ -373,6 +390,7 @@ export function CardDetail({
   const [detail, setDetail] = useState<Detail | null>(null);
   const [brief, setBrief] = useState<Brief | null>(null);
   const [copied, setCopied] = useState(false);
+  const [subagents, setSubagents] = useState<readonly Subagent[]>([]);
   const [showEntries, setShowEntries] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [timelineRunId, setTimelineRunId] = useState<string | null>(null);
@@ -613,10 +631,19 @@ export function CardDetail({
 
     async function load(): Promise<void> {
       try {
-        const [detailResponse, briefResponse] = await Promise.all([
+        const [detailResponse, briefResponse, subagentResponse] = await Promise.all([
           fetch(`/api/cards/${cardId}/detail`),
           fetch(`/api/cards/${cardId}/brief`),
+          fetch(`/api/cards/${cardId}/subagents`),
         ]);
+
+        // Nothing here blocks the card: a subagent view that will not load is
+        // less bad than a card that will not open, so the shape is checked
+        // rather than assumed.
+        if (subagentResponse.ok && !cancelled) {
+          const body: unknown = await subagentResponse.json();
+          if (Array.isArray(body)) setSubagents(body as Subagent[]);
+        }
 
         if (!detailResponse.ok) throw new Error(`Could not load card: ${detailResponse.status}`);
         const body = (await detailResponse.json()) as Detail;
@@ -1102,6 +1129,43 @@ export function CardDetail({
                   );
                 })}
               </ul>
+            )}
+
+            {subagents.length === 0 ? null : (
+              <div className="mb-3 border-t border-line pt-2">
+                <h4 className="mb-1 font-mono text-[11px] uppercase tracking-wider text-dim">
+                  Subagents ({subagents.length})
+                </h4>
+                {/* Shown as work in its own right. A subagent's context is
+                    discarded when it stops, so these files would otherwise
+                    appear in the blast radius with nothing accounting for them. */}
+                <ul className="flex flex-col gap-2 font-mono text-[11px]">
+                  {subagents.map((agent) => (
+                    <li key={agent.agentId} className="border-l-2 border-info/40 pl-2">
+                      <div className="text-text">
+                        {agent.agentType ?? 'subagent'}
+                        <span className="ml-1.5 text-dim">
+                          {agent.toolCalls} tool call(s)
+                          {/* Absent rather than estimated: most subagents have
+                              no start event, and a duration derived from the
+                              first tool call would look measured and be
+                              guessed. */}
+                          {agent.durationMs === null
+                            ? ''
+                            : ` · ${(agent.durationMs / 1000).toFixed(1)}s`}
+                          {agent.finished ? '' : ' · running'}
+                        </span>
+                      </div>
+                      {agent.files.length === 0 ? null : (
+                        <div className="text-dim">{agent.files.join(', ')}</div>
+                      )}
+                      {agent.result === null ? null : (
+                        <div className="mt-0.5 whitespace-pre-wrap text-dim">{agent.result}</div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
 
             {/* The close-out. Everything the operator needs in order to decide
