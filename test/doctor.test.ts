@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { formatReport, runDoctor, type DoctorReport } from '../src/cli/commands/doctor.js';
 import { runInit } from '../src/cli/commands/init.js';
-import { DEFAULT_HOOK_BASE_URL, HOOK_DEFINITIONS } from '../src/hooks/definitions.js';
+import { HOOK_DEFINITIONS } from '../src/hooks/definitions.js';
 import { openDatabase } from '../src/server/db/client.js';
 import { startServer, type RunningServer } from '../src/server/start.js';
 
@@ -15,11 +15,15 @@ let server: RunningServer | null = null;
 
 const PORT = 4481;
 
+// Pointed at the port these tests actually serve on. Initialising the hooks at
+// one port and starting the board at another is a real misconfiguration - the
+// one `hook target` exists to catch - and a fixture that models it by accident
+// makes every other assertion here argue with it.
 const initBase = {
   shared: false,
   dryRun: false,
   force: false,
-  baseUrl: DEFAULT_HOOK_BASE_URL,
+  baseUrl: `http://127.0.0.1:${String(PORT)}`,
 };
 
 function check(report: DoctorReport, name: string): { status: string; detail: string } {
@@ -122,6 +126,48 @@ describe('a correctly configured project', () => {
     const report = await runDoctor({ cwd: dir, port: PORT, dbPath });
     expect(check(report, 'hook configuration').status).toBe('fail');
     expect(report.ok).toBe(false);
+  });
+});
+
+describe('hooks pointing at another board', () => {
+  beforeEach(() => {
+    runInit({ ...initBase, cwd: dir, baseUrl: 'http://127.0.0.1:4300' });
+  });
+
+  it('names both ports rather than reporting each half as fine', async () => {
+    const report = await runDoctor({ cwd: dir, port: PORT, dbPath });
+    const target = check(report, 'hook target');
+
+    // Individually both halves are correct: every hook is registered, and the
+    // server is where it was asked to be. Every event is dropped in between.
+    expect(target.detail).toContain('4300');
+    expect(target.detail).toContain(String(PORT));
+  });
+
+  it('warns while nothing is listening, since the port is a guess', async () => {
+    const report = await runDoctor({ cwd: dir, port: PORT, dbPath });
+
+    expect(check(report, 'hook target').status).toBe('warn');
+    expect(report.ok).toBe(true);
+  });
+
+  it('fails once a board is confirmed on the other port', async () => {
+    server = await startServer({ port: PORT, dbPath, logger: false });
+
+    const report = await runDoctor({ cwd: dir, port: PORT, dbPath });
+
+    // Now it is observed rather than supposed: there is a board here, and the
+    // hooks are talking to somewhere else. Nothing else in the report matters.
+    expect(check(report, 'hook target').status).toBe('fail');
+    expect(report.ok).toBe(false);
+  });
+
+  it('does not call a matching configuration out of date', async () => {
+    // The hooks are complete; they simply name another board. Sending the
+    // operator to `init` would answer a question nobody asked.
+    expect(
+      check(await runDoctor({ cwd: dir, port: PORT, dbPath }), 'hook configuration').status,
+    ).toBe('ok');
   });
 });
 
