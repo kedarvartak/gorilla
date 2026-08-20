@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createCard, getCard, moveCard, addDependency } from '../src/server/api/cards.js';
 import { createDefaultColumns } from '../src/server/cards/defaults.js';
 import { openDatabase, type DatabaseHandle } from '../src/server/db/client.js';
-import { Dispatcher } from '../src/server/dispatch/dispatcher.js';
+import { Dispatcher, type HaltState } from '../src/server/dispatch/dispatcher.js';
 import { PendingBindings } from '../src/server/binding/pending.js';
 import { boards, columns, ledgerEntries, runs } from '../src/server/db/schema.js';
 import { setOperatorStatus } from '../src/server/ledger/store.js';
@@ -16,6 +16,7 @@ import { setOperatorStatus } from '../src/server/ledger/store.js';
 let dir: string;
 let handle: DatabaseHandle;
 let dispatcher: Dispatcher;
+let halts: HaltState[];
 let pending: PendingBindings;
 
 const BOARD = 'board-1';
@@ -101,7 +102,10 @@ beforeEach(() => {
   createDefaultColumns(handle.db, BOARD);
 
   pending = new PendingBindings();
-  dispatcher = new Dispatcher(handle, pending);
+  halts = [];
+  dispatcher = new Dispatcher(handle, pending, {
+    onHalted: (_boardId, halt) => halts.push(halt),
+  });
   // These exercise dispatch logic in a plain temp directory. Worktree
   // isolation has its own suite against real repositories.
   dispatcher.isolate = false;
@@ -240,6 +244,41 @@ ${SUCCEEDS}
 });
 
 describe('halting', () => {
+  it('tells the operator, once, that the queue stopped', async () => {
+    dispatcher.useExecutable(fakeClaude(FAILS));
+    const id = card('breaks');
+
+    await dispatcher.dispatch(BOARD, id)?.result;
+
+    // A halt nobody hears about at 2am is indistinguishable from a queue that
+    // ran all night. Once, though: later failures are consequences, and a
+    // notifier that repeated them would train the operator to ignore it.
+    await vi.waitFor(() => {
+      expect(halts).toHaveLength(1);
+    });
+    expect(halts[0]?.cardTitle).toBe('breaks');
+  });
+
+  it('halts even when telling the operator throws', async () => {
+    const shouting = new Dispatcher(handle, pending, {
+      onHalted: () => {
+        throw new Error('notifier exploded');
+      },
+    });
+    shouting.isolate = false;
+    shouting.useExecutable(fakeClaude(FAILS));
+    const id = card('breaks anyway');
+
+    await shouting.dispatch(BOARD, id)?.result;
+
+    // The gate is the feature; the notification is a courtesy. A courtesy that
+    // can break the gate is worse than no courtesy.
+    await vi.waitFor(() => {
+      expect(shouting.state(BOARD).halted?.reason).toBe('failure');
+    });
+    await shouting.shutdown();
+  });
+
   it('halts on failure and names the responsible card', async () => {
     dispatcher.useExecutable(fakeClaude(FAILS));
     const id = card('breaks');

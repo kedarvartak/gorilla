@@ -143,6 +143,40 @@ Ordered by what unblocks the workflow, not by architectural tidiness.
 U1 to U4 make the night work. U5 and U6 make the morning worth having. Doc 16's
 remaining Phase 2 items fold into U5.
 
+## Being told the queue stopped
+
+The gate only works if the operator finds out. A halt at 2am is
+indistinguishable from a queue that ran all night, and the operator discovers it
+at breakfast having lost six hours of unattended work - the same failure the
+gate exists to prevent, moved from the review to the night.
+
+`GORILLA_NOTIFY` names a command the board runs when a board's queue halts:
+`notify-send`, `terminal-notifier`, a `curl` to a webhook. It is read from the
+environment rather than the database, because a notification for an overnight
+halt is worthless if it does not survive a restart.
+
+The halt is never interpolated into that command. A card title is free text an
+agent wrote, and pasting it into a shell string breaks on the first quote and
+does something worse on the first `$(...)`. The facts arrive as environment
+variables instead:
+
+| Variable | What it holds |
+| --- | --- |
+| `GORILLA_BOARD` | The board's name |
+| `GORILLA_HALT_REASON` | `failure`, `cancelled`, `awaiting-review`, `no-goal`, `stalled`, `unacknowledged-surprises` |
+| `GORILLA_HALT_CARD` | The card's title |
+| `GORILLA_HALT_CARD_ID` | The card's id |
+| `GORILLA_HALT_DETAIL` | Why the queue stopped, in the operator's terms |
+| `GORILLA_HALT_AT` | When, as an ISO timestamp |
+| `GORILLA_HALT_MESSAGE` | All of the above as one line, for notifiers that want one argument |
+
+The notification fires once per halt, on the halt that caused it: later failures
+are consequences, and a notifier that repeated them would train the operator to
+ignore the one that mattered. It is also fire-and-forget in both directions - the
+queue never waits for it, and a notifier that fails, hangs or does not exist
+never unhalts the board or breaks the gate. `gorilla doctor` warns when nothing
+is configured.
+
 ## What this supersedes
 
 - Doc 16's Phase 4 deferral of worktrees. They move to U2.

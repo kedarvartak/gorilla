@@ -17,7 +17,11 @@ import {
   registerReviewRoutes,
   registerTimelineRoutes,
 } from './api/routes.js';
+import { eq } from 'drizzle-orm';
+
 import { Dispatcher } from './dispatch/dispatcher.js';
+import { boards } from './db/schema.js';
+import { NOTIFY_ENV, notifyHalt } from './notify/notify.js';
 import { PendingBindings } from './binding/pending.js';
 import { ExtractionService } from './ledger/service.js';
 import type { ExtractionModel } from './ledger/model.js';
@@ -89,6 +93,22 @@ export function buildApp(options: AppOptions): FastifyInstance {
       onStateChange: (boardId, state) => broadcaster.publish('dispatch-state', { boardId, state }),
       onRunStarted: (boardId, cardId, sessionId) =>
         broadcaster.publish('run-started', { boardId, cardId, sessionId }),
+      // A halt nobody hears about at 2am is indistinguishable from a queue
+      // that ran all night. The command is the operator's own, from the
+      // environment, so it survives a restart.
+      onHalted: (boardId, halt) => {
+        broadcaster.publish('dispatch-halted', { boardId, halt });
+
+        const board = options.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
+
+        notifyHalt({
+          halt,
+          boardName: board?.name ?? 'gorilla',
+          command: process.env[NOTIFY_ENV],
+          cwd: board?.cwd,
+          onError: (error) => app.log.error({ err: error }, 'halt notification failed'),
+        });
+      },
       onRunFinished: (boardId, cardId, result) =>
         broadcaster.publish('run-finished', {
           boardId,
