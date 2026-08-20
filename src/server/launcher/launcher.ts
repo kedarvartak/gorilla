@@ -36,6 +36,8 @@ export interface LaunchOptions {
   readonly prompt?: string | null;
   /** The card's own branch, so the agent knows to commit to it. */
   readonly branch?: string | null;
+  /** Board-level rules, handed to every card (doc 12, output 2). */
+  readonly invariants?: readonly string[];
   readonly agentModel?: string | null;
   readonly agentEffort?: string | null;
   readonly permissionMode?: string | null;
@@ -100,6 +102,7 @@ function writeLaunchFiles(options: LaunchOptions): {
       body: options.body,
       guardrails: options.guardrails,
       ...(options.branch === undefined ? {} : { branch: options.branch }),
+      ...(options.invariants === undefined ? {} : { invariants: options.invariants }),
       ...(options.acceptedEntries === undefined
         ? {}
         : { acceptedEntries: options.acceptedEntries }),

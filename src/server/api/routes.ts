@@ -15,6 +15,7 @@ import {
   cardDependencies,
   cards as cardsTable,
   columns,
+  invariants,
   ledgerEntries,
   runs,
   type Card,
@@ -222,6 +223,86 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
       };
     });
   });
+
+  /**
+   * Rules true of the project rather than of one card (doc 12, output 2).
+   *
+   * Repeating a standing rule on every card is how it drifts: a rule stated five
+   * ways is one nobody can rely on. These are stated once and reach every
+   * dispatched card, marked as project rules so the agent can tell them from the
+   * card's own peculiarities.
+   */
+  app.get<{ Params: { boardId: string } }>('/api/boards/:boardId/invariants', (request) => {
+    return context.database.db
+      .select()
+      .from(invariants)
+      .where(eq(invariants.boardId, request.params.boardId))
+      .orderBy(asc(invariants.createdAt))
+      .all();
+  });
+
+  app.post<{ Params: { boardId: string }; Body: { statement?: unknown; sourceCardId?: unknown } }>(
+    '/api/boards/:boardId/invariants',
+    (request, reply) => {
+      const statement =
+        typeof request.body?.statement === 'string' ? request.body.statement.trim() : '';
+
+      if (statement === '') {
+        return reply
+          .code(400)
+          .send({ error: 'An invariant needs something to say.', field: 'statement' });
+      }
+
+      const existing = context.database.db
+        .select()
+        .from(invariants)
+        .where(eq(invariants.boardId, request.params.boardId))
+        .all();
+
+      if (existing.some((rule) => rule.statement === statement)) {
+        // Two copies of one rule is the drift this exists to prevent, arriving
+        // by a shorter route.
+        return reply
+          .code(409)
+          .send({ error: 'That invariant is already on this board.', field: 'statement' });
+      }
+
+      const id = randomUUID();
+      context.database.db
+        .insert(invariants)
+        .values({
+          id,
+          boardId: request.params.boardId,
+          statement,
+          sourceCardId:
+            typeof request.body?.sourceCardId === 'string' ? request.body.sourceCardId : null,
+          createdAt: Date.now(),
+        })
+        .run();
+
+      const created = context.database.db
+        .select()
+        .from(invariants)
+        .where(eq(invariants.id, id))
+        .get();
+
+      publish('invariants-changed', { boardId: request.params.boardId });
+      return reply.code(201).send(created);
+    },
+  );
+
+  app.delete<{ Params: { boardId: string; invariantId: string } }>(
+    '/api/boards/:boardId/invariants/:invariantId',
+    (request, reply) => {
+      context.database.db
+        .delete(invariants)
+        .where(eq(invariants.id, request.params.invariantId))
+        .run();
+
+      publish('invariants-changed', { boardId: request.params.boardId });
+      return reply.code(204).send();
+    },
+  );
 
   app.get<{ Params: { boardId: string } }>('/api/boards/:boardId/dispatchable', (request) => {
     return dispatchableCards(context.database.db, request.params.boardId);

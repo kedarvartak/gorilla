@@ -5,7 +5,7 @@ import { canonicaliseCwd } from '../ingest/binding.js';
 import { dispatchableCards } from '../cards/eligibility.js';
 import { parseGuardrails } from '../cards/guardrails.js';
 import type { DatabaseHandle } from '../db/client.js';
-import { boards, cards, columns, runs } from '../db/schema.js';
+import { boards, cards, columns, invariants, runs } from '../db/schema.js';
 import type { PendingBindings } from '../binding/pending.js';
 import { describeVerify, runVerify, type VerifyResult } from '../verify/run.js';
 import { outstandingSurprises } from '../ledger/outstanding.js';
@@ -498,6 +498,12 @@ export class Dispatcher {
         guardrails: parseGuardrails(card.guardrails),
         goalCondition: card.goalCondition,
         branch: this.#worktreesFor(board.cwd).workspaceFor(cardId)?.branch ?? null,
+        invariants: this.database.db
+          .select({ statement: invariants.statement })
+          .from(invariants)
+          .where(eq(invariants.boardId, boardId))
+          .all()
+          .map((row) => row.statement),
         agentModel: card.agentModel,
         agentEffort: card.agentEffort,
         permissionMode: card.permissionMode,

@@ -25,6 +25,7 @@ import {
 } from './api.js';
 import { CardDetail } from './CardDetail.js';
 import { Digest } from './Digest.js';
+import { Invariants } from './Invariants.js';
 import { Activity } from './Activity.js';
 import { CardTile } from './CardTile.js';
 
@@ -102,6 +103,7 @@ export function Board(): ReactElement {
   const [newPriority, setNewPriority] = useState<Card['priority']>('normal');
   const [openCardId, setOpenCardId] = useState<string | null>(null);
   const [digestOpen, setDigestOpen] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
   const [runnable, setRunnable] = useState<ReadonlySet<string>>(new Set());
 
@@ -325,6 +327,15 @@ export function Board(): ReactElement {
 
         <button
           type="button"
+          className="rounded border border-line bg-panel-2 px-2 py-1 text-text hover:border-dim"
+          title="Rules handed to every card this board dispatches."
+          onClick={() => setRulesOpen(true)}
+        >
+          rules
+        </button>
+
+        <button
+          type="button"
           className={`rounded border px-2 py-1 hover:border-dim ${
             activityOpen ? 'border-info text-info' : 'border-line bg-panel-2 text-text'
           }`}
@@ -417,6 +428,8 @@ export function Board(): ReactElement {
           onClose={() => setDigestOpen(false)}
         />
       )}
+
+      {!rulesOpen ? null : <Invariants boardId={board.id} onClose={() => setRulesOpen(false)} />}
 
       {!activityOpen ? null : (
         <div className="h-56 shrink-0">
