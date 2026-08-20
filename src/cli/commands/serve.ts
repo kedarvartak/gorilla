@@ -2,6 +2,7 @@ import { FixtureRecorder } from '../../server/fixtures/recorder.js';
 import { startServer } from '../../server/start.js';
 import { DEFAULT_HOST, DEFAULT_PORT } from '../../server/index.js';
 import { resolveExtractionBackend } from '../../server/ledger/service.js';
+import { hookTargetWarning } from '../../hooks/warn.js';
 import type { Command, CommandResult } from '../cli.js';
 
 function parsePort(args: readonly string[]): number {
@@ -63,6 +64,12 @@ export const serveCommand: Command = {
     if (server.adopted > 0) {
       process.stderr.write(`  Rediscovered ${String(server.adopted)} card worktree(s).\n`);
     }
+    // Said at startup, where it is cheapest to act on. A board serving on a
+    // port the hooks do not name receives nothing, and an empty board is
+    // indistinguishable from one where nothing has happened yet.
+    const misdirected = hookTargetWarning(process.cwd(), port);
+    if (misdirected !== null) process.stderr.write(`  ${misdirected}\n`);
+
     if (board !== null) {
       process.stderr.write(
         `  board "${board.name}" ${board.created ? 'created for' : 'observing'} ${board.cwd}\n`,

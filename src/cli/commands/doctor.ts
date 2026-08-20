@@ -13,6 +13,7 @@ import { openDatabase, resolveDatabasePath } from '../../server/db/client.js';
 import { DEFAULT_PORT, DEFAULT_HOST } from '../../server/index.js';
 import { readTranscript } from '../../server/transcript/index.js';
 import { NOTIFY_ENV } from '../../server/notify/notify.js';
+import { assessHookTarget, configuredBaseUrl } from '../../hooks/target.js';
 import type { Command, CommandResult } from '../cli.js';
 
 /**
@@ -125,8 +126,11 @@ function checkSettings(cwd: string): Check[] {
     }
     if (doc === 'missing') continue;
 
+    // Against the base the settings themselves use, not against ours. A
+    // project deliberately serving elsewhere is not out of date, and sending
+    // its operator to `init` would be answering a question nobody asked.
     const current = isUpToDate(doc, {
-      baseUrl: DEFAULT_HOOK_BASE_URL,
+      baseUrl: configuredBaseUrl(doc) ?? DEFAULT_HOOK_BASE_URL,
       ...(bridgePath === undefined ? {} : { bridgePath }),
     });
     checks.push({
@@ -306,6 +310,43 @@ function checkNotify(): Check {
   };
 }
 
+/**
+ * Whether the hooks point at the board (doc 07).
+ *
+ * The quietest way to lose everything: `init` writes hooks naming one port and
+ * `serve --port` starts the board on another. Both halves are individually
+ * correct - all seventeen hooks registered, the server up and answering - and
+ * every event is dropped in between. The board then looks running and empty,
+ * which is what a board looks like before anything has happened.
+ *
+ * That is why this compares the two facts against each other. Checking the
+ * settings against `DEFAULT_HOOK_BASE_URL` and the port against nothing is how
+ * the mismatch stayed invisible in this report.
+ *
+ * Severity follows what is actually known. With a board confirmed on the port,
+ * events are demonstrably going nowhere and this fails. With nothing listening,
+ * the port is the operator's hypothesis rather than an observation, so it warns.
+ */
+function checkHookTarget(cwd: string, port: number, serverPresent: boolean): Check[] {
+  const checks: Check[] = [];
+
+  for (const path of [settingsPathFor(cwd, false), settingsPathFor(cwd, true)]) {
+    const doc = readSettings(path);
+    if (doc === 'missing' || doc === 'invalid') continue;
+
+    const target = assessHookTarget({ doc, port, settingsPath: path, host: DEFAULT_HOST });
+    if (target.verdict === 'unconfigured') continue;
+
+    checks.push({
+      name: 'hook target',
+      status: target.verdict === 'agree' ? 'ok' : serverPresent ? 'fail' : 'warn',
+      detail: target.detail,
+    });
+  }
+
+  return checks;
+}
+
 export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
   const dbPath = resolveDatabasePath(options.dbPath);
   const silentAfterMs = options.silentAfterMs ?? DAY_MS;
@@ -329,6 +370,8 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
       detail: `Not running. Port ${options.port} is free; start it with \`gorilla serve\`.`,
     });
   }
+
+  checks.push(...checkHookTarget(options.cwd, options.port, portState === 'in-use'));
 
   checks.push(checkNotify());
   checks.push(...checkDeliveries(dbPath, silentAfterMs));
