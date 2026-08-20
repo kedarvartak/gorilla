@@ -1,4 +1,5 @@
 import { registerCommand } from './cli.js';
+import { backfillCommand } from './commands/backfill.js';
 import { doctorCommand } from './commands/doctor.js';
 import { initCommand } from './commands/init.js';
 import { probeCommand } from './commands/probe.js';
@@ -17,6 +18,7 @@ export function registerBuiltinCommands(): void {
   if (registered) return;
   registered = true;
 
+  registerCommand(backfillCommand);
   registerCommand(doctorCommand);
   registerCommand(initCommand);
   registerCommand(probeCommand);
