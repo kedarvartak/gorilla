@@ -79,6 +79,12 @@ export interface DispatcherEvents {
   readonly onVerified?: (boardId: string, cardId: string, result: VerifyResult) => void;
   /** Files the board committed on the card's behalf when its run ended. */
   readonly onCommitted?: (boardId: string, cardId: string, files: number) => void;
+  /**
+   * The queue stopped. Fired once per halt, on the halt that caused it: later
+   * failures are consequences, and a notifier that repeated them would train
+   * the operator to ignore the one that mattered.
+   */
+  readonly onHalted?: (boardId: string, halt: HaltState) => void;
 }
 
 interface BoardState {
@@ -256,6 +262,15 @@ export class Dispatcher {
     if (state.halted === null) {
       state.halted = halt;
       this.#publish(boardId);
+
+      // After the state is set and published. A notifier that threw before the
+      // halt was recorded would leave the queue stopped and the board unable
+      // to say why, which is worse than no notification at all.
+      try {
+        this.events.onHalted?.(boardId, halt);
+      } catch {
+        // Fail open: telling the operator is not worth breaking the gate for.
+      }
     }
   }
 

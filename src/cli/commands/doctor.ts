@@ -12,6 +12,7 @@ import { isUpToDate, requiresBridge, type SettingsDocument } from '../../hooks/s
 import { openDatabase, resolveDatabasePath } from '../../server/db/client.js';
 import { DEFAULT_PORT, DEFAULT_HOST } from '../../server/index.js';
 import { readTranscript } from '../../server/transcript/index.js';
+import { NOTIFY_ENV } from '../../server/notify/notify.js';
 import type { Command, CommandResult } from '../cli.js';
 
 /**
@@ -284,6 +285,27 @@ async function checkTranscripts(dbPath: string): Promise<Check> {
   }
 }
 
+/**
+ * Whether a halt would reach the operator.
+ *
+ * A warning rather than a failure: a board watched by somebody sitting in front
+ * of it needs no notifier. It is worth saying out loud all the same, because
+ * the operator who most needs this is the one who will not find out it was
+ * missing until a night has already been lost.
+ */
+function checkNotify(): Check {
+  const command = (process.env[NOTIFY_ENV] ?? '').trim();
+
+  return {
+    name: 'halt notification',
+    status: command === '' ? 'warn' : 'ok',
+    detail:
+      command === ''
+        ? `${NOTIFY_ENV} is not set: an overnight halt will wait silently until you look.`
+        : `A halt runs: ${command}`,
+  };
+}
+
 export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
   const dbPath = resolveDatabasePath(options.dbPath);
   const silentAfterMs = options.silentAfterMs ?? DAY_MS;
@@ -308,6 +330,7 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
     });
   }
 
+  checks.push(checkNotify());
   checks.push(...checkDeliveries(dbPath, silentAfterMs));
   checks.push(await checkTranscripts(dbPath));
 
