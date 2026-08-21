@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 /**
  * Storage schema (doc 05).
@@ -60,6 +60,22 @@ export const runs = sqliteTable(
     headShaAtEnd: text('head_sha_at_end'),
     /** Monotonic counter for this run's events, advanced under a transaction. */
     lastSeq: integer('last_seq').notNull().default(0),
+    /**
+     * What the run cost, written once when it settles.
+     *
+     * Null rather than zero when nothing was recorded: a run whose stream
+     * carried no usage and a run that genuinely used nothing are different
+     * facts, and a board that reports the first as zero is understating a
+     * bill (R10). `costSource` says which reading these came from.
+     */
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    cacheReadTokens: integer('cache_read_tokens'),
+    cacheCreationTokens: integer('cache_creation_tokens'),
+    /** The CLI's own figure. Absent when the total had to be added up. */
+    costUsd: real('cost_usd'),
+    turns: integer('turns'),
+    costSource: text('cost_source', { enum: ['result', 'messages'] }),
   },
   (table) => [
     uniqueIndex('runs_session_unique').on(table.sessionId),

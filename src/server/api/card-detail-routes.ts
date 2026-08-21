@@ -5,6 +5,7 @@ import { describeGuardrails, parseGuardrails } from '../cards/guardrails.js';
 import { blockersFor } from '../cards/eligibility.js';
 import { assessStaleness, mergedPaths } from '../cards/staleness.js';
 import { boards, cards as cardsTable, runs } from '../db/schema.js';
+import { describeCost, type RunCost } from '../launcher/cost.js';
 import { getCard } from './cards.js';
 import { buildMechanicalLedger } from '../ledger/mechanical.js';
 import { checkReality, describeReality } from '../ledger/reality.js';
@@ -19,6 +20,38 @@ import { fail, present } from './shared.js';
  * history, and the mechanical ledger - because three round trips to render one
  * card is three chances for the panes to disagree with each other.
  */
+/**
+ * The stored cost, in the shape the accumulator produces.
+ *
+ * Rebuilt rather than stored as JSON so the columns stay queryable: the board
+ * budget in T27 has to sum them across runs, and a JSON blob would make that
+ * a scan.
+ */
+function costOf(run: {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheCreationTokens: number | null;
+  costUsd: number | null;
+  turns: number | null;
+  costSource: 'result' | 'messages' | null;
+}): (RunCost & { readonly summary: string }) | null {
+  if (run.costSource === null) return null;
+
+  const cost: RunCost = {
+    inputTokens: run.inputTokens ?? 0,
+    outputTokens: run.outputTokens ?? 0,
+    cacheReadTokens: run.cacheReadTokens ?? 0,
+    cacheCreationTokens: run.cacheCreationTokens ?? 0,
+    costUsd: run.costUsd,
+    turns: run.turns,
+    durationMs: null,
+    source: run.costSource,
+  };
+
+  return { ...cost, summary: describeCost(cost) };
+}
+
 export function registerCardDetailRoutes(app: FastifyInstance, context: AppContext): void {
   app.get<{ Params: { cardId: string } }>('/api/cards/:cardId/detail', async (request, reply) => {
     try {
@@ -49,6 +82,10 @@ export function registerCardDetailRoutes(app: FastifyInstance, context: AppConte
             .get(run.id) as { n: number }
         ).n,
         ledger: buildMechanicalLedger({ sqlite: context.database.sqlite, runId: run.id }),
+        // Null for every run that predates T29, and for one whose stream
+        // reported no usage. Both are "not known", which the interface must
+        // not render as zero.
+        cost: costOf(run),
       }));
 
       // Git is the only source here independent of the agent, so it is the one

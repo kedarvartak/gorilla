@@ -70,6 +70,28 @@ interface LedgerEntry {
   readonly sourceEventIds: readonly number[];
 }
 
+/**
+ * The rail heading carries the card's total, because the operator's question
+ * is what the card cost, not what its third run cost.
+ *
+ * Only the dollar figures the CLI reported are added up. Mixing in the runs
+ * whose totals were added up from messages would produce one number the
+ * operator cannot tell is part estimate, so the count of unpriced runs is
+ * stated separately instead.
+ */
+function runsTitle(runs: readonly RunDetail[]): string {
+  if (runs.length === 0) return 'Runs';
+
+  const priced = runs.filter((run) => run.cost !== null && run.cost.costUsd !== null);
+  const spent = priced.reduce((total, run) => total + (run.cost?.costUsd ?? 0), 0);
+  const unpriced = runs.length - priced.length;
+
+  if (priced.length === 0) return `Runs (${String(runs.length)})`;
+
+  const note = unpriced === 0 ? '' : `, ${String(unpriced)} unpriced`;
+  return `Runs (${String(runs.length)}) · $${spent.toFixed(2)}${note}`;
+}
+
 interface RunDetail {
   readonly runId: string;
   readonly sessionId: string;
@@ -87,6 +109,23 @@ interface RunDetail {
     readonly entries: readonly LedgerEntry[];
     readonly changed: readonly string[];
   };
+  /**
+   * Null when nothing is known, which is not the same as nothing was spent.
+   * Runs from before the board recorded cost read as null forever.
+   */
+  readonly cost: RunCost | null;
+}
+
+interface RunCost {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly cacheReadTokens: number;
+  readonly cacheCreationTokens: number;
+  /** Present only when the CLI reported its own total. */
+  readonly costUsd: number | null;
+  readonly turns: number | null;
+  readonly source: 'result' | 'messages';
+  readonly summary: string;
 }
 
 interface VerifyReport {
@@ -1091,7 +1130,7 @@ export function CardDetail({
           </>
         </Rail>
 
-        <Rail title={detail.runs.length === 0 ? 'Runs' : `Runs (${detail.runs.length})`}>
+        <Rail title={runsTitle(detail.runs)}>
           <>
             {detail.runs.length === 0 ? (
               <p className="text-dim">
@@ -1114,6 +1153,12 @@ export function CardDetail({
                       <div className="text-dim">
                         {new Date(run.startedAt).toLocaleString()} · {run.events} events
                       </div>
+                      {/* Silent when nothing was recorded. A run with no usage
+                          and a run that cost nothing are different facts, and
+                          printing "0 tokens" would state the second. */}
+                      {run.cost === null ? null : (
+                        <div className="text-dim">{run.cost.summary}</div>
+                      )}
                       <div className={ended.tone}>{ended.text}</div>
                       {run.goalOutcome === null ? null : (
                         <div className="text-dim">goal: {run.goalOutcome}</div>
