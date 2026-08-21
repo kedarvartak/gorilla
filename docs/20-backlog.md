@@ -123,7 +123,7 @@ The point of the product: work that continues correctly while nobody is watching
 | T44 | Health check endpoint | One endpoint reports queue depth, in-flight runs, halt state and last event time. | open |
 | T45 | Webhook on state change | Card state changes can be posted to a configured endpoint, with the same no-interpolation discipline as `GORILLA_NOTIFY`. | open |
 | T46 | Checkpoint a long run | A run's progress is recorded at intervals so a killed process resumes rather than restarts. | open |
-| T47 | Restart recovery for in-flight runs | A server restart reconciles running cards against live processes instead of leaving them in progress forever. | open |
+| T47 | Restart recovery for in-flight runs | A server restart reconciles running cards against live processes instead of leaving them in progress forever. | merged |
 | T48 | Orphan worktree reaper | Worktrees with no card are removed on a schedule, with a report of what was removed. | open |
 
 ## H. Intake
