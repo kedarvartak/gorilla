@@ -177,6 +177,33 @@ queue never waits for it, and a notifier that fails, hangs or does not exist
 never unhalts the board or breaks the gate. `gorilla doctor` warns when nothing
 is configured.
 
+## Stopping a run that spends too much
+
+A card can carry a token ceiling. It is set on the card, it defaults to none,
+and it is enforced by the board rather than requested of the agent: crossing it
+terminates the session. That makes it one of the few hard guardrails in the
+system, and it is described as one everywhere it appears, because an operator
+who reads it as advice will set it and then be surprised by a killed run.
+
+Three things are worth knowing before setting one.
+
+The count runs low. It is added up from the per-message usage as the stream
+arrives, which is the only reading available while there is still something to
+stop; the authoritative total only exists once the run has finished and the
+money is spent. A ceiling therefore stops a run somewhat after it crossed the
+line, never before. That is the right direction to be wrong in - the
+alternative kills runs that had not actually overspent.
+
+A stop for spending is not an abandonment. The card goes to blocked, its work
+stays on its branch, and the halt names both the ceiling and what the run had
+spent when it was stopped. An operator who can see only the limit cannot tell a
+small overshoot from a runaway, and those call for different responses.
+
+An operator's cancel is still reported as a cancel. Both stops are SIGTERM and
+both come back from the launcher as `cancelled`, so the board records which one
+it caused. Telling the operator a run overspent when they pressed cancel would
+be a lie about what happened.
+
 ## What this supersedes
 
 - Doc 16's Phase 4 deferral of worktrees. They move to U2.

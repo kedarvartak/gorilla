@@ -1,0 +1,1 @@
+ALTER TABLE `cards` ADD `token_ceiling` integer;

@@ -813,6 +813,26 @@ export function CardDetail({
               />
               <dt
                 className="text-dim"
+                title="Tokens a run may spend before the board stops it. This one is enforced: the board terminates the session."
+              >
+                ceiling
+              </dt>
+              <dd>
+                {/* Named as a hard limit rather than a preference. The board
+                    kills the process when it is crossed, unlike the guardrails
+                    below, which are written into settings and can be argued
+                    with. */}
+                <TextField
+                  label="token ceiling"
+                  value={detail.card.tokenCeiling === null ? '' : String(detail.card.tokenCeiling)}
+                  placeholder="no ceiling"
+                  onSave={(next) =>
+                    patch({ tokenCeiling: next.trim() === '' ? null : Number(next) })
+                  }
+                />
+              </dd>
+              <dt
+                className="text-dim"
                 title="What /goal is given. Without one, the card cannot be dispatched."
               >
                 goal

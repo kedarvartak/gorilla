@@ -248,6 +248,15 @@ export const cards = sqliteTable(
     agentModel: text('agent_model'),
     agentEffort: text('agent_effort'),
     permissionMode: text('permission_mode'),
+    /**
+     * Tokens this card's run may spend before the board stops it (T26).
+     *
+     * Null means no ceiling, which is the default: a limit nobody chose is a
+     * limit that will one day kill a run for no stated reason. This is a hard
+     * guardrail - it terminates the process - and is named as one, unlike the
+     * advisory rules written into the settings overlay.
+     */
+    tokenCeiling: integer('token_ceiling'),
     synthesisModel: text('synthesis_model'),
 
     status: text('status', {

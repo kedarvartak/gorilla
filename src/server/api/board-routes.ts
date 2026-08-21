@@ -301,6 +301,12 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
             : { agentEffort: body['agentEffort'] as string | null }),
           ...(body['priority'] === undefined ? {} : { priority: readPriority(body['priority']) }),
           ...(body['status'] === undefined ? {} : { status: body['status'] as Card['status'] }),
+          // Passed through unchecked on purpose: updateCard refuses a ceiling
+          // that is not a positive whole number, and one validator saying no is
+          // better than two that can drift apart.
+          ...(body['tokenCeiling'] === undefined
+            ? {}
+            : { tokenCeiling: body['tokenCeiling'] as number | null }),
         });
 
         publish('card-updated', present(card));
