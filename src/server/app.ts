@@ -109,6 +109,10 @@ export function buildApp(options: AppOptions): FastifyInstance {
           onError: (error) => app.log.error({ err: error }, 'halt notification failed'),
         });
       },
+      // Published so a watching interface can tell a card that went back in the
+      // queue from one that never started. Both read as idle on the board.
+      onRetried: (boardId, cardId, why) =>
+        broadcaster.publish('card-retried', { boardId, cardId, why }),
       onRunFinished: (boardId, cardId, result) =>
         broadcaster.publish('run-finished', {
           boardId,

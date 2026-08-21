@@ -78,6 +78,13 @@
       "when": 1787339326764,
       "tag": "0010_board_budget",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1787340446836,
+      "tag": "0011_card_attempts",
+      "breakpoints": true
     }
   ]
 }
