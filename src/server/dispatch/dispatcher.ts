@@ -21,6 +21,7 @@ import {
 } from '../launcher/launcher.js';
 import { accumulateCost, CostMeter } from '../launcher/cost.js';
 import { describeSpend, overBudget, spentSince, startOfDay } from './budget.js';
+import { classifyLaunchFailure, decideRetry, DEFAULT_MAX_ATTEMPTS } from './retry.js';
 
 /**
  * Decides which Ready card starts next (doc 05).
@@ -103,6 +104,8 @@ export interface DispatcherEvents {
    * the operator to ignore the one that mattered.
    */
   readonly onHalted?: (boardId: string, halt: HaltState) => void;
+  /** Fired when a card goes back in the queue rather than being blocked (T42). */
+  readonly onRetried?: (boardId: string, cardId: string, why: string) => void;
 }
 
 interface BoardState {
@@ -547,6 +550,15 @@ export class Dispatcher {
     // reports, and a key that differs only by a resolved symlink never matches.
     const workspace = canonicaliseCwd(this.#workspacePath(board.cwd, cardId));
 
+    // Counted at the start, not at the failure: a run killed with the board
+    // never reaches a failure path, and a card whose attempts only rise on
+    // tidy failures is retried forever by a supervisor that keeps restarting.
+    this.database.db
+      .update(cards)
+      .set({ attempts: card.attempts + 1 })
+      .where(eq(cards.id, cardId))
+      .run();
+
     updateCard(this.database, cardId, { status: 'running' });
 
     // What the operator has already judged on this card, fed back so a run
@@ -655,6 +667,9 @@ export class Dispatcher {
    */
   failureStreakLimit = 3;
 
+  /** Attempts a card gets before a transient failure stops being retried. */
+  maxAttempts = DEFAULT_MAX_ATTEMPTS;
+
   #recordCost(result: LaunchResult): void {
     if (result.sessionId === null) return;
 
@@ -674,6 +689,32 @@ export class Dispatcher {
       })
       .where(eq(runs.sessionId, result.sessionId))
       .run();
+  }
+
+  /**
+   * Puts a card back in the queue when the evidence says the fault was not
+   * the card's (T42).
+   *
+   * Returns false when it did not, so the caller falls through to the ordinary
+   * failure path. A retry deliberately does not touch the failure streak: an
+   * overloaded API is not a card failing, and counting it towards the streak
+   * would stop the queue for a fault that resolved itself.
+   */
+  #retryCard(boardId: string, cardId: string, result: LaunchResult | null): boolean {
+    const card = getCard(this.database, cardId);
+    const verdict = classifyLaunchFailure(result);
+    const decision = decideRetry(verdict, card.attempts, this.maxAttempts);
+
+    if (!decision.retry) return false;
+
+    // Back to idle so the queue picks it up again. The worktree is untouched:
+    // the next attempt continues in the same checkout rather than starting
+    // from nothing, which is the whole reason the worktree survives a failure.
+    updateCard(this.database, cardId, { status: 'idle' });
+    this.events.onRetried?.(boardId, cardId, decision.why);
+    this.#publish(boardId);
+    void this.pump(boardId).catch(() => undefined);
+    return true;
   }
 
   /**
@@ -735,6 +776,8 @@ export class Dispatcher {
     const card = getCard(this.database, cardId);
 
     if (result === null) {
+      if (this.#retryCard(boardId, cardId, null)) return;
+
       updateCard(this.database, cardId, { status: 'blocked' });
       this.#halt(boardId, {
         reason: 'launch-error',
@@ -784,6 +827,8 @@ export class Dispatcher {
     }
 
     if (result.outcome === 'failed') {
+      if (this.#retryCard(boardId, cardId, result)) return;
+
       updateCard(this.database, cardId, { status: 'blocked' });
       this.#failCard(boardId, cardId, {
         reason: 'failure',

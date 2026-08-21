@@ -1003,3 +1003,78 @@ describe('the board’s daily budget', () => {
     await running?.result;
   });
 });
+
+describe('retrying a transient failure', () => {
+  const OVERLOADED = [
+    `echo '{"type":"system","subtype":"init","session_id":"sess-1"}'`,
+    `echo 'API Error: 529 overloaded_error' >&2`,
+    `exit 1`,
+  ].join('\n');
+
+  const REFUSED = [
+    `echo '{"type":"system","subtype":"init","session_id":"sess-1"}'`,
+    `echo 'Task could not be completed.' >&2`,
+    `exit 1`,
+  ].join('\n');
+
+  it('puts the card back in the queue', async () => {
+    dispatcher.useExecutable(fakeClaude(OVERLOADED));
+    const id = card('hits an overloaded API');
+
+    await dispatcher.dispatch(BOARD, id)?.result;
+
+    // Idle rather than blocked: the queue will pick it up again. Its worktree
+    // is untouched, so the next attempt continues rather than starting over.
+    await vi.waitFor(() => expect(getCard(handle, id).status).toBe('idle'));
+    expect(dispatcher.state(BOARD).halted).toBeNull();
+  });
+
+  it('does not retry a failure the run stated', async () => {
+    dispatcher.useExecutable(fakeClaude(REFUSED));
+    const id = card('cannot be done');
+
+    await dispatcher.dispatch(BOARD, id)?.result;
+
+    // The run finished and reported it did not succeed. Retrying spends money
+    // to be told the same thing.
+    await vi.waitFor(() => expect(getCard(handle, id).status).toBe('blocked'));
+  });
+
+  it('gives up once the attempts are used', async () => {
+    dispatcher.useExecutable(fakeClaude(OVERLOADED));
+    const id = card('always overloaded');
+    dispatcher.setMode(BOARD, 'automatic');
+
+    // Two attempts, then blocked. Without a bound this card would be retried
+    // for as long as the board is running.
+    await vi.waitFor(() => expect(getCard(handle, id).status).toBe('blocked'), {
+      timeout: 10_000,
+    });
+    expect(getCard(handle, id).attempts).toBe(2);
+  });
+
+  it('does not count a retry against the failure streak', async () => {
+    dispatcher.useExecutable(fakeClaude(OVERLOADED));
+    const id = card('transient');
+
+    await dispatcher.dispatch(BOARD, id)?.result;
+    await vi.waitFor(() => expect(getCard(handle, id).attempts).toBeGreaterThan(0));
+
+    // An overloaded API is not a card failing. Counting it towards the streak
+    // would stop the queue for a fault that resolved itself.
+    expect(dispatcher.state(BOARD).failureStreak).toBe(0);
+  });
+
+  it('counts an attempt at the start, not at the failure', async () => {
+    dispatcher.useExecutable(fakeClaude(`echo '{"type":"system","session_id":"s"}'\nsleep 30`));
+    const id = card('killed mid-run');
+
+    const running = dispatcher.dispatch(BOARD, id);
+    // A run killed with the board never reaches a failure path. Counting there
+    // would let such a card be retried forever by a supervisor that restarts.
+    expect(getCard(handle, id).attempts).toBe(1);
+
+    dispatcher.cancel(BOARD, id);
+    await running?.result;
+  });
+});

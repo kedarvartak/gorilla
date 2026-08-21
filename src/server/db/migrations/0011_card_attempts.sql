@@ -1,0 +1,1 @@
+ALTER TABLE `cards` ADD `attempts` integer DEFAULT 0 NOT NULL;

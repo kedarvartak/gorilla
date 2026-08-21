@@ -264,6 +264,14 @@ export const cards = sqliteTable(
      * advisory rules written into the settings overlay.
      */
     tokenCeiling: integer('token_ceiling'),
+    /**
+     * How many times this card has been dispatched (T42).
+     *
+     * On the card rather than in memory because a board that restarts
+     * mid-batch would otherwise forget, and a card that fails on every start
+     * would be retried forever by a supervisor that keeps restarting it.
+     */
+    attempts: integer('attempts').notNull().default(0),
     synthesisModel: text('synthesis_model'),
 
     status: text('status', {

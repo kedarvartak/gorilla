@@ -177,6 +177,31 @@ queue never waits for it, and a notifier that fails, hangs or does not exist
 never unhalts the board or breaks the gate. `gorilla doctor` warns when nothing
 is configured.
 
+## Trying again, but only where the evidence says to
+
+A failure the run stated is not the same as a network having a bad minute, and
+the CLI exits 1 for both. So the retry policy reads the CLI's stderr rather
+than its exit code, and it is one-sided: a card is retried only where there is
+positive evidence the cause was outside it - a named transient status, a
+dropped connection, or a supervisor that could not watch the process at all.
+
+Retrying unless something proves otherwise would rerun every card whose tests
+genuinely fail, twice, every night. A missed retry costs one card; a wrong
+retry costs every real failure the board ever sees.
+
+Two attempts, not five. A transient fault that survives one retry is not
+transient, and finding that out at attempt five costs three more runs' worth of
+tokens than finding it out at attempt two.
+
+Attempts are counted on the card, at the start of each run. In memory they
+would be forgotten by a restart, and counted at the failure they would never
+rise for a run killed with the board - either way a card that fails on every
+start is retried indefinitely by a supervisor that keeps restarting it.
+
+A retry does not count towards the failure streak above. An overloaded API is
+not a card failing, and stopping the queue for a fault that resolved itself is
+the thing both mechanisms exist to avoid.
+
 ## One card failing is not the night failing
 
 The queue used to stop on any failure, on the argument that later work would
