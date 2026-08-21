@@ -36,122 +36,122 @@ Three sources, in order of weight.
 
 Two facts that must agree, currently agreeing only by luck.
 
-| Id | Task | Done when |
-| --- | --- | --- |
-| T1 | Build handshake between server and interface | The server exposes its build id; the UI refuses to run against a mismatched one and says so, rather than calling routes that 404. |
-| T2 | Refuse to serve a stale bundle | `src/server/web/routes.ts` serves the built UI only when its manifest matches the running server, and reports the mismatch otherwise. |
-| T3 | Route contract tests | Every route in the API has a test asserting its response shape, so a shape change breaks a test rather than a screen. |
-| T4 | Reject unknown fields on card update | `PATCH /api/cards/:cardId` returns 400 for a field it does not know, instead of accepting and dropping it. |
-| T5 | Migration ladder test | Every migration applies to an empty database and to the previous version's database, asserted in CI. |
-| T6 | Schema drift check | CI fails when the Drizzle schema and the applied migrations disagree. |
-| T7 | Dispatch idempotency constraint | A card cannot be in flight twice, enforced by the database rather than by call order. |
-| T8 | Typed error bodies | One helper produces every 400/404/409 body, with a discriminated type the interface can switch on. |
+| Id | Task | Done when | Status |
+| --- | --- | --- | --- |
+| T1 | Build handshake between server and interface | The server exposes its build id; the UI refuses to run against a mismatched one and says so, rather than calling routes that 404. | open |
+| T2 | Refuse to serve a stale bundle | `src/server/web/routes.ts` serves the built UI only when its manifest matches the running server, and reports the mismatch otherwise. | open |
+| T3 | Route contract tests | Every route in the API has a test asserting its response shape, so a shape change breaks a test rather than a screen. | open |
+| T4 | Reject unknown fields on card update | `PATCH /api/cards/:cardId` returns 400 for a field it does not know, instead of accepting and dropping it. | open |
+| T5 | Migration ladder test | Every migration applies to an empty database and to the previous version's database, asserted in CI. | open |
+| T6 | Schema drift check | CI fails when the Drizzle schema and the applied migrations disagree. | open |
+| T7 | Dispatch idempotency constraint | A card cannot be in flight twice, enforced by the database rather than by call order. | open |
+| T8 | Typed error bodies | One helper produces every 400/404/409 body, with a discriminated type the interface can switch on. | open |
 
 ## B. Structure
 
 Work that buys nothing on its own and makes the next ten items cheaper.
 
-| Id | Task | Done when |
-| --- | --- | --- |
-| T9 | Split the route module | `routes.ts` becomes one module per resource, behaviour identical, existing tests unchanged. |
-| T10 | Extract a card service layer | Route handlers call named operations rather than composing queries inline, so the same operation is reachable from the CLI. |
-| T11 | Single event-payload parser | One place decodes a hook payload and reports what it could not read, replacing the per-caller casts. |
-| T12 | Shared fetch client for the interface | The web app's requests go through one typed client that surfaces non-2xx as errors rather than as parsed bodies. |
+| Id | Task | Done when | Status |
+| --- | --- | --- | --- |
+| T9 | Split the route module | `routes.ts` becomes one module per resource, behaviour identical, existing tests unchanged. | merged |
+| T10 | Extract a card service layer | Route handlers call named operations rather than composing queries inline, so the same operation is reachable from the CLI. | open |
+| T11 | Single event-payload parser | One place decodes a hook payload and reports what it could not read, replacing the per-caller casts. | open |
+| T12 | Shared fetch client for the interface | The web app's requests go through one typed client that surfaces non-2xx as errors rather than as parsed bodies. | open |
 
 ## C. The project model
 
 Doc 12's remaining half. Nothing currently proposes a rule from what the runs
 established; both promotion paths are manual.
 
-| Id | Task | Done when |
-| --- | --- | --- |
-| T13 | Subsystem map | Each card records which paths its run actually touched, derived from tool events. |
-| T14 | Propose a card guardrail | Accepted ledger entries yield a proposed guardrail the operator accepts or drops; nothing is applied silently. |
-| T15 | Propose a board invariant | A rule appearing on three or more cards is offered as a project rule. |
-| T16 | Contradiction check on a new card | A card whose text conflicts with a standing invariant is flagged before dispatch. |
-| T17 | Retirement candidates | An invariant no run has exercised across N cards is surfaced as removable. |
-| T18 | Blast radius from history | A card's likely blast radius is proposed from the subsystem map of prior cards touching the same paths. |
-| T19 | Related cards | A card links to earlier cards that touched the same subsystem, so an agent inherits the prior finding. |
+| Id | Task | Done when | Status |
+| --- | --- | --- | --- |
+| T13 | Subsystem map | Each card records which paths its run actually touched, derived from tool events. | open |
+| T14 | Propose a card guardrail | Accepted ledger entries yield a proposed guardrail the operator accepts or drops; nothing is applied silently. | open |
+| T15 | Propose a board invariant | A rule appearing on three or more cards is offered as a project rule. | open |
+| T16 | Contradiction check on a new card | A card whose text conflicts with a standing invariant is flagged before dispatch. | open |
+| T17 | Retirement candidates | An invariant no run has exercised across N cards is surfaced as removable. | open |
+| T18 | Blast radius from history | A card's likely blast radius is proposed from the subsystem map of prior cards touching the same paths. | open |
+| T19 | Related cards | A card links to earlier cards that touched the same subsystem, so an agent inherits the prior finding. | open |
 
 ## D. Operating the loop
 
 Everything here currently requires a terminal.
 
-| Id | Task | Done when |
-| --- | --- | --- |
-| T20 | Cancel a running card from the board | The interface reaches `launcher.cancel()`, and the card lands in a state that says cancelled rather than failed. |
-| T21 | Retry in place | A failed card retries against its existing worktree instead of re-dispatching from scratch. |
-| T22 | Requeue with a correction | Retry carries an operator note into the next run's context. |
-| T23 | Pause and resume the queue | The dispatcher can be held without being torn down, and says why it is holding. |
-| T24 | Reorder the dispatch queue | Queue order is editable from the board, not only implied by column position. |
-| T25 | Concurrency control per board | The number of simultaneous runs is a board setting with a tested upper bound. |
-| T26 | Per-card cost ceiling | A run that exceeds its token ceiling halts and reports, rather than running until it finishes. |
-| T27 | Board-level daily budget | The queue stops dispatching when the day's budget is spent, and says so on the board. |
+| Id | Task | Done when | Status |
+| --- | --- | --- | --- |
+| T20 | Cancel a running card from the board | The interface reaches `launcher.cancel()`, and the card lands in a state that says cancelled rather than failed. | open |
+| T21 | Retry in place | A failed card retries against its existing worktree instead of re-dispatching from scratch. | open |
+| T22 | Requeue with a correction | Retry carries an operator note into the next run's context. | open |
+| T23 | Pause and resume the queue | The dispatcher can be held without being torn down, and says why it is holding. | open |
+| T24 | Reorder the dispatch queue | Queue order is editable from the board, not only implied by column position. | open |
+| T25 | Concurrency control per board | The number of simultaneous runs is a board setting with a tested upper bound. | open |
+| T26 | Per-card cost ceiling | A run that exceeds its token ceiling halts and reports, rather than running until it finishes. | open |
+| T27 | Board-level daily budget | The queue stops dispatching when the day's budget is spent, and says so on the board. | open |
 
 ## E. What a card shows
 
-| Id | Task | Done when |
-| --- | --- | --- |
-| T28 | Verify output on failure | The verify command's captured output is shown, not only its exit code. |
-| T29 | Token and duration accounting | Each card shows what its runs cost, from the run events. |
-| T30 | Branch diff summary | Files, insertions and deletions appear in the card, so review does not require a terminal. |
-| T31 | Full diff view | The branch's diff is readable in the card, per file. |
-| T32 | Run timeline density | The timeline distinguishes thinking, tool use, and waiting, rather than showing one undifferentiated run. |
-| T33 | Error grouping | Repeated identical errors within a run collapse into one entry with a count. |
-| T34 | Card search | Cards are searchable by title, body and touched path. |
+| Id | Task | Done when | Status |
+| --- | --- | --- | --- |
+| T28 | Verify output on failure | The verify command's captured output is shown, not only its exit code. | open |
+| T29 | Token and duration accounting | Each card shows what its runs cost, from the run events. | open |
+| T30 | Branch diff summary | Files, insertions and deletions appear in the card, so review does not require a terminal. | open |
+| T31 | Full diff view | The branch's diff is readable in the card, per file. | open |
+| T32 | Run timeline density | The timeline distinguishes thinking, tool use, and waiting, rather than showing one undifferentiated run. | open |
+| T33 | Error grouping | Repeated identical errors within a run collapse into one entry with a count. | open |
+| T34 | Card search | Cards are searchable by title, body and touched path. | open |
 
 ## F. Review and merge
 
-| Id | Task | Done when |
-| --- | --- | --- |
-| T35 | Merge queue | Several ready cards merge in a defined order, each verified after the previous, with a single report. |
-| T36 | Pre-merge second opinion | A fresh agent reviews the branch and its findings enter the ledger as surprises before the gate opens. |
-| T37 | Review checklist from the ledger | The gate shows what was established during the run, so accepting is an informed act. |
-| T38 | Follow-up card from a rejected entry | Rejecting a ledger entry can create the card that addresses it, linked to its origin. |
-| T39 | Merge dry run | The board reports whether a branch would conflict, before the operator commits to merging. |
-| T40 | Post-merge verification | The verify command runs once more on the merged result, and the card records that it did. |
+| Id | Task | Done when | Status |
+| --- | --- | --- | --- |
+| T35 | Merge queue | Several ready cards merge in a defined order, each verified after the previous, with a single report. | open |
+| T36 | Pre-merge second opinion | A fresh agent reviews the branch and its findings enter the ledger as surprises before the gate opens. | open |
+| T37 | Review checklist from the ledger | The gate shows what was established during the run, so accepting is an informed act. | open |
+| T38 | Follow-up card from a rejected entry | Rejecting a ledger entry can create the card that addresses it, linked to its origin. | open |
+| T39 | Merge dry run | The board reports whether a branch would conflict, before the operator commits to merging. | open |
+| T40 | Post-merge verification | The verify command runs once more on the merged result, and the card records that it did. | open |
 
 ## G. Autonomy
 
 The point of the product: work that continues correctly while nobody is watching.
 
-| Id | Task | Done when |
-| --- | --- | --- |
-| T41 | Scheduled dispatch window | A board can be told to work only between given hours. |
-| T42 | Automatic retry policy | A run that fails for a transient reason retries under a stated policy; one that fails for a stated reason does not. |
-| T43 | Escalation ladder | Repeated failure on one card stops that card rather than the queue, and marks it for the operator. |
-| T44 | Health check endpoint | One endpoint reports queue depth, in-flight runs, halt state and last event time. |
-| T45 | Webhook on state change | Card state changes can be posted to a configured endpoint, with the same no-interpolation discipline as `GORILLA_NOTIFY`. |
-| T46 | Checkpoint a long run | A run's progress is recorded at intervals so a killed process resumes rather than restarts. |
-| T47 | Restart recovery for in-flight runs | A server restart reconciles running cards against live processes instead of leaving them in progress forever. |
-| T48 | Orphan worktree reaper | Worktrees with no card are removed on a schedule, with a report of what was removed. |
+| Id | Task | Done when | Status |
+| --- | --- | --- | --- |
+| T41 | Scheduled dispatch window | A board can be told to work only between given hours. | open |
+| T42 | Automatic retry policy | A run that fails for a transient reason retries under a stated policy; one that fails for a stated reason does not. | open |
+| T43 | Escalation ladder | Repeated failure on one card stops that card rather than the queue, and marks it for the operator. | open |
+| T44 | Health check endpoint | One endpoint reports queue depth, in-flight runs, halt state and last event time. | open |
+| T45 | Webhook on state change | Card state changes can be posted to a configured endpoint, with the same no-interpolation discipline as `GORILLA_NOTIFY`. | open |
+| T46 | Checkpoint a long run | A run's progress is recorded at intervals so a killed process resumes rather than restarts. | open |
+| T47 | Restart recovery for in-flight runs | A server restart reconciles running cards against live processes instead of leaving them in progress forever. | open |
+| T48 | Orphan worktree reaper | Worktrees with no card are removed on a schedule, with a report of what was removed. | open |
 
 ## H. Intake
 
-| Id | Task | Done when |
-| --- | --- | --- |
-| T49 | Card templates | A card can be created from a named template carrying its guardrails and verify command. |
-| T50 | Import GitHub issues as cards | Issues become cards with their origin recorded, without polling anything on a timer by default. |
-| T51 | Bulk card creation from a file | A markdown list becomes cards in one operation, with a dry run. |
-| T52 | Card splitting | A card too large to dispatch can be split into dependent cards, preserving its context. |
-| T53 | Duplicate card detection | A new card that restates an existing one is flagged at creation. |
+| Id | Task | Done when | Status |
+| --- | --- | --- | --- |
+| T49 | Card templates | A card can be created from a named template carrying its guardrails and verify command. | open |
+| T50 | Import GitHub issues as cards | Issues become cards with their origin recorded, without polling anything on a timer by default. | open |
+| T51 | Bulk card creation from a file | A markdown list becomes cards in one operation, with a dry run. | open |
+| T52 | Card splitting | A card too large to dispatch can be split into dependent cards, preserving its context. | open |
+| T53 | Duplicate card detection | A new card that restates an existing one is flagged at creation. | open |
 
 ## I. Command line and export
 
-| Id | Task | Done when |
-| --- | --- | --- |
-| T54 | `gorilla export` | The whole board state renders to one reviewable markdown file. |
-| T55 | `gorilla status` | Queue state, in-flight runs and halt state, without opening the interface. |
-| T56 | `gorilla dispatch` | A card is dispatched from the command line, reusing the service layer rather than the HTTP route. |
-| T57 | `gorilla verify` | The verify command runs against a card's branch from the terminal, reporting as the board would. |
-| T58 | Machine-readable output | Every command takes `--json`, so the board is scriptable. |
+| Id | Task | Done when | Status |
+| --- | --- | --- | --- |
+| T54 | `gorilla export` | The whole board state renders to one reviewable markdown file. | open |
+| T55 | `gorilla status` | Queue state, in-flight runs and halt state, without opening the interface. | open |
+| T56 | `gorilla dispatch` | A card is dispatched from the command line, reusing the service layer rather than the HTTP route. | open |
+| T57 | `gorilla verify` | The verify command runs against a card's branch from the terminal, reporting as the board would. | open |
+| T58 | Machine-readable output | Every command takes `--json`, so the board is scriptable. | open |
 
 ## J. Metrics
 
-| Id | Task | Done when |
-| --- | --- | --- |
-| T59 | Throughput and lead time | The board reports cards completed, time from ready to merged, and where time is spent. |
-| T60 | Failure taxonomy | Failures are classified by cause and counted, so the common failure is visible rather than remembered. |
+| Id | Task | Done when | Status |
+| --- | --- | --- | --- |
+| T59 | Throughput and lead time | The board reports cards completed, time from ready to merged, and where time is spent. | open |
+| T60 | Failure taxonomy | Failures are classified by cause and counted, so the common failure is visible rather than remembered. | open |
 
 ---
 
