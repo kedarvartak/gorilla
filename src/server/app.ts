@@ -20,6 +20,7 @@ import {
 import { eq } from 'drizzle-orm';
 
 import { Dispatcher } from './dispatch/dispatcher.js';
+import { readHealth } from './health.js';
 import { boards } from './db/schema.js';
 import { NOTIFY_ENV, notifyHalt } from './notify/notify.js';
 import { PendingBindings } from './binding/pending.js';
@@ -132,11 +133,21 @@ export function buildApp(options: AppOptions): FastifyInstance {
     await context.extraction.drain();
   });
 
-  app.get('/health', () => ({ status: 'ok' }));
-
   // Latency lives in the process, so T10's report can only read it while the
   // server that received the events is still running.
   const startedAt = Date.now();
+
+  // Facts rather than a verdict. This used to return a hardcoded `ok`, which
+  // reported a healthy board while the queue was halted and every card was
+  // blocked - a liveness check wearing a health check's name (T44).
+  app.get('/health', () =>
+    readHealth({
+      sqlite: context.database.sqlite,
+      dispatcher: context.dispatcher,
+      startedAt,
+      now: Date.now(),
+    }),
+  );
   app.get('/diagnostics', () => {
     const samples = recordedLatencies()
       .map((sample) => sample.durationMs)
