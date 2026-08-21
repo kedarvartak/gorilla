@@ -13,6 +13,7 @@ import { openDatabase, type DatabaseHandle } from './db/client.js';
 import { DEFAULT_HOST, DEFAULT_PORT } from './index.js';
 import type { ExtractionModel } from './ledger/model.js';
 import { describeReconcile, reconcileOpenRuns } from './ingest/lifecycle.js';
+import { describeCardReconcile, reconcileRunningCards } from './cards/reconcile.js';
 
 export interface EnsuredBoard {
   readonly id: string;
@@ -69,6 +70,8 @@ export interface RunningServer {
   readonly board: EnsuredBoard | null;
   /** What startup found left open, so `serve` can say so rather than hide it. */
   readonly reconciled: string | null;
+  /** Cards that were mid-run when the board last stopped. */
+  readonly reconciledCards: string | null;
   /** Worktrees rediscovered on disk. */
   readonly adopted: number;
   stop(): Promise<void>;
@@ -101,6 +104,9 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
   // Before serving: the board has just started, so it cannot be supervising
   // anything, and a run still marked open is one that was cut off.
   const reconciled = describeReconcile(reconcileOpenRuns(database.sqlite));
+  // The card's side of the same fact. Dispatch is in-process, so a card found
+  // in `running` has nothing supervising it and nothing that ever will.
+  const reconciledCards = describeCardReconcile(reconcileRunningCards(database.sqlite, Date.now()));
 
   const app = buildApp({
     database,
@@ -122,6 +128,7 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
     database,
     board,
     reconciled,
+    reconciledCards,
     adopted,
     url: `http://${host}:${port}`,
     stop: async () => {

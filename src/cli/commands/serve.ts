@@ -61,6 +61,12 @@ export const serveCommand: Command = {
     // Said out loud rather than fixed silently: a run the board closed by
     // deduction is a run whose end time is an estimate.
     if (server.reconciled !== null) process.stderr.write(`  ${server.reconciled}\n`);
+    // Printed at startup rather than left for the operator to notice on the
+    // board. A card silently moved out of running is a change to their queue
+    // made while they were not looking.
+    if (server.reconciledCards !== null) {
+      process.stderr.write(`  ${server.reconciledCards}\n`);
+    }
     if (server.adopted > 0) {
       process.stderr.write(`  Rediscovered ${String(server.adopted)} card worktree(s).\n`);
     }
