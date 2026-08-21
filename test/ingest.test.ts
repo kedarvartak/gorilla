@@ -210,9 +210,16 @@ describe('failing open', () => {
 });
 
 describe('health', () => {
-  it('reports ok', async () => {
+  it('reports ok, with the facts the verdict was derived from', async () => {
     const response = await app.inject({ method: 'GET', url: '/health' });
-    expect(response.json()).toEqual({ status: 'ok' });
+    const body = response.json<{ status: string; boards: unknown[]; lastEventAt: number | null }>();
+
+    // The shape changed in T44: a bare `ok` reported a healthy board while the
+    // queue was halted and every card was blocked, so the endpoint now sends
+    // what it derived the verdict from.
+    expect(body.status).toBe('ok');
+    expect(body.boards).toEqual([]);
+    expect(body.lastEventAt).toBeNull();
   });
 });
 
