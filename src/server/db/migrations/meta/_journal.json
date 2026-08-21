@@ -57,6 +57,13 @@
       "when": 1787231606194,
       "tag": "0007_invariants",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1787338306839,
+      "tag": "0008_run_cost",
+      "breakpoints": true
     }
   ]
 }

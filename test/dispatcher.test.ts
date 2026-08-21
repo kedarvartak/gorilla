@@ -671,3 +671,76 @@ describe('supervising a running card', () => {
     expect('autonomy' in dispatcher.state(BOARD)).toBe(false);
   });
 });
+
+describe('what the run cost', () => {
+  const COSTLY = [
+    `echo '{"type":"system","subtype":"init","session_id":"sess-1"}'`,
+    `echo '{"type":"result","total_cost_usd":0.25,"num_turns":4,"usage":{"input_tokens":300,"output_tokens":80,"cache_read_input_tokens":5000}}'`,
+  ].join('\n');
+
+  /**
+   * The run row is normally created by the hook path at SessionStart, well
+   * before the launcher can read the session id out of the stream. Inserted
+   * here for the same reason: the cost has nowhere to be written otherwise.
+   */
+  function expectRun(sessionId: string): void {
+    handle.db
+      .insert(runs)
+      .values({
+        id: randomUUID(),
+        boardId: BOARD,
+        sessionId,
+        startedAt: Date.now(),
+        cwd: dir,
+      })
+      .run();
+  }
+
+  function costOf(sessionId: string) {
+    const row = handle.db.select().from(runs).where(eq(runs.sessionId, sessionId)).get();
+    if (row === undefined) throw new Error('no run row');
+    return row;
+  }
+
+  it('writes it onto the run when it settles', async () => {
+    expectRun('sess-1');
+    dispatcher.useExecutable(fakeClaude(COSTLY));
+    const id = card('spends money');
+
+    await dispatcher.dispatch(BOARD, id)?.result;
+    await vi.waitFor(() => expect(costOf('sess-1').costSource).toBe('result'));
+
+    const row = costOf('sess-1');
+    expect(row.costUsd).toBe(0.25);
+    expect(row.inputTokens).toBe(300);
+    expect(row.cacheReadTokens).toBe(5000);
+    expect(row.turns).toBe(4);
+  });
+
+  it('leaves the columns null when the stream reported no usage', async () => {
+    expectRun('sess-1');
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    const id = card('reports nothing');
+
+    await dispatcher.dispatch(BOARD, id)?.result;
+    await vi.waitFor(() => expect(getCard(handle, id).status).toBe('awaiting-review'));
+
+    // Null, not zero. A run that reported nothing and a run that spent nothing
+    // are different facts, and writing zero would state the second (R10).
+    const row = costOf('sess-1');
+    expect(row.costSource).toBeNull();
+    expect(row.inputTokens).toBeNull();
+  });
+
+  it('records nothing when no run row matches the session', async () => {
+    dispatcher.useExecutable(fakeClaude(COSTLY));
+    const id = card('unbound session');
+
+    // Attaching one run's bill to whatever row happened to be nearby is worse
+    // than recording no bill, so this settles quietly rather than guessing.
+    await dispatcher.dispatch(BOARD, id)?.result;
+    await vi.waitFor(() => expect(getCard(handle, id).status).toBe('awaiting-review'));
+
+    expect(handle.db.select().from(runs).all()).toHaveLength(0);
+  });
+});

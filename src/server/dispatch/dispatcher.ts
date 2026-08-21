@@ -19,6 +19,7 @@ import {
   type LaunchResult,
   type RunningLaunch,
 } from '../launcher/launcher.js';
+import { accumulateCost } from '../launcher/cost.js';
 
 /**
  * Decides which Ready card starts next (doc 05).
@@ -556,6 +557,35 @@ export class Dispatcher {
     return running;
   }
 
+  /**
+   * Writes what the run cost onto its row (T29).
+   *
+   * Keyed on the session id because that is the only identifier the run row
+   * and the launcher agree on. A run whose stream never yielded a session id
+   * cannot be found, and is left unrecorded rather than guessed at: attaching
+   * one run's bill to another card is worse than recording no bill at all.
+   */
+  #recordCost(result: LaunchResult): void {
+    if (result.sessionId === null) return;
+
+    const cost = accumulateCost(result.events);
+    if (cost.source === 'none') return;
+
+    this.database.db
+      .update(runs)
+      .set({
+        inputTokens: cost.inputTokens,
+        outputTokens: cost.outputTokens,
+        cacheReadTokens: cost.cacheReadTokens,
+        cacheCreationTokens: cost.cacheCreationTokens,
+        costUsd: cost.costUsd,
+        turns: cost.turns,
+        costSource: cost.source,
+      })
+      .where(eq(runs.sessionId, result.sessionId))
+      .run();
+  }
+
   async #settle(boardId: string, cardId: string, result: LaunchResult | null): Promise<void> {
     // Nothing to settle into. Shutdown closes the database, and a settle that
     // began before it would otherwise query a closed connection.
@@ -584,6 +614,7 @@ export class Dispatcher {
       return;
     }
 
+    this.#recordCost(result);
     this.events.onRunFinished?.(boardId, cardId, result);
 
     if (result.outcome === 'cancelled') {
