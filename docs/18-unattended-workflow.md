@@ -177,6 +177,31 @@ queue never waits for it, and a notifier that fails, hangs or does not exist
 never unhalts the board or breaks the gate. `gorilla doctor` warns when nothing
 is configured.
 
+## One card failing is not the night failing
+
+The queue used to stop on any failure, on the argument that later work would
+build on it. Worktrees removed that argument: an unmerged card is invisible to
+the next one unless a dependency was declared, and declared dependencies
+already sequence. What was left was one unfixable card stopping the whole
+night, which is the failure this mode was written to prevent, arriving through
+the other door.
+
+Under the `unattended` policy a card that fails is blocked and the queue moves
+on. Under `review` the queue still stops immediately, because someone is
+watching and the next card would start on top of a problem they have not seen.
+
+The escalation is the streak. One card failing is a card. Three in a row is not
+a card any more - it is the checkout, the machine, the model, or the network -
+and working through the remaining forty spends money to collect the same error
+forty times. So three consecutive failures stop the queue, with a halt that
+says it was a streak rather than repeating the last card's error message: "the
+session exited with code 1" on the fourth card in a row invites the operator to
+debug that card instead of the thing all four have in common.
+
+The streak is on the dispatch state where the operator can see it. A threshold
+nobody can see coming is experienced as the board stopping for no reason. It
+resets when any card gets all the way through.
+
 ## Stopping a run that spends too much
 
 A card can carry a token ceiling. It is set on the card, it defaults to none,

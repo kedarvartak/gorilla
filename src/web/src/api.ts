@@ -98,6 +98,8 @@ export interface DispatchState {
     readonly unrecorded: number;
   };
   readonly spendNote: string;
+  /** Cards that failed since the last one succeeded. Three stops the queue. */
+  readonly failureStreak: number;
 }
 
 export interface MergeStep {

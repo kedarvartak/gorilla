@@ -510,12 +510,76 @@ describe('unattended operation', () => {
     expect(dispatcher.state(BOARD).halted).toBeNull();
   });
 
-  it('still stops on a failure, because later work would build on it', async () => {
+  /**
+   * This used to stop the queue, on the argument that later work would build on
+   * the failure. Worktrees removed that argument: an unmerged card is invisible
+   * to the next one unless a dependency was declared, and dependencies already
+   * sequence. What was left was one unfixable card stopping the whole night -
+   * the failure this mode exists to prevent, arriving through the other door.
+   */
+  it('blocks the failing card and keeps going', async () => {
     dispatcher.useExecutable(fakeClaude(FAILS));
-    card('breaks');
-    card('never runs');
+    const breaks = card('breaks');
+    card('should still run');
 
     dispatcher.setPolicy(BOARD, 'unattended');
+    dispatcher.setMode(BOARD, 'automatic');
+
+    await vi.waitFor(() => expect(getCard(handle, breaks).status).toBe('blocked'));
+    expect(dispatcher.state(BOARD).halted).toBeNull();
+  });
+
+  it('stops once several cards fail in a row', async () => {
+    dispatcher.useExecutable(fakeClaude(FAILS));
+    for (const title of ['a', 'b', 'c', 'd']) card(title);
+
+    dispatcher.setPolicy(BOARD, 'unattended');
+    dispatcher.setMode(BOARD, 'automatic');
+
+    // One card failing is a card. Three in a row is the checkout, the machine,
+    // the model or the network, and working through the rest spends money to
+    // collect the same error again.
+    await vi.waitFor(
+      () => expect(dispatcher.state(BOARD).halted?.reason).toBe('repeated-failures'),
+      { timeout: 10_000 },
+    );
+    expect(dispatcher.state(BOARD).halted?.detail).toContain('in a row');
+  });
+
+  it('counts the streak where the operator can see it', async () => {
+    dispatcher.useExecutable(fakeClaude(FAILS));
+    card('one');
+
+    dispatcher.setPolicy(BOARD, 'unattended');
+    dispatcher.setMode(BOARD, 'automatic');
+
+    // A threshold nobody can see coming is experienced as the board stopping
+    // for no reason.
+    await vi.waitFor(() => expect(dispatcher.state(BOARD).failureStreak).toBe(1));
+  });
+
+  it('starts the streak again after a card gets through', async () => {
+    dispatcher.useExecutable(fakeClaude(FAILS));
+    card('fails');
+    dispatcher.setPolicy(BOARD, 'unattended');
+    dispatcher.setMode(BOARD, 'automatic');
+    await vi.waitFor(() => expect(dispatcher.state(BOARD).failureStreak).toBe(1));
+
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    const works = card('works');
+    await dispatcher.dispatch(BOARD, works)?.result;
+
+    // Whatever the failures had in common is not stopping work now.
+    await vi.waitFor(() => expect(dispatcher.state(BOARD).failureStreak).toBe(0));
+  });
+
+  it('still stops immediately under the review policy', async () => {
+    dispatcher.useExecutable(fakeClaude(FAILS));
+    card('breaks');
+
+    // Someone is watching, and the next card would start on top of a problem
+    // they have not seen yet.
+    dispatcher.setPolicy(BOARD, 'review');
     dispatcher.setMode(BOARD, 'automatic');
 
     await vi.waitFor(() => expect(dispatcher.state(BOARD).halted?.reason).toBe('failure'));

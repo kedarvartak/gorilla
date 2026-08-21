@@ -59,7 +59,10 @@ export type HaltReason =
   | 'over-budget'
   // The board has spent its budget for the day, so the queue stopped rather
   // than starting another card (T27).
-  | 'day-budget-spent';
+  | 'day-budget-spent'
+  // Several cards failed in a row, so the problem is unlikely to be any one of
+  // them and the queue stopped rather than working through the rest (T43).
+  | 'repeated-failures';
 
 export interface HaltState {
   readonly reason: HaltReason;
@@ -72,6 +75,14 @@ export interface HaltState {
 export interface BoardDispatchState {
   readonly mode: DispatchMode;
   readonly policy: QueuePolicy;
+  /**
+   * Cards that failed since the last one succeeded (T43).
+   *
+   * Reported because it is the number the escalation is based on, and a
+   * threshold the operator cannot see coming is one they will experience as
+   * the board stopping for no reason.
+   */
+  readonly failureStreak: number;
   readonly concurrency: number;
   /** Cards that finished and are waiting to be looked at. */
   readonly completed: readonly string[];
@@ -97,6 +108,7 @@ export interface DispatcherEvents {
 interface BoardState {
   mode: DispatchMode;
   policy: QueuePolicy;
+  failureStreak: number;
   concurrency: number;
   running: Map<string, RunningLaunch>;
   completed: Set<string>;
@@ -191,6 +203,7 @@ export class Dispatcher {
     const created: BoardState = {
       mode: 'manual',
       policy: 'review',
+      failureStreak: 0,
       concurrency: DEFAULT_CONCURRENCY,
       running: new Map(),
       completed: new Set(),
@@ -206,6 +219,7 @@ export class Dispatcher {
     return {
       mode: state.mode,
       policy: state.policy,
+      failureStreak: state.failureStreak,
       concurrency: state.concurrency,
       running: [...state.running.keys()],
       completed: [...state.completed],
@@ -631,6 +645,16 @@ export class Dispatcher {
    */
   readonly #overBudget = new Map<string, number>();
 
+  /**
+   * Failures in a row before the queue stops entirely.
+   *
+   * Three rather than one, because a single failing card is ordinary and
+   * stopping for it defeats unattended operation; three rather than ten,
+   * because ten failures is ten runs' worth of money spent proving the same
+   * point.
+   */
+  failureStreakLimit = 3;
+
   #recordCost(result: LaunchResult): void {
     if (result.sessionId === null) return;
 
@@ -650,6 +674,49 @@ export class Dispatcher {
       })
       .where(eq(runs.sessionId, result.sessionId))
       .run();
+  }
+
+  /**
+   * How a card's failure is handled (T43).
+   *
+   * Under `review` the queue stops, which is right: someone is watching, and
+   * the next card would be started on top of a problem they have not seen.
+   *
+   * Under `unattended` it does not. One card that cannot be made to work would
+   * otherwise stop the whole night, and the operator wakes to a board that got
+   * through one card and a queue that never moved - the failure doc 18 wrote
+   * this mode to prevent, arriving through the other door.
+   *
+   * The escalation is the streak. One card failing is a card. Several in a row
+   * is not a card any more: it is the checkout, the machine, the model, or the
+   * network, and working through the remaining forty is spending money to
+   * collect the same error forty times.
+   */
+  #failCard(boardId: string, cardId: string, halt: HaltState): void {
+    const state = this.#stateFor(boardId);
+    state.failureStreak += 1;
+
+    if (state.policy === 'review' || state.failureStreak >= this.failureStreakLimit) {
+      // The streak's own halt says what it is, because "the session exited with
+      // code 1" on the fourth card in a row invites the operator to debug that
+      // card rather than the thing all four have in common.
+      this.#halt(
+        boardId,
+        state.policy === 'review'
+          ? halt
+          : {
+              ...halt,
+              reason: 'repeated-failures',
+              detail: `${String(state.failureStreak)} cards failed in a row, the last with: ${halt.detail} The queue stopped rather than working through the rest, because the cause is unlikely to be any one of them.`,
+            },
+      );
+      this.#publish(boardId);
+      return;
+    }
+
+    // Isolated: this card is blocked and stays blocked, the queue moves on.
+    this.#publish(boardId);
+    void this.pump(boardId).catch(() => undefined);
   }
 
   async #settle(boardId: string, cardId: string, result: LaunchResult | null): Promise<void> {
@@ -718,14 +785,13 @@ export class Dispatcher {
 
     if (result.outcome === 'failed') {
       updateCard(this.database, cardId, { status: 'blocked' });
-      this.#halt(boardId, {
+      this.#failCard(boardId, cardId, {
         reason: 'failure',
         cardId,
         cardTitle: card.title,
         detail: `The session exited with code ${String(result.exitCode)}.`,
         at: Date.now(),
       });
-      this.#publish(boardId);
       return;
     }
 
@@ -740,14 +806,13 @@ export class Dispatcher {
     const effect = this.#effectOf(cardId);
 
     if (effect.achievedNothing) {
-      this.#halt(boardId, {
+      this.#failCard(boardId, cardId, {
         reason: 'no-effect',
         cardId,
         cardTitle: card.title,
         detail: `The run finished without completing a single tool call. ${effect.unresolved} attempt(s) had no outcome, which usually means they were denied.`,
         at: Date.now(),
       });
-      this.#publish(boardId);
       return;
     }
 
@@ -767,14 +832,13 @@ export class Dispatcher {
     state.awaitingAck.add(cardId);
 
     if (verify?.status === 'failed' || verify?.status === 'errored') {
-      this.#halt(boardId, {
+      this.#failCard(boardId, cardId, {
         reason: 'verify-failed',
         cardId,
         cardTitle: card.title,
         detail: describeVerify(verify),
         at: Date.now(),
       });
-      this.#publish(boardId);
       return;
     }
 
@@ -792,6 +856,10 @@ export class Dispatcher {
       this.#publish(boardId);
       return;
     }
+
+    // A card got all the way through, so whatever the last failures had in
+    // common is not stopping work now. The streak starts again from here.
+    state.failureStreak = 0;
 
     // Unattended: the completion is recorded and the queue moves on. Stopping
     // here would mean waking to one finished task and a queue that never
