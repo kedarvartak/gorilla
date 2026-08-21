@@ -29,6 +29,8 @@ export interface Card {
   readonly priority: 'high' | 'normal' | 'low';
   /** Reaches `claude --effort`. */
   readonly agentEffort: string | null;
+  /** Tokens a run may spend before the board stops it. Null means no ceiling. */
+  readonly tokenCeiling: number | null;
   /** Used only for windows that escalate - compaction, and manual re-extraction. */
   readonly synthesisModel: string | null;
   readonly lastSeenAt: number | null;
@@ -187,6 +189,8 @@ export const api = {
       synthesisModel: string | null;
       priority: Card['priority'];
       status: Card['status'];
+      /** Null clears it. The server refuses zero rather than reading it as none. */
+      tokenCeiling: number | null;
       /** Replaces the whole set: the server reparses it, so a partial would drop rules. */
       guardrails: {
         scope?: readonly string[];

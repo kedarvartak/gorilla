@@ -141,6 +141,8 @@ export interface UpdateCardInput {
   readonly synthesisModel?: string | null;
   readonly priority?: CardPriority;
   readonly status?: Card['status'];
+  /** Null clears the ceiling. Zero and negatives are refused, not treated as none. */
+  readonly tokenCeiling?: number | null;
 }
 
 export function updateCard(handle: DatabaseHandle, cardId: string, input: UpdateCardInput): Card {
@@ -148,6 +150,21 @@ export function updateCard(handle: DatabaseHandle, cardId: string, input: Update
 
   if (input.title !== undefined && input.title.trim() === '') {
     throw new CardError('A card needs a title.', 400, 'title');
+  }
+
+  // A ceiling of zero would stop every run on its first message, which reads
+  // as the board being broken rather than as a limit being enforced. Null is
+  // how "no ceiling" is said.
+  if (
+    input.tokenCeiling !== undefined &&
+    input.tokenCeiling !== null &&
+    (!Number.isInteger(input.tokenCeiling) || input.tokenCeiling <= 0)
+  ) {
+    throw new CardError(
+      'A token ceiling must be a positive whole number, or null for no ceiling.',
+      400,
+      'tokenCeiling',
+    );
   }
 
   handle.db
@@ -165,6 +182,7 @@ export function updateCard(handle: DatabaseHandle, cardId: string, input: Update
       ...(input.synthesisModel === undefined ? {} : { synthesisModel: input.synthesisModel }),
       ...(input.priority === undefined ? {} : { priority: input.priority }),
       ...(input.status === undefined ? {} : { status: input.status }),
+      ...(input.tokenCeiling === undefined ? {} : { tokenCeiling: input.tokenCeiling }),
       updatedAt: Date.now(),
     })
     .where(eq(cards.id, existing.id))

@@ -19,7 +19,7 @@ import {
   type LaunchResult,
   type RunningLaunch,
 } from '../launcher/launcher.js';
-import { accumulateCost } from '../launcher/cost.js';
+import { accumulateCost, CostMeter } from '../launcher/cost.js';
 
 /**
  * Decides which Ready card starts next (doc 05).
@@ -53,7 +53,9 @@ export type HaltReason =
   | 'stalled'
   // A finished card has surprises nobody has judged, so the queue stopped
   // rather than starting the next card on top of them.
-  | 'unacknowledged-surprises';
+  | 'unacknowledged-surprises'
+  // The run passed the card's token ceiling and was stopped (T26).
+  | 'over-budget';
 
 export interface HaltState {
   readonly reason: HaltReason;
@@ -506,6 +508,12 @@ export class Dispatcher {
     // phantom instead of this card (doc 17).
     this.pending.expect(workspace, cardId);
 
+    // Counts what the stream has reported so far. It reads low by
+    // construction - see CostMeter - so the ceiling stops a run just after it
+    // crosses rather than just before, which beats killing runs that had not
+    // actually overspent.
+    const meter = new CostMeter();
+
     const running = this.#registry.track(
       launch({
         cwd: workspace,
@@ -527,6 +535,16 @@ export class Dispatcher {
         ...(accepted.length === 0 ? {} : { acceptedEntries: accepted }),
         ...(rejected.length === 0 ? {} : { rejectedEntries: rejected }),
         ...(this.#executable === undefined ? {} : { executable: this.#executable }),
+        onEvent: (event) => {
+          meter.feed(event);
+          if (!meter.exceeds(card.tokenCeiling)) return;
+
+          // Recorded before the cancel, so the settle path can tell a stop for
+          // spending from a stop by the operator.
+          if (this.#overBudget.has(cardId)) return;
+          this.#overBudget.set(cardId, meter.tokens);
+          this.#stateFor(boardId).running.get(cardId)?.cancel();
+        },
         onSessionId: (sessionId) => {
           // Belt and braces: if the run already exists and is unbound, or was
           // bound elsewhere, correct it now that the session id is known.
@@ -565,6 +583,16 @@ export class Dispatcher {
    * cannot be found, and is left unrecorded rather than guessed at: attaching
    * one run's bill to another card is worse than recording no bill at all.
    */
+  /**
+   * Cards stopped for spending, and what they had spent when stopped.
+   *
+   * Kept here because the launcher reports a budget stop and an operator's
+   * cancel identically - both are SIGTERM, both come back as `cancelled`. A
+   * board that called the first one "cancelled" would tell the operator they
+   * did something they did not do.
+   */
+  readonly #overBudget = new Map<string, number>();
+
   #recordCost(result: LaunchResult): void {
     if (result.sessionId === null) return;
 
@@ -618,6 +646,26 @@ export class Dispatcher {
     this.events.onRunFinished?.(boardId, cardId, result);
 
     if (result.outcome === 'cancelled') {
+      const spent = this.#overBudget.get(cardId);
+      this.#overBudget.delete(cardId);
+
+      // A stop for spending is not an abandonment. The card has work on its
+      // branch and a reason it stopped, so it goes to blocked and says what it
+      // spent - naming the ceiling it crossed, because an operator who cannot
+      // see the limit cannot tell an overspend from a crash.
+      if (spent !== undefined) {
+        updateCard(this.database, cardId, { status: 'blocked' });
+        this.#halt(boardId, {
+          reason: 'over-budget',
+          cardId,
+          cardTitle: card.title,
+          detail: `The run passed its ceiling of ${String(card.tokenCeiling ?? 0)} tokens, at ${String(spent)}, and was stopped.`,
+          at: Date.now(),
+        });
+        this.#publish(boardId);
+        return;
+      }
+
       updateCard(this.database, cardId, { status: 'abandoned' });
       this.#halt(boardId, {
         reason: 'cancelled',

@@ -162,3 +162,59 @@ export function describeCost(cost: RunCost): string {
 
   return parts.join(' · ');
 }
+
+/**
+ * A running total, fed one event at a time (T26).
+ *
+ * The final `result` event is the authoritative reading, but it arrives after
+ * the money is spent. Enforcing a ceiling means counting as the run goes, from
+ * the per-message usage, which is the only reading available while there is
+ * still something to stop.
+ *
+ * The meter therefore reads low: it counts what the stream reported by now,
+ * never more. A ceiling built on it stops a run somewhat after it crossed the
+ * line rather than somewhat before, which is the right direction to be wrong
+ * in - the alternative is killing runs that had not actually overspent.
+ */
+export class CostMeter {
+  #totals: Mutable = {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+  };
+  #turns = 0;
+
+  feed(event: StreamEventPayload): void {
+    if (event.type !== 'assistant') return;
+
+    const message = event['message'];
+    const usage = usageOf(
+      typeof message === 'object' && message !== null
+        ? (message as { usage?: unknown }).usage
+        : undefined,
+    );
+    if (usage === null) return;
+
+    add(usage, this.#totals);
+    this.#turns += 1;
+  }
+
+  get tokens(): number {
+    return (
+      this.#totals.inputTokens +
+      this.#totals.outputTokens +
+      this.#totals.cacheReadTokens +
+      this.#totals.cacheCreationTokens
+    );
+  }
+
+  get turns(): number {
+    return this.#turns;
+  }
+
+  /** False for a null ceiling, which is what "no ceiling" is stored as. */
+  exceeds(ceiling: number | null): boolean {
+    return ceiling !== null && ceiling > 0 && this.tokens > ceiling;
+  }
+}

@@ -5,7 +5,13 @@ import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createCard, getCard, moveCard, addDependency } from '../src/server/api/cards.js';
+import {
+  createCard,
+  getCard,
+  moveCard,
+  addDependency,
+  updateCard,
+} from '../src/server/api/cards.js';
 import { createDefaultColumns } from '../src/server/cards/defaults.js';
 import { openDatabase, type DatabaseHandle } from '../src/server/db/client.js';
 import { Dispatcher, type HaltState } from '../src/server/dispatch/dispatcher.js';
@@ -742,5 +748,93 @@ describe('what the run cost', () => {
     await vi.waitFor(() => expect(getCard(handle, id).status).toBe('awaiting-review'));
 
     expect(handle.db.select().from(runs).all()).toHaveLength(0);
+  });
+});
+
+describe('the token ceiling', () => {
+  /** Two assistant messages, then a long sleep so the cancel has something to stop. */
+  const SPENDS = [
+    `echo '{"type":"system","subtype":"init","session_id":"sess-1"}'`,
+    `echo '{"type":"assistant","message":{"usage":{"input_tokens":400,"output_tokens":100}}}'`,
+    `echo '{"type":"assistant","message":{"usage":{"input_tokens":400,"output_tokens":100}}}'`,
+    `sleep 30`,
+  ].join('\n');
+
+  function ceiling(cardId: string, tokens: number | null): void {
+    updateCard(handle, cardId, { tokenCeiling: tokens });
+  }
+
+  it('stops a run that passes it', async () => {
+    dispatcher.useExecutable(fakeClaude(SPENDS));
+    const id = card('spends past the line');
+    ceiling(id, 600);
+
+    await dispatcher.dispatch(BOARD, id)?.result;
+    await vi.waitFor(() => expect(halts.at(-1)?.reason).toBe('over-budget'));
+
+    // Blocked, not abandoned. The work is on the branch and there is a stated
+    // reason it stopped; abandoned would say the operator walked away from it.
+    expect(getCard(handle, id).status).toBe('blocked');
+    expect(halts.at(-1)?.detail).toContain('600');
+  });
+
+  it('names what it had spent, not only the limit', async () => {
+    dispatcher.useExecutable(fakeClaude(SPENDS));
+    const id = card('reports the overspend');
+    ceiling(id, 600);
+
+    await dispatcher.dispatch(BOARD, id)?.result;
+    await vi.waitFor(() => expect(halts.at(-1)?.reason).toBe('over-budget'));
+
+    // An operator who can see only the limit cannot tell a small overshoot
+    // from a runaway, and those call for different responses.
+    expect(halts.at(-1)?.detail).toContain('1000');
+  });
+
+  it('leaves a run alone when it has no ceiling', async () => {
+    dispatcher.useExecutable(fakeClaude(SPENDS.replace('sleep 30', `echo '{"type":"result"}'`)));
+    const id = card('unlimited');
+
+    await dispatcher.dispatch(BOARD, id)?.result;
+    await vi.waitFor(() => expect(getCard(handle, id).status).toBe('awaiting-review'));
+
+    expect(halts.map((halt) => halt.reason)).not.toContain('over-budget');
+  });
+
+  it('leaves a run alone when it stays under', async () => {
+    dispatcher.useExecutable(fakeClaude(SPENDS.replace('sleep 30', `echo '{"type":"result"}'`)));
+    const id = card('frugal');
+    ceiling(id, 10_000);
+
+    await dispatcher.dispatch(BOARD, id)?.result;
+    await vi.waitFor(() => expect(getCard(handle, id).status).toBe('awaiting-review'));
+
+    expect(halts.map((halt) => halt.reason)).not.toContain('over-budget');
+  });
+
+  it('still calls an operator cancel a cancel', async () => {
+    dispatcher.useExecutable(fakeClaude(`echo '{"type":"system","session_id":"s"}'\nsleep 30`));
+    const id = card('cancelled by hand');
+    ceiling(id, 10_000);
+
+    const running = dispatcher.dispatch(BOARD, id);
+    dispatcher.cancel(BOARD, id);
+    await running?.result;
+
+    // Both paths are SIGTERM and both come back as 'cancelled'. Telling the
+    // operator they overspent when they pressed cancel would be a lie about
+    // what happened (R10).
+    await vi.waitFor(() => expect(halts.at(-1)?.reason).toBe('cancelled'));
+    expect(getCard(handle, id).status).toBe('abandoned');
+  });
+
+  it('refuses a ceiling of zero rather than reading it as none', () => {
+    const id = card('zero');
+
+    // Zero would stop every run on its first message, which reads as the board
+    // being broken rather than as a limit being enforced.
+    expect(() => updateCard(handle, id, { tokenCeiling: 0 })).toThrow(/positive whole number/);
+    expect(() => updateCard(handle, id, { tokenCeiling: -5 })).toThrow(/positive whole number/);
+    expect(updateCard(handle, id, { tokenCeiling: null }).tokenCeiling).toBeNull();
   });
 });
