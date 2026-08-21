@@ -39,9 +39,7 @@
       "indexes": {
         "boards_cwd_unique": {
           "name": "boards_cwd_unique",
-          "columns": [
-            "cwd"
-          ],
+          "columns": ["cwd"],
           "isUnique": true
         }
       },
@@ -71,17 +69,12 @@
       "indexes": {
         "card_dependencies_pair": {
           "name": "card_dependencies_pair",
-          "columns": [
-            "card_id",
-            "depends_on_card_id"
-          ],
+          "columns": ["card_id", "depends_on_card_id"],
           "isUnique": true
         },
         "card_dependencies_depends_on": {
           "name": "card_dependencies_depends_on",
-          "columns": [
-            "depends_on_card_id"
-          ],
+          "columns": ["depends_on_card_id"],
           "isUnique": false
         }
       },
@@ -90,12 +83,8 @@
           "name": "card_dependencies_card_id_cards_id_fk",
           "tableFrom": "card_dependencies",
           "tableTo": "cards",
-          "columnsFrom": [
-            "card_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["card_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -103,12 +92,8 @@
           "name": "card_dependencies_depends_on_card_id_cards_id_fk",
           "tableFrom": "card_dependencies",
           "tableTo": "cards",
-          "columnsFrom": [
-            "depends_on_card_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["depends_on_card_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -289,38 +274,27 @@
       "indexes": {
         "cards_board": {
           "name": "cards_board",
-          "columns": [
-            "board_id"
-          ],
+          "columns": ["board_id"],
           "isUnique": false
         },
         "cards_column_position": {
           "name": "cards_column_position",
-          "columns": [
-            "column_id",
-            "position"
-          ],
+          "columns": ["column_id", "position"],
           "isUnique": false
         },
         "cards_status": {
           "name": "cards_status",
-          "columns": [
-            "status"
-          ],
+          "columns": ["status"],
           "isUnique": false
         },
         "cards_plan": {
           "name": "cards_plan",
-          "columns": [
-            "plan_id"
-          ],
+          "columns": ["plan_id"],
           "isUnique": false
         },
         "cards_priority": {
           "name": "cards_priority",
-          "columns": [
-            "priority"
-          ],
+          "columns": ["priority"],
           "isUnique": false
         }
       },
@@ -329,12 +303,8 @@
           "name": "cards_board_id_boards_id_fk",
           "tableFrom": "cards",
           "tableTo": "boards",
-          "columnsFrom": [
-            "board_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["board_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -342,12 +312,8 @@
           "name": "cards_column_id_columns_id_fk",
           "tableFrom": "cards",
           "tableTo": "columns",
-          "columnsFrom": [
-            "column_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["column_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -355,12 +321,8 @@
           "name": "cards_plan_id_plans_id_fk",
           "tableFrom": "cards",
           "tableTo": "plans",
-          "columnsFrom": [
-            "plan_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["plan_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -428,17 +390,12 @@
       "indexes": {
         "columns_board_position": {
           "name": "columns_board_position",
-          "columns": [
-            "board_id",
-            "position"
-          ],
+          "columns": ["board_id", "position"],
           "isUnique": true
         },
         "columns_board": {
           "name": "columns_board",
-          "columns": [
-            "board_id"
-          ],
+          "columns": ["board_id"],
           "isUnique": false
         }
       },
@@ -447,12 +404,8 @@
           "name": "columns_board_id_boards_id_fk",
           "tableFrom": "columns",
           "tableTo": "boards",
-          "columnsFrom": [
-            "board_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["board_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -561,54 +514,37 @@
       "indexes": {
         "events_run_seq_unique": {
           "name": "events_run_seq_unique",
-          "columns": [
-            "run_id",
-            "seq"
-          ],
+          "columns": ["run_id", "seq"],
           "isUnique": true
         },
         "events_session_seq": {
           "name": "events_session_seq",
-          "columns": [
-            "session_id",
-            "seq"
-          ],
+          "columns": ["session_id", "seq"],
           "isUnique": false
         },
         "events_name_received": {
           "name": "events_name_received",
-          "columns": [
-            "event_name",
-            "received_at"
-          ],
+          "columns": ["event_name", "received_at"],
           "isUnique": false
         },
         "events_tool_name": {
           "name": "events_tool_name",
-          "columns": [
-            "tool_name"
-          ],
+          "columns": ["tool_name"],
           "isUnique": false
         },
         "events_tool_use_id": {
           "name": "events_tool_use_id",
-          "columns": [
-            "tool_use_id"
-          ],
+          "columns": ["tool_use_id"],
           "isUnique": false
         },
         "events_prompt_id": {
           "name": "events_prompt_id",
-          "columns": [
-            "prompt_id"
-          ],
+          "columns": ["prompt_id"],
           "isUnique": false
         },
         "events_agent_id": {
           "name": "events_agent_id",
-          "columns": [
-            "agent_id"
-          ],
+          "columns": ["agent_id"],
           "isUnique": false
         }
       },
@@ -617,12 +553,8 @@
           "name": "events_run_id_runs_id_fk",
           "tableFrom": "events",
           "tableTo": "runs",
-          "columnsFrom": [
-            "run_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["run_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -685,12 +617,8 @@
           "name": "extraction_cursors_run_id_runs_id_fk",
           "tableFrom": "extraction_cursors",
           "tableTo": "runs",
-          "columnsFrom": [
-            "run_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["run_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -741,9 +669,7 @@
       "indexes": {
         "invariants_board": {
           "name": "invariants_board",
-          "columns": [
-            "board_id"
-          ],
+          "columns": ["board_id"],
           "isUnique": false
         }
       },
@@ -752,12 +678,8 @@
           "name": "invariants_board_id_boards_id_fk",
           "tableFrom": "invariants",
           "tableTo": "boards",
-          "columnsFrom": [
-            "board_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["board_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -896,31 +818,22 @@
       "indexes": {
         "ledger_card": {
           "name": "ledger_card",
-          "columns": [
-            "card_id"
-          ],
+          "columns": ["card_id"],
           "isUnique": false
         },
         "ledger_run": {
           "name": "ledger_run",
-          "columns": [
-            "run_id"
-          ],
+          "columns": ["run_id"],
           "isUnique": false
         },
         "ledger_card_created": {
           "name": "ledger_card_created",
-          "columns": [
-            "card_id",
-            "created_at"
-          ],
+          "columns": ["card_id", "created_at"],
           "isUnique": false
         },
         "ledger_kind": {
           "name": "ledger_kind",
-          "columns": [
-            "kind"
-          ],
+          "columns": ["kind"],
           "isUnique": false
         }
       },
@@ -929,12 +842,8 @@
           "name": "ledger_entries_card_id_cards_id_fk",
           "tableFrom": "ledger_entries",
           "tableTo": "cards",
-          "columnsFrom": [
-            "card_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["card_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -942,12 +851,8 @@
           "name": "ledger_entries_run_id_runs_id_fk",
           "tableFrom": "ledger_entries",
           "tableTo": "runs",
-          "columnsFrom": [
-            "run_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["run_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -998,9 +903,7 @@
       "indexes": {
         "plans_board": {
           "name": "plans_board",
-          "columns": [
-            "board_id"
-          ],
+          "columns": ["board_id"],
           "isUnique": false
         }
       },
@@ -1009,12 +912,8 @@
           "name": "plans_board_id_boards_id_fk",
           "tableFrom": "plans",
           "tableTo": "boards",
-          "columnsFrom": [
-            "board_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["board_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1200,17 +1099,12 @@
       "indexes": {
         "runs_session_unique": {
           "name": "runs_session_unique",
-          "columns": [
-            "session_id"
-          ],
+          "columns": ["session_id"],
           "isUnique": true
         },
         "runs_board_started": {
           "name": "runs_board_started",
-          "columns": [
-            "board_id",
-            "started_at"
-          ],
+          "columns": ["board_id", "started_at"],
           "isUnique": false
         }
       },
@@ -1219,12 +1113,8 @@
           "name": "runs_board_id_boards_id_fk",
           "tableFrom": "runs",
           "tableTo": "boards",
-          "columnsFrom": [
-            "board_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["board_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }

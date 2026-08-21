@@ -24,7 +24,7 @@
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit && tsc --noEmit -p src/web/tsconfig.json",
-    "db:generate": "drizzle-kit generate",
+    "db:generate": "drizzle-kit generate && prettier --write src/server/db/migrations/meta",
     "build:web": "vite build",
     "dev:web": "vite"
   },
