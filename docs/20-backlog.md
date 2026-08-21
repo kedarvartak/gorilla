@@ -79,12 +79,12 @@ Everything here currently requires a terminal.
 
 | Id | Task | Done when | Status |
 | --- | --- | --- | --- |
-| T20 | Cancel a running card from the board | The interface reaches `launcher.cancel()`, and the card lands in a state that says cancelled rather than failed. | open |
+| T20 | Cancel a running card from the board | ~~Withdrawn: built.~~ The route, `api.cancelCard`, the board button and the `abandoned` status all exist. | built |
 | T21 | Retry in place | A failed card retries against its existing worktree instead of re-dispatching from scratch. | open |
 | T22 | Requeue with a correction | Retry carries an operator note into the next run's context. | open |
-| T23 | Pause and resume the queue | The dispatcher can be held without being torn down, and says why it is holding. | open |
-| T24 | Reorder the dispatch queue | Queue order is editable from the board, not only implied by column position. | open |
-| T25 | Concurrency control per board | The number of simultaneous runs is a board setting with a tested upper bound. | open |
+| T23 | Pause and resume the queue | ~~Withdrawn: built.~~ Manual mode holds the queue, `resume` restarts it, and the halt state carries the reason. | built |
+| T24 | Reorder the dispatch queue | ~~Withdrawn: redundant.~~ `executionOrder` already derives order from priority and position, both of which the board edits. | dropped |
+| T25 | Concurrency control per board | ~~Withdrawn: built.~~ `setConcurrency` is reachable from the board header. | built |
 | T26 | Per-card cost ceiling | A run that exceeds its token ceiling halts and reports, rather than running until it finishes. | open |
 | T27 | Board-level daily budget | The queue stops dispatching when the day's budget is spent, and says so on the board. | open |
 
@@ -92,7 +92,7 @@ Everything here currently requires a terminal.
 
 | Id | Task | Done when | Status |
 | --- | --- | --- | --- |
-| T28 | Verify output on failure | The verify command's captured output is shown, not only its exit code. | open |
+| T28 | Verify output on failure | ~~Withdrawn: built.~~ `VerifyReport.output` is captured and rendered in the card, deliberately only when it did not pass. | built |
 | T29 | Token and duration accounting | Each card shows what its runs cost, from the run events. | open |
 | T30 | Branch diff summary | Files, insertions and deletions appear in the card, so review does not require a terminal. | open |
 | T31 | Full diff view | The branch's diff is readable in the card, per file. | open |
@@ -104,7 +104,7 @@ Everything here currently requires a terminal.
 
 | Id | Task | Done when | Status |
 | --- | --- | --- | --- |
-| T35 | Merge queue | Several ready cards merge in a defined order, each verified after the previous, with a single report. | open |
+| T35 | Merge queue | ~~Withdrawn: built.~~ `mergeBranches` merges in order and verifies after each step, reporting once. | built |
 | T36 | Pre-merge second opinion | A fresh agent reviews the branch and its findings enter the ledger as surprises before the gate opens. | open |
 | T37 | Review checklist from the ledger | The gate shows what was established during the run, so accepting is an informed act. | open |
 | T38 | Follow-up card from a rejected entry | Rejecting a ledger entry can create the card that addresses it, linked to its origin. | open |
@@ -146,6 +146,20 @@ The point of the product: work that continues correctly while nobody is watching
 | T57 | `gorilla verify` | The verify command runs against a card's branch from the terminal, reporting as the board would. | open |
 | T58 | Machine-readable output | Every command takes `--json`, so the board is scriptable. | open |
 
+## K. Beyond one agent per card
+
+Where comparable orchestrators go once the single-card loop is solid. Listed
+because each one is reachable from what exists, not because the category has them.
+
+| Id | Task | Done when | Status |
+| --- | --- | --- | --- |
+| T61 | Several attempts at one card | A card can be run N times on N branches, and the board presents the attempts side by side for the operator to choose between. | open |
+| T62 | Steer a running session | An operator note reaches a live run without cancelling it, and the run records that it was steered. | open |
+| T63 | Keep the transcript after the worktree is gone | Removing a worktree no longer discards the run's evidence. | open |
+| T64 | Dependency graph on the board | The dependency edges are visible as a graph, not only as a blocked badge. | open |
+| T65 | Fairness across boards | Two boards on one machine cannot starve each other of the concurrency budget. | open |
+| T66 | Replay a card's run as a fixture | A recorded run becomes a regression fixture, so a dispatch bug is reproduced rather than described. | open |
+
 ## J. Metrics
 
 | Id | Task | Done when | Status |
@@ -155,6 +169,18 @@ The point of the product: work that continues correctly while nobody is watching
 
 ---
 
+## Audit, 22 August 2026
+
+Six entries were withdrawn on first contact with the code. They were written
+from doc 19 and from memory of the interface rather than from the source, and
+six of sixty turned out to describe things that already work. They are kept in
+place, struck through, rather than deleted: a backlog that quietly loses the
+items it got wrong teaches nobody anything, and the same entry would have been
+written again next time.
+
+The lesson is recorded here rather than in a commit message: check the route,
+the client and the component before writing the card, not after.
+
 ## Order
 
 The dependencies are real and worth respecting.
@@ -162,7 +188,7 @@ The dependencies are real and worth respecting.
 - T9 before anything in sections C through G that adds a route, because a
   1600-line module is where parallel cards collide.
 - T13 before T14, T15, T18 and T19: they all read the subsystem map.
-- T20 before T21 and T22, which need a cancelled state to return from.
+- T21 and T22 return from the `abandoned` state T20 turned out to already set.
 - T29 before T26 and T27, which need accounting before they can enforce a ceiling.
 - T3 and T12 early: a contract test and a typed client turn later shape changes
   into failing tests rather than into broken screens.
