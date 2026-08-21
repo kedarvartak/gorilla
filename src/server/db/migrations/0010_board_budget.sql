@@ -1,0 +1,1 @@
+ALTER TABLE `boards` ADD `daily_token_budget` integer;

@@ -299,6 +299,31 @@ export function Board(): ReactElement {
           </select>
         </label>
 
+        {/* Today's spend, always shown. The number is worth seeing on its own,
+            and it is the only way to pick a budget that is neither pointless
+            nor hit within the hour. The note carries its own caveat when some
+            of today's runs recorded no usage. */}
+        <span className="text-dim" title={dispatch?.spendNote ?? ''}>
+          spent{' '}
+          <span
+            className={
+              dispatch !== null &&
+              dispatch.budget !== null &&
+              dispatch.spend.tokens >= dispatch.budget
+                ? 'text-warn'
+                : 'text-text'
+            }
+          >
+            {dispatch === null ? '—' : `${String(Math.round(dispatch.spend.tokens / 1000))}k`}
+          </span>
+          {dispatch === null || dispatch.budget === null
+            ? ''
+            : ` / ${String(Math.round(dispatch.budget / 1000))}k`}
+          {/* A plus, because runs that recorded no usage make this a lower
+              bound rather than a measurement. */}
+          {dispatch !== null && dispatch.spend.unrecorded > 0 ? '+' : ''}
+        </span>
+
         <label className="text-dim">
           dispatch{' '}
           <select

@@ -86,7 +86,7 @@ Everything here currently requires a terminal.
 | T24 | Reorder the dispatch queue | ~~Withdrawn: redundant.~~ `executionOrder` already derives order from priority and position, both of which the board edits. | dropped |
 | T25 | Concurrency control per board | ~~Withdrawn: built.~~ `setConcurrency` is reachable from the board header. | built |
 | T26 | Per-card cost ceiling | A run that exceeds its token ceiling halts and reports, rather than running until it finishes. | merged |
-| T27 | Board-level daily budget | The queue stops dispatching when the day's budget is spent, and says so on the board. | open |
+| T27 | Board-level daily budget | The queue stops dispatching when the day's budget is spent, and says so on the board. | merged |
 
 ## E. What a card shows
 

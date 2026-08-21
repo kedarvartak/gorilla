@@ -204,6 +204,28 @@ both come back from the launcher as `cancelled`, so the board records which one
 it caused. Telling the operator a run overspent when they pressed cancel would
 be a lie about what happened.
 
+## Stopping the queue when the day is spent
+
+The card ceiling stops one runaway run. It does nothing about the other shape
+an overnight batch takes: fifty reasonable cards, none individually alarming,
+and a bill in the morning. A board can therefore carry a daily token budget.
+When the day's spend reaches it, the queue stops starting cards and halts with
+a reason naming the card it declined to start.
+
+Nothing in flight is touched. A run that is already going has work on its
+branch worth more than the tokens it will spend finishing, and killing it would
+leave the board paying for an unfinished job.
+
+Tokens, not dollars. A price exists only for runs whose stream carried the
+CLI's own total, so a budget in money would be enforced against a figure that
+is present for some runs and missing for others. The board header shows today's
+spend against the budget whether or not one is set, and marks the total with a
+plus when some of today's runs recorded no usage - because then it is a lower
+bound rather than a measurement.
+
+The day is the operator's day. Spend is counted from local midnight; counting
+in UTC would reset the budget in the middle of an evening's work.
+
 ## What this supersedes
 
 - Doc 16's Phase 4 deferral of worktrees. They move to U2.

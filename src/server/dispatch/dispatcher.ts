@@ -20,6 +20,7 @@ import {
   type RunningLaunch,
 } from '../launcher/launcher.js';
 import { accumulateCost, CostMeter } from '../launcher/cost.js';
+import { describeSpend, overBudget, spentSince, startOfDay } from './budget.js';
 
 /**
  * Decides which Ready card starts next (doc 05).
@@ -55,7 +56,10 @@ export type HaltReason =
   // rather than starting the next card on top of them.
   | 'unacknowledged-surprises'
   // The run passed the card's token ceiling and was stopped (T26).
-  | 'over-budget';
+  | 'over-budget'
+  // The board has spent its budget for the day, so the queue stopped rather
+  // than starting another card (T27).
+  | 'day-budget-spent';
 
 export interface HaltState {
   readonly reason: HaltReason;
@@ -365,6 +369,11 @@ export class Dispatcher {
       const next = dispatchableCards(this.database.db, boardId)[0];
       if (next === undefined) break;
 
+      // Asked before each start rather than once per pump, for the same reason
+      // the surprise gate is: the card that tips the board over its budget is
+      // usually one this loop just started.
+      if (this.#gateOnDayBudget(boardId, next.id, next.title)) break;
+
       const launched = await this.dispatchIsolated(boardId, next.id);
       if (launched === null) break;
       started.push(next.id);
@@ -372,6 +381,35 @@ export class Dispatcher {
 
     this.#pumping.delete(boardId);
     return started;
+  }
+
+  /**
+   * Stops the queue once the day's budget is gone (T27).
+   *
+   * The per-card ceiling stops one runaway run. It does nothing about a queue
+   * of fifty reasonable cards, which is the shape an overnight batch actually
+   * takes: nothing individually alarming, and a bill in the morning.
+   *
+   * Nothing in flight is touched. A run that is already spending has work on
+   * its branch worth more than the tokens it will spend finishing, and killing
+   * it would leave the board paying for an unfinished job.
+   */
+  #gateOnDayBudget(boardId: string, cardId: string, cardTitle: string): boolean {
+    const board = this.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
+    if (board === undefined || board.dailyTokenBudget === null) return false;
+
+    const spend = spentSince(this.database.sqlite, boardId, startOfDay(Date.now()));
+    if (!overBudget(spend, board.dailyTokenBudget)) return false;
+
+    this.#halt(boardId, {
+      reason: 'day-budget-spent',
+      cardId,
+      cardTitle,
+      detail: `The board has spent ${describeSpend(spend, board.dailyTokenBudget)} Nothing new will start until the budget is raised or the day turns.`,
+      at: Date.now(),
+    });
+    this.#publish(boardId);
+    return true;
   }
 
   /**

@@ -71,6 +71,13 @@
       "when": 1787338812351,
       "tag": "0009_card_ceiling",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1787339326764,
+      "tag": "0010_board_budget",
+      "breakpoints": true
     }
   ]
 }

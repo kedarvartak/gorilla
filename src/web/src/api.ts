@@ -89,6 +89,15 @@ export interface DispatchState {
   readonly running: readonly string[];
   readonly completed: readonly string[];
   readonly halted: HaltState | null;
+  /** Tokens the queue may spend today. Null means no budget. */
+  readonly budget: number | null;
+  readonly spend: {
+    readonly tokens: number;
+    readonly runs: number;
+    /** Runs that recorded no usage, so the total is a lower bound. */
+    readonly unrecorded: number;
+  };
+  readonly spendNote: string;
 }
 
 export interface MergeStep {
@@ -205,6 +214,9 @@ export const api = {
   deleteCard: (cardId: string) => request<void>(`/api/cards/${cardId}`, { method: 'DELETE' }),
 
   markSeen: (cardId: string) => request<Card>(`/api/cards/${cardId}/seen`, { method: 'POST' }),
+
+  setBoard: (boardId: string, body: { dailyTokenBudget?: number | null; name?: string }) =>
+    request<Board>(`/api/boards/${boardId}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
   setDispatch: (boardId: string, body: { mode?: string; concurrency?: number; policy?: string }) =>
     request<DispatchState>(`/api/boards/${boardId}/dispatch`, {
