@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../app.js';
 import { boards } from '../db/schema.js';
 import { fail } from './shared.js';
+import { describeSpend, spentSince, startOfDay } from '../dispatch/budget.js';
 
 /**
  * Dispatch control (P8).
@@ -12,7 +13,20 @@ import { fail } from './shared.js';
  */
 export function registerDispatchRoutes(app: FastifyInstance, context: AppContext): void {
   app.get<{ Params: { boardId: string } }>('/api/boards/:boardId/dispatch', (request) => {
-    return context.dispatcher.state(request.params.boardId);
+    const { boardId } = request.params;
+    const board = context.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
+    const budget = board?.dailyTokenBudget ?? null;
+    const spend = spentSince(context.database.sqlite, boardId, startOfDay(Date.now()));
+
+    // Sent whether or not a budget is set. What the board spent today is worth
+    // seeing on its own, and it is the only way an operator can pick a budget
+    // that is neither pointless nor immediately hit.
+    return {
+      ...context.dispatcher.state(boardId),
+      budget,
+      spend,
+      spendNote: describeSpend(spend, budget),
+    };
   });
 
   app.post<{

@@ -31,6 +31,63 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
     return context.database.db.select().from(boards).orderBy(asc(boards.createdAt)).all();
   });
 
+  /**
+   * Board settings. Only the budget for now (T27).
+   *
+   * `cwd` is deliberately not editable: it is what routes incoming hook events
+   * to this board, and changing it would silently orphan every session already
+   * running against the old path.
+   */
+  app.patch<{ Params: { boardId: string }; Body: { dailyTokenBudget?: unknown; name?: unknown } }>(
+    '/api/boards/:boardId',
+    (request, reply) => {
+      const board = context.database.db
+        .select()
+        .from(boards)
+        .where(eq(boards.id, request.params.boardId))
+        .get();
+
+      if (board === undefined) return reply.code(404).send({ error: 'No such board.' });
+
+      const budget = request.body?.dailyTokenBudget;
+      // Zero is refused rather than read as "no budget": it would stop the
+      // queue before it started anything, which reads as a broken board.
+      if (
+        budget !== undefined &&
+        budget !== null &&
+        (typeof budget !== 'number' || !Number.isInteger(budget) || budget <= 0)
+      ) {
+        return reply.code(400).send({
+          error: 'A daily budget must be a positive whole number of tokens, or null for none.',
+          field: 'dailyTokenBudget',
+        });
+      }
+
+      const name = request.body?.name;
+      if (name !== undefined && (typeof name !== 'string' || name.trim() === '')) {
+        return reply.code(400).send({ error: 'A board needs a name.', field: 'name' });
+      }
+
+      context.database.db
+        .update(boards)
+        .set({
+          ...(budget === undefined ? {} : { dailyTokenBudget: budget }),
+          ...(name === undefined ? {} : { name: name.trim() }),
+        })
+        .where(eq(boards.id, board.id))
+        .run();
+
+      const updated = context.database.db
+        .select()
+        .from(boards)
+        .where(eq(boards.id, board.id))
+        .get();
+
+      publish('board-updated', updated);
+      return reply.send(updated);
+    },
+  );
+
   app.post<{ Body: { name?: string; cwd?: string } }>('/api/boards', (request, reply) => {
     const name = (request.body?.name ?? '').trim();
     const cwd = (request.body?.cwd ?? '').trim();

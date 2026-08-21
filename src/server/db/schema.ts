@@ -22,6 +22,13 @@ export const boards = sqliteTable(
     /** Canonicalised absolute path, symlinks resolved. Routes incoming events. */
     cwd: text('cwd').notNull(),
     createdAt: integer('created_at').notNull(),
+    /**
+     * Tokens the queue may spend in a day before it stops dispatching (T27).
+     *
+     * Null means no budget. Counted from local midnight, because a daily
+     * budget is a day in the operator's timezone rather than in UTC.
+     */
+    dailyTokenBudget: integer('daily_token_budget'),
   },
   (table) => [uniqueIndex('boards_cwd_unique').on(table.cwd)],
 );

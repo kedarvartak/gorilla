@@ -838,3 +838,104 @@ describe('the token ceiling', () => {
     expect(updateCard(handle, id, { tokenCeiling: null }).tokenCeiling).toBeNull();
   });
 });
+
+describe('the board’s daily budget', () => {
+  function spent(tokens: number, startedAt = Date.now()): void {
+    handle.db
+      .insert(runs)
+      .values({
+        id: randomUUID(),
+        boardId: BOARD,
+        sessionId: randomUUID(),
+        startedAt,
+        cwd: dir,
+        inputTokens: tokens,
+        outputTokens: 0,
+        costSource: 'result',
+      })
+      .run();
+  }
+
+  function budget(tokens: number | null): void {
+    handle.db.update(boards).set({ dailyTokenBudget: tokens }).where(eq(boards.id, BOARD)).run();
+  }
+
+  it('stops the queue starting anything more', async () => {
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    card('would be next');
+    budget(1_000);
+    spent(1_200);
+
+    dispatcher.setMode(BOARD, 'automatic');
+    expect(await dispatcher.pump(BOARD)).toEqual([]);
+    expect(halts.at(-1)?.reason).toBe('day-budget-spent');
+  });
+
+  it('names the card it declined to start', async () => {
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    card('the one that did not start');
+    budget(1_000);
+    spent(1_200);
+
+    dispatcher.setMode(BOARD, 'automatic');
+    await dispatcher.pump(BOARD);
+
+    // A halt that says only "over budget" leaves the operator to work out what
+    // it stopped, which is the first thing they will want to know.
+    expect(halts.at(-1)?.cardTitle).toBe('the one that did not start');
+  });
+
+  it('keeps going when the day’s spend is under', async () => {
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    const id = card('affordable');
+    budget(10_000);
+    spent(1_200);
+
+    // setMode pumps on its own, so the assertion is on the card rather than on
+    // a second pump's return, which would always be empty.
+    dispatcher.setMode(BOARD, 'automatic');
+    await vi.waitFor(() => expect(getCard(handle, id).status).not.toBe('idle'));
+  });
+
+  it('ignores what was spent before today', async () => {
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    const id = card('new day');
+    budget(1_000);
+    spent(50_000, Date.now() - 40 * 60 * 60 * 1_000);
+
+    // The budget is daily. Yesterday's spend stopping today's queue would mean
+    // one expensive night disabled the board indefinitely.
+    // setMode pumps on its own, so the assertion is on the card rather than on
+    // a second pump's return, which would always be empty.
+    dispatcher.setMode(BOARD, 'automatic');
+    await vi.waitFor(() => expect(getCard(handle, id).status).not.toBe('idle'));
+  });
+
+  it('does nothing when no budget is set', async () => {
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    const id = card('unbudgeted');
+    spent(5_000_000);
+
+    // setMode pumps on its own, so the assertion is on the card rather than on
+    // a second pump's return, which would always be empty.
+    dispatcher.setMode(BOARD, 'automatic');
+    await vi.waitFor(() => expect(getCard(handle, id).status).not.toBe('idle'));
+  });
+
+  it('leaves a run that is already going alone', async () => {
+    dispatcher.useExecutable(fakeClaude(`echo '{"type":"system","session_id":"s"}'\nsleep 30`));
+    const id = card('already spending');
+    budget(1_000);
+
+    const running = dispatcher.dispatch(BOARD, id);
+    spent(5_000);
+    dispatcher.setMode(BOARD, 'automatic');
+    await dispatcher.pump(BOARD);
+
+    // Work on the branch is worth more than the tokens it takes to finish.
+    // Killing it would leave the board paying for an unfinished job.
+    expect(getCard(handle, id).status).toBe('running');
+    dispatcher.cancel(BOARD, id);
+    await running?.result;
+  });
+});
