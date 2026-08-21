@@ -119,7 +119,7 @@ The point of the product: work that continues correctly while nobody is watching
 | --- | --- | --- | --- |
 | T41 | Scheduled dispatch window | A board can be told to work only between given hours. | open |
 | T42 | Automatic retry policy | A run that fails for a transient reason retries under a stated policy; one that fails for a stated reason does not. | open |
-| T43 | Escalation ladder | Repeated failure on one card stops that card rather than the queue, and marks it for the operator. | open |
+| T43 | Escalation ladder | Repeated failure on one card stops that card rather than the queue, and marks it for the operator. | merged |
 | T44 | Health check endpoint | One endpoint reports queue depth, in-flight runs, halt state and last event time. | open |
 | T45 | Webhook on state change | Card state changes can be posted to a configured endpoint, with the same no-interpolation discipline as `GORILLA_NOTIFY`. | open |
 | T46 | Checkpoint a long run | A run's progress is recorded at intervals so a killed process resumes rather than restarts. | open |
