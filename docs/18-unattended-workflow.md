@@ -177,6 +177,24 @@ queue never waits for it, and a notifier that fails, hangs or does not exist
 never unhalts the board or breaks the gate. `gorilla doctor` warns when nothing
 is configured.
 
+## Being told the batch finished
+
+`GORILLA_NOTIFY` fired when the queue halted, which is the bad news. An
+operator waking to a finished batch got nothing at all - and from bed, a silent
+board that finished and a silent board that never started are the same thing.
+
+The same command now runs when the queue empties, with `GORILLA_EVENT` saying
+which of the two happened so a notifier that only cares about failures can look
+at one variable. The halt keeps every variable it had and gains that one.
+
+Once per batch, not once per pump. A board polled while idle would otherwise
+notify all night, and the flag clears the moment anything starts again so a
+second batch is announced like the first.
+
+Never for a board that has not done anything. Automatic mode switched on over
+an empty column is not a finished batch, and announcing one at midnight is how
+an operator learns to mute the notifier.
+
 ## Posting to something that is not a person
 
 `GORILLA_NOTIFY` runs a command, which is right for waking somebody up and

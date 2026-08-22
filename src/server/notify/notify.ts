@@ -46,6 +46,9 @@ export interface NotifyInput {
  */
 export function haltEnvironment(halt: HaltState, boardName: string): Record<string, string> {
   return {
+    // Which of the two things happened. A command wired before this existed
+    // saw only halts, so the halt keeps every variable it had and gains one.
+    GORILLA_EVENT: 'halt',
     GORILLA_BOARD: boardName,
     GORILLA_HALT_REASON: halt.reason,
     GORILLA_HALT_CARD: halt.cardTitle,
@@ -93,6 +96,74 @@ export function notifyHalt(input: NotifyInput): boolean {
     return true;
   } catch (error) {
     input.onError?.(error);
+    return false;
+  }
+}
+
+/**
+ * The other thing worth being woken for (T75).
+ *
+ * `GORILLA_NOTIFY` fires when the queue halts, which is the bad news. An
+ * operator who wakes to a finished batch gets nothing at all - and a silent
+ * board that finished and a silent board that never started look identical
+ * from bed.
+ *
+ * The same command, because an operator who has wired one notifier does not
+ * want to wire a second. `GORILLA_EVENT` says which of the two happened, so a
+ * command that only cares about failures can look at one variable.
+ */
+export interface Drained {
+  readonly boardName: string;
+  readonly completed: number;
+  readonly blocked: number;
+  readonly at: number;
+}
+
+export function describeDrained(drained: Drained): string {
+  const blocked = drained.blocked === 0 ? '' : `, ${String(drained.blocked)} left blocked`;
+
+  return `${drained.boardName}: the queue is empty. ${String(drained.completed)} card(s) finished${blocked}.`;
+}
+
+export function drainedEnvironment(drained: Drained): Record<string, string> {
+  return {
+    GORILLA_EVENT: 'drained',
+    GORILLA_BOARD: drained.boardName,
+    GORILLA_DRAINED_COMPLETED: String(drained.completed),
+    GORILLA_DRAINED_BLOCKED: String(drained.blocked),
+    GORILLA_DRAINED_AT: new Date(drained.at).toISOString(),
+    GORILLA_MESSAGE: describeDrained(drained),
+  };
+}
+
+export interface NotifyDrainedInput {
+  readonly drained: Drained;
+  readonly command: string | undefined;
+  readonly cwd?: string | undefined;
+  readonly onError?: (error: Error) => void;
+}
+
+export function notifyDrained(input: NotifyDrainedInput): boolean {
+  const command = (input.command ?? '').trim();
+  if (command === '') return false;
+
+  try {
+    const child = spawn(command, {
+      shell: true,
+      cwd: input.cwd,
+      // Nothing about the batch is interpolated into the command, for the same
+      // reason the halt is not: a card title is free text an agent wrote.
+      env: { ...process.env, ...drainedEnvironment(input.drained) },
+      stdio: 'ignore',
+      detached: true,
+      timeout: NOTIFY_TIMEOUT_MS,
+    });
+
+    child.on('error', (error) => input.onError?.(error));
+    child.unref();
+    return true;
+  } catch (error) {
+    input.onError?.(error as Error);
     return false;
   }
 }

@@ -23,7 +23,7 @@ import { eq } from 'drizzle-orm';
 import { Dispatcher } from './dispatch/dispatcher.js';
 import { readHealth } from './health.js';
 import { boards } from './db/schema.js';
-import { NOTIFY_ENV, notifyHalt } from './notify/notify.js';
+import { describeDrained, NOTIFY_ENV, notifyDrained, notifyHalt } from './notify/notify.js';
 import { deliverWebhook, WEBHOOK_ENV } from './notify/webhook.js';
 import { PendingBindings } from './binding/pending.js';
 import { ExtractionService } from './ledger/service.js';
@@ -155,6 +155,40 @@ export function buildApp(options: AppOptions): FastifyInstance {
             cardTitle,
             detail: status,
             at: Date.now(),
+          },
+          onError: (error) => app.log.error({ err: error }, 'webhook delivery failed'),
+        });
+      },
+      // The other thing worth being woken for. A silent board that finished
+      // and a silent board that never started look identical from bed (T75).
+      onDrained: (boardId, summary) => {
+        const board = options.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
+        const drained = {
+          boardName: board?.name ?? 'gorilla',
+          completed: summary.completed,
+          blocked: summary.blocked,
+          at: Date.now(),
+        };
+
+        broadcaster.publish('queue-drained', { boardId, ...drained });
+
+        notifyDrained({
+          drained,
+          command: process.env[NOTIFY_ENV],
+          cwd: board?.cwd,
+          onError: (error) => app.log.error({ err: error }, 'drained notification failed'),
+        });
+
+        deliverWebhook({
+          url: process.env[WEBHOOK_ENV],
+          event: {
+            event: 'card-finished',
+            boardId,
+            boardName: drained.boardName,
+            cardId: '',
+            cardTitle: '',
+            detail: describeDrained(drained),
+            at: drained.at,
           },
           onError: (error) => app.log.error({ err: error }, 'webhook delivery failed'),
         });
