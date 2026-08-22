@@ -56,6 +56,24 @@ function run(cardId: string, endReason: string, startedAt = Date.now()): void {
     .run();
 }
 
+function priced(cardId: string, tokens: number, costUsd: number, startedAt = Date.now()): void {
+  handle.db
+    .insert(runs)
+    .values({
+      id: randomUUID(),
+      boardId: BOARD,
+      cardId,
+      sessionId: randomUUID(),
+      startedAt,
+      cwd: dir,
+      inputTokens: tokens,
+      outputTokens: 0,
+      costUsd,
+      costSource: 'result',
+    })
+    .run();
+}
+
 function metrics(sinceDaysAgo = 30) {
   return readMetrics(handle.sqlite, BOARD, Date.now() - sinceDaysAgo * DAY);
 }
@@ -156,5 +174,44 @@ describe('cards nobody has started', () => {
     // full one, and the two call for different responses.
     expect(metrics().neverRan).toBe(1);
     expect(describeMetrics(metrics()).join(' ')).toContain('never run at all');
+  });
+});
+
+describe('what each day cost', () => {
+  it('groups runs by the day they started', () => {
+    const now = Date.now();
+    run(card('a'), 'session ended', now);
+    run(card('b'), 'session ended', now - 2 * DAY);
+
+    expect(metrics().spendByDay).toHaveLength(2);
+  });
+
+  it('adds up the tokens', () => {
+    const id = card('a');
+    priced(id, 1_000, 0.5);
+    priced(id, 500, 0.25);
+
+    const today = metrics().spendByDay.at(-1);
+    expect(today?.tokens).toBe(1_500);
+    expect(today?.costUsd).toBeCloseTo(0.75);
+  });
+
+  it('reports null rather than zero for a day nobody priced', () => {
+    const id = card('a');
+    run(id, 'session ended');
+
+    // A day that cost nothing and a day nobody priced are different, and a
+    // chart drawing both at the floor would say the wrong one.
+    expect(metrics().spendByDay.at(-1)?.costUsd).toBeNull();
+  });
+
+  it('says how much of the window was priced', () => {
+    const id = card('a');
+    priced(id, 1_000, 2);
+    run(card('b'), 'session ended', Date.now() - DAY);
+
+    const note = describeMetrics(metrics()).join(' ');
+    expect(note).toContain('$2.00');
+    expect(note).toContain('1 of 2 days');
   });
 });
