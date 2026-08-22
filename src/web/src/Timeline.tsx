@@ -45,6 +45,7 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
   const [after, setAfter] = useState(0);
   const [eventFilter, setEventFilter] = useState('');
   const [toolFilter, setToolFilter] = useState('');
+  const [density, setDensity] = useState<string | null>(null);
 
   const load = useCallback(
     async (from: number, replace: boolean) => {
@@ -57,12 +58,14 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
         entries: Entry[];
         nextAfter: number;
         hasMore: boolean;
+        density?: { note: string };
       }>(runId, params);
 
       // Null rather than a throw: a timeline page that will not load leaves
       // the pane showing what it already had, which beats emptying it.
       if (body === null) return;
 
+      setDensity(body.density?.note ?? null);
       setTotal(body.total);
       setHasMore(body.hasMore);
       setAfter(body.nextAfter);
@@ -88,6 +91,9 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
           showing <b className="text-text">{entries.length}</b> of{' '}
           <b className="text-text">{total}</b>
         </span>
+        {/* Where the time went, over the events on screen. A list of evenly
+            spaced rows says a run happened and nothing about its shape. */}
+        {density === null ? null : <span className="text-dim">{density}</span>}
         {compactions > 0 ? (
           <span className="text-warn">
             {compactions} compaction{compactions === 1 ? '' : 's'}

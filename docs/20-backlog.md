@@ -114,7 +114,7 @@ Everything here currently requires a terminal.
 | T29 | Token and duration accounting | Each card shows what its runs cost, from the run events. | merged |
 | T30 | Branch diff summary | Files, insertions and deletions appear in the card, so review does not require a terminal. | merged |
 | T31 | Full diff view | The branch's diff is readable in the card, per file. | merged |
-| T32 | Run timeline density | The timeline distinguishes thinking, tool use, and waiting, rather than showing one undifferentiated run. | open |
+| T32 | Run timeline density | The timeline says how long each gap was and whether it was inside a tool call or between them. | merged |
 | T33 | Error grouping | Repeated identical errors within a run collapse into one entry with a count. | open |
 | T34 | Card search | Cards are searchable by title, body and touched path. | merged |
 
