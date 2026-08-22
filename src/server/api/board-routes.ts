@@ -26,6 +26,29 @@ import {
 } from './cards.js';
 import { fail, present, readPriority } from './shared.js';
 
+/**
+ * What a card update may set (T4).
+ *
+ * Listed rather than derived from the type, because the type is erased at
+ * runtime and a list that drifts from the handler is caught by the tests that
+ * exercise each field. Adding a field here without handling it below is the
+ * one mistake this cannot catch, which is why the set sits directly above the
+ * handler that reads it.
+ */
+const EDITABLE_CARD_FIELDS: ReadonlySet<string> = new Set([
+  'title',
+  'body',
+  'goalCondition',
+  'guardrails',
+  'agentModel',
+  'agentEffort',
+  'synthesisModel',
+  'permissionMode',
+  'priority',
+  'status',
+  'tokenCeiling',
+]);
+
 export function registerApiRoutes(app: FastifyInstance, context: AppContext): void {
   const publish = (event: string, data: unknown): void => {
     context.broadcaster.publish(event, data);
@@ -412,6 +435,18 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
     (request, reply) => {
       try {
         const body = request.body ?? {};
+
+        // Refused rather than ignored (T4). An update that accepts a field it
+        // does not know reports success for a change it did not make, and the
+        // operator finds out when the card behaves as though they never edited
+        // it - which is indistinguishable from the edit not having saved.
+        const unknown = Object.keys(body).filter((key) => !EDITABLE_CARD_FIELDS.has(key));
+        if (unknown.length > 0) {
+          return reply.code(400).send({
+            error: `A card has no field called ${unknown.join(', ')}. Editable fields: ${[...EDITABLE_CARD_FIELDS].sort().join(', ')}.`,
+            field: unknown[0],
+          });
+        }
         const card = updateCard(context.database, request.params.cardId, {
           ...(typeof body['title'] === 'string' ? { title: body['title'] } : {}),
           ...(typeof body['body'] === 'string' ? { body: body['body'] } : {}),
