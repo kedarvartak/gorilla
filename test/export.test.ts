@@ -137,3 +137,17 @@ describe('a database an older build wrote', () => {
     expect(schemaTooOld(new Error('disk I/O error'))).toBeNull();
   });
 });
+
+describe('machine-readable output', () => {
+  it('carries the markdown rather than replacing it', async () => {
+    createCard(handle, { boardId: BOARD, title: 'a card' });
+
+    const result = await exportCommand.run(['--db', dbPath, '--json']);
+    const parsed = JSON.parse(result.stdout) as { boardId: string; markdown: string };
+
+    // The markdown is the point of the command. A JSON mode that dropped it
+    // would make a script reassemble what the command already rendered.
+    expect(parsed.boardId).toBe(BOARD);
+    expect(parsed.markdown).toContain('a card');
+  });
+});

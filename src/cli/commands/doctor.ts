@@ -479,9 +479,12 @@ export const doctorCommand: Command = {
 
     const report = await runDoctor({ cwd, port });
 
+    // The whole report, not a summary (T58). A monitor that can see only
+    // "ok: false" has to run the command again in the other mode to find out
+    // what is wrong, which is two runs to answer one question.
     return {
       exitCode: report.ok ? 0 : 1,
-      stdout: formatReport(report),
+      stdout: args.includes('--json') ? JSON.stringify(report, null, 2) : formatReport(report),
       stderr: '',
     };
   },

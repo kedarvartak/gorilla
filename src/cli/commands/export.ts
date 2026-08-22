@@ -77,6 +77,13 @@ export const exportCommand: Command = {
         });
       }
 
+      // JSON for a script, markdown for a person. The markdown is the point of
+      // the command, so it stays the default.
+      if (args.includes('--json')) {
+        const payload = JSON.stringify({ boardId: board.id, name: board.name, markdown: rendered });
+        return Promise.resolve({ exitCode: 0, stdout: payload, stderr: '' });
+      }
+
       const out = outIndex === -1 ? undefined : args[outIndex + 1];
       if (out !== undefined) {
         writeFileSync(out, rendered, 'utf8');
