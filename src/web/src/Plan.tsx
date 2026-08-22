@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactElement } from 'react';
+import { X } from '@phosphor-icons/react';
 
 import { Panel } from './Panel.js';
 
@@ -54,15 +55,17 @@ export function Plan({
 
   return (
     <Panel title="The order the board will work in" onClose={onClose}>
-      <header className="flex items-baseline gap-3 border-b border-line bg-panel px-4 py-2.5">
-        <h2 className="text-[13px] font-semibold tracking-tight text-text">The order</h2>
+      <header className="flex items-baseline gap-3 border-b border-line bg-surface px-4 py-2.5">
+        <h2 className="text-[13px] font-semibold tracking-tight text-ink">The order</h2>
         <span className="text-[11px] text-dim">{body?.note ?? ''}</span>
         <button
           type="button"
-          className="ml-auto rounded border border-line px-2 py-0.5 text-dim hover:text-text"
+          aria-label="Close"
+          className="ml-auto inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-dim transition-colors hover:bg-well hover:text-ink"
           onClick={onClose}
         >
-          close
+          <X size={14} aria-hidden />
+          Close
         </button>
       </header>
 
@@ -75,12 +78,12 @@ export function Plan({
               {body.cards.map((card) => (
                 <li
                   key={card.cardId}
-                  className="flex items-baseline gap-3 rounded border border-line bg-panel px-3 py-2"
+                  className="flex items-baseline gap-3 rounded border border-line bg-surface px-3 py-2"
                 >
                   <span className="text-[11px] text-dim">{card.rank}</span>
                   <button
                     type="button"
-                    className="text-text hover:underline"
+                    className="text-ink hover:underline"
                     onClick={() => onOpen(card.cardId)}
                   >
                     {card.title}
@@ -90,7 +93,7 @@ export function Plan({
                     blocked badge says a card cannot start; this says what it
                     is waiting for, by name. */}
                   {card.waitingFor.length === 0 ? null : (
-                    <span className="ml-auto text-[11px] text-warn">
+                    <span className="ml-auto text-[11px] text-danger">
                       waiting for {card.waitingFor.join(', ')}
                     </span>
                   )}

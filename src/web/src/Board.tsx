@@ -33,6 +33,7 @@ import { Invariants } from './Invariants.js';
 import { Activity } from './Activity.js';
 import { CardTile } from './CardTile.js';
 import { Sidebar, type View } from './Sidebar.js';
+import { MagnifyingGlass, Plus } from '@phosphor-icons/react';
 
 /**
  * The board (doc 09, screen 1).
@@ -103,7 +104,7 @@ function ColumnView({
           // middle of a working board reads as nothing rather than as three
           // columns with nothing in them.
           className={`flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-lg border p-2 transition-colors ${
-            isOver ? 'border-accent/60 bg-accent-soft' : 'border-line/70 bg-panel/60'
+            isOver ? 'border-brand bg-brand-tint' : 'border-transparent bg-well'
           }`}
         >
           {cards.length === 0 ? (
@@ -289,10 +290,10 @@ export function Board(): ReactElement {
   if (board === null) {
     return (
       <main className="p-8 text-dim">
-        <h1 className="mb-2 font-mono uppercase tracking-wider text-accent">Gorilla</h1>
+        <h1 className="mb-2 font-mono uppercase tracking-wider text-brand">Gorilla</h1>
         <p>
           No board yet. Create one with{' '}
-          <code className="text-text">
+          <code className="text-ink">
             curl -X POST localhost:4300/api/boards -H &apos;content-type: application/json&apos; -d
             &apos;{'{'}&quot;cwd&quot;:&quot;/path/to/project&quot;{'}'}&apos;
           </code>
@@ -314,28 +315,35 @@ export function Board(): ReactElement {
       />
 
       <main className="relative flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-3 border-b border-line bg-panel px-4 py-2.5">
+        <header className="flex items-center gap-3 border-b border-line bg-surface px-4 py-2.5">
           {/* Search first and widest. On a board of sixty cards it is the
               fastest route to any of them, and it was previously one control
               among sixteen. */}
-          <input
-            className="w-72 rounded-md border border-line bg-panel-2 px-2.5 py-1.5 text-text transition-colors placeholder:text-faint focus:border-edge"
-            placeholder="Find a card, or a file it touched"
-            aria-label="Search cards"
-            value={query}
-            onChange={(changed) => {
-              const next = changed.target.value;
-              setQuery(next);
-              if (next.trim() === '') {
-                setHits(null);
-                return;
-              }
-              void api
-                .search(board.id, next)
-                .then(setHits)
-                .catch((cause: Error) => setError(cause.message));
-            }}
-          />
+          <div className="relative w-72">
+            <MagnifyingGlass
+              size={15}
+              aria-hidden
+              className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-faint"
+            />
+            <input
+              className="w-full rounded-md border border-line bg-surface py-1.5 pr-2.5 pl-8 text-ink transition-colors placeholder:text-faint focus:border-edge"
+              placeholder="Find a card, or a file it touched"
+              aria-label="Search cards"
+              value={query}
+              onChange={(changed) => {
+                const next = changed.target.value;
+                setQuery(next);
+                if (next.trim() === '') {
+                  setHits(null);
+                  return;
+                }
+                void api
+                  .search(board.id, next)
+                  .then(setHits)
+                  .catch((cause: Error) => setError(cause.message));
+              }}
+            />
+          </div>
 
           {/* Three numbers, and only three. What is happening, what wants you,
               what finished - in that order, because that is the order an
@@ -343,25 +351,25 @@ export function Board(): ReactElement {
           <dl className="flex items-baseline gap-4 text-[11px]">
             <div className="flex items-baseline gap-1.5">
               <dt className="text-faint">Running</dt>
-              <dd className="tabular-nums text-text">{dispatch?.running.length ?? 0}</dd>
+              <dd className="tabular-nums text-ink">{dispatch?.running.length ?? 0}</dd>
             </div>
             <div className="flex items-baseline gap-1.5">
               <dt className="text-faint">Unseen</dt>
-              <dd className={`tabular-nums ${unseen > 0 ? 'text-attention' : 'text-text'}`}>
+              <dd className={`tabular-nums ${unseen > 0 ? 'text-attention' : 'text-ink'}`}>
                 {unseen}
               </dd>
             </div>
             <div className="flex items-baseline gap-1.5">
               <dt className="text-faint">Finished</dt>
-              <dd className="tabular-nums text-text">{dispatch?.completed.length ?? 0}</dd>
+              <dd className="tabular-nums text-ink">{dispatch?.completed.length ?? 0}</dd>
             </div>
           </dl>
 
           {/* How the queue behaves, grouped as one control rather than three
               labelled fields spread across the bar. */}
-          <div className="ml-auto flex items-center gap-1 rounded-md border border-line bg-panel-2 p-0.5">
+          <div className="ml-auto flex items-center gap-1 rounded-md border border-line bg-surface p-0.5">
             <select
-              className="rounded-sm bg-transparent px-1.5 py-1 text-dim focus:text-text"
+              className="rounded-sm bg-transparent px-1.5 py-1 text-dim focus:text-ink"
               aria-label="Dispatch mode"
               title="Manual holds the queue. Automatic starts the next card itself."
               value={dispatch?.mode ?? 'manual'}
@@ -377,7 +385,7 @@ export function Board(): ReactElement {
             </select>
             <span className="h-4 w-px bg-line" aria-hidden />
             <select
-              className="rounded-sm bg-transparent px-1.5 py-1 text-dim focus:text-text"
+              className="rounded-sm bg-transparent px-1.5 py-1 text-dim focus:text-ink"
               aria-label="Review policy"
               title="Review stops the queue after every card. Unattended collects them for the morning."
               value={dispatch?.policy ?? 'review'}
@@ -393,7 +401,7 @@ export function Board(): ReactElement {
             </select>
             <span className="h-4 w-px bg-line" aria-hidden />
             <select
-              className="rounded-sm bg-transparent px-1.5 py-1 text-dim focus:text-text"
+              className="rounded-sm bg-transparent px-1.5 py-1 text-dim focus:text-ink"
               aria-label="Agents at once"
               title="How many cards this board runs at the same time."
               value={dispatch?.concurrency ?? 1}
@@ -414,9 +422,9 @@ export function Board(): ReactElement {
 
           {/* The composer. One cluster, so adding a card reads as one action
               rather than three adjacent controls. */}
-          <div className="flex items-center rounded-md border border-line bg-panel-2">
+          <div className="flex items-center rounded-md border border-line bg-surface">
             <select
-              className="rounded-l-md bg-transparent py-1.5 pl-2 pr-1 text-dim focus:text-text"
+              className="rounded-l-md bg-transparent py-1.5 pl-2 pr-1 text-dim focus:text-ink"
               value={newPriority}
               aria-label="Priority for the new card"
               title="High and low reorder the dispatch queue within a column."
@@ -427,7 +435,7 @@ export function Board(): ReactElement {
               <option value="low">Low</option>
             </select>
             <input
-              className="w-52 bg-transparent px-2 py-1.5 text-text placeholder:text-faint"
+              className="w-52 bg-transparent px-2 py-1.5 text-ink placeholder:text-faint"
               placeholder="New card"
               aria-label="New card title"
               value={title}
@@ -438,21 +446,22 @@ export function Board(): ReactElement {
             />
             <button
               type="button"
-              className="rounded-r-md border-l border-line px-2.5 py-1.5 text-dim transition-colors hover:bg-panel-3 hover:text-text"
+              className="inline-flex items-center gap-1 rounded-r-md border-l border-line px-2.5 py-1.5 text-dim transition-colors hover:bg-well hover:text-ink"
               onClick={() => void addCard()}
             >
+              <Plus size={14} aria-hidden />
               Add
             </button>
           </div>
         </header>
 
         {dispatch?.halted !== null && dispatch?.halted !== undefined ? (
-          <div className="border-b border-warn/40 bg-warn/10 px-4 py-2 text-warn">
+          <div className="border-b border-danger/40 bg-danger/10 px-4 py-2 text-danger">
             {/* A stopped queue must not look like a finished one. */}
             <b>Dispatch halted</b> on “{dispatch.halted.cardTitle}” — {dispatch.halted.detail}{' '}
             <button
               type="button"
-              className="ml-2 rounded border border-warn/50 px-2 py-0.5 hover:bg-warn/20"
+              className="ml-2 rounded border border-danger/50 px-2 py-0.5 hover:bg-danger/20"
               onClick={() => {
                 void api.resumeDispatch(board.id).then(setDispatch);
               }}
@@ -466,19 +475,19 @@ export function Board(): ReactElement {
           missing feature rather than an old bundle - which is what it looked
           like the two times this actually happened. */}
         {staleBuild === null ? null : (
-          <div className="border-b border-line bg-panel-2 px-4 py-2 text-warn">{staleBuild}</div>
+          <div className="border-b border-line bg-well px-4 py-2 text-danger">{staleBuild}</div>
         )}
 
         {/* A hold is not an error and not a halt: the clock will clear it. Said
           in its own line so it does not read as something to fix. */}
         {dispatch === null || dispatch.holdingFor === null ? null : (
-          <div className="border-b border-line bg-panel-2 px-4 py-2 text-dim">
+          <div className="border-b border-line bg-well px-4 py-2 text-dim">
             {dispatch.holdingFor}
           </div>
         )}
 
         {hits === null ? null : (
-          <div className="border-b border-line bg-panel-2 px-4 py-2 text-[11px]">
+          <div className="border-b border-line bg-well px-4 py-2 text-[11px]">
             {hits.length === 0 ? (
               <span className="text-dim">Nothing matches “{query}”.</span>
             ) : (
@@ -487,7 +496,7 @@ export function Board(): ReactElement {
                   <li key={hit.cardId} className="text-dim">
                     <button
                       type="button"
-                      className="text-text hover:underline"
+                      className="text-ink hover:underline"
                       onClick={() => setOpenCardId(hit.cardId)}
                     >
                       {hit.title}
@@ -503,7 +512,7 @@ export function Board(): ReactElement {
         )}
 
         {error !== null ? (
-          <div className="border-b border-line bg-panel-2 px-4 py-2 text-warn">{error}</div>
+          <div className="border-b border-line bg-well px-4 py-2 text-danger">{error}</div>
         ) : null}
 
         <DndContext

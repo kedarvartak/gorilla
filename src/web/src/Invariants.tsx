@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
+import { X } from '@phosphor-icons/react';
 
 import { Panel } from './Panel.js';
 
@@ -112,15 +113,17 @@ export function Invariants({
 
   return (
     <Panel title="Project rules" onClose={onClose}>
-      <header className="flex items-baseline gap-3 border-b border-line bg-panel px-4 py-2.5">
-        <h2 className="text-[13px] font-semibold tracking-tight text-text">Project rules</h2>
+      <header className="flex items-baseline gap-3 border-b border-line bg-surface px-4 py-2.5">
+        <h2 className="text-[13px] font-semibold tracking-tight text-ink">Project rules</h2>
         <span className="text-[11px] text-dim">Handed to every card this board dispatches</span>
         <button
           type="button"
-          className="ml-auto rounded border border-line px-2 py-0.5 text-dim hover:text-text"
+          aria-label="Close"
+          className="ml-auto inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-dim transition-colors hover:bg-well hover:text-ink"
           onClick={onClose}
         >
-          close
+          <X size={14} aria-hidden />
+          Close
         </button>
       </header>
 
@@ -128,7 +131,7 @@ export function Invariants({
         <div className="mx-auto w-full max-w-3xl">
           <div className="mb-3 flex gap-2">
             <input
-              className="flex-1 rounded border border-line bg-panel-2 px-2 py-1 text-text placeholder:text-dim"
+              className="flex-1 rounded border border-line bg-well px-2 py-1 text-ink placeholder:text-dim"
               placeholder="A rule that is true of every card on this board"
               aria-label="New project rule"
               value={statement}
@@ -139,14 +142,14 @@ export function Invariants({
             />
             <button
               type="button"
-              className="rounded border border-line bg-panel-2 px-2 py-1 text-text hover:border-dim"
+              className="rounded border border-line bg-well px-2 py-1 text-ink hover:border-dim"
               onClick={() => void add()}
             >
               Add
             </button>
           </div>
 
-          {error !== null ? <p className="mb-3 text-warn">{error}</p> : null}
+          {error !== null ? <p className="mb-3 text-danger">{error}</p> : null}
 
           {rules !== null && rules.length === 0 ? (
             // Said plainly. An empty list here is a legitimate state, not a
@@ -166,9 +169,9 @@ export function Invariants({
                 {proposals.map((proposal) => (
                   <li
                     key={proposal.statement}
-                    className="rounded border border-dashed border-line bg-panel px-3 py-2"
+                    className="rounded border border-dashed border-line bg-surface px-3 py-2"
                   >
-                    <div className="text-text">{proposal.statement}</div>
+                    <div className="text-ink">{proposal.statement}</div>
                     <div className="text-[11px] text-dim">
                       {/* Named, because the claim is falsifiable and the
                         operator may disagree with it. */}
@@ -176,7 +179,7 @@ export function Invariants({
                     </div>
                     <button
                       type="button"
-                      className="mt-1 rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-text"
+                      className="mt-1 rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-ink"
                       onClick={() => void accept(proposal.statement)}
                     >
                       make it a project rule
@@ -191,9 +194,9 @@ export function Invariants({
             {(rules ?? []).map((rule) => (
               <li
                 key={rule.id}
-                className="flex items-baseline gap-3 rounded border border-line bg-panel px-3 py-2"
+                className="flex items-baseline gap-3 rounded border border-line bg-surface px-3 py-2"
               >
-                <span className="text-text">{rule.statement}</span>
+                <span className="text-ink">{rule.statement}</span>
                 {rule.sourceCardId === null ? null : (
                   // Where it came from, because a rule whose origin nobody knows
                   // is a rule nobody dares remove.
@@ -203,7 +206,7 @@ export function Invariants({
                 )}
                 <button
                   type="button"
-                  className="ml-auto rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-warn"
+                  className="ml-auto rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-danger"
                   onClick={() => void remove(rule.id)}
                 >
                   remove

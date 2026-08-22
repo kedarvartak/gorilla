@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactElement } from 'react';
+import { X } from '@phosphor-icons/react';
 
 import { Panel } from './Panel.js';
 
@@ -50,15 +51,15 @@ export interface DigestBody {
 /** Why this card is where it is in the list, in the operator's terms. */
 function reasonFor(entry: DigestEntry): { text: string; tone: string } | null {
   if (entry.verify === 'failed' || entry.verify === 'errored') {
-    return { text: 'the board ran its verify and it did not pass', tone: 'text-warn' };
+    return { text: 'the board ran its verify and it did not pass', tone: 'text-danger' };
   }
   if (entry.status === 'blocked') {
-    return { text: 'stopped and waiting for you', tone: 'text-warn' };
+    return { text: 'stopped and waiting for you', tone: 'text-danger' };
   }
   if (entry.unseen > 0) {
     return {
       text: `${String(entry.unseen)} entr${entry.unseen === 1 ? 'y' : 'ies'} you have not read`,
-      tone: 'text-accent',
+      tone: 'text-brand',
     };
   }
   return null;
@@ -115,12 +116,12 @@ function Section({
                 <button
                   type="button"
                   className={`w-full rounded border px-3 py-2 text-left hover:border-dim ${
-                    dim ? 'border-line/60 bg-panel/50' : 'border-line bg-panel'
+                    dim ? 'border-line/60 bg-surface/50' : 'border-line bg-surface'
                   }`}
                   onClick={() => onOpen(entry.cardId)}
                 >
                   <div className="flex items-baseline gap-3">
-                    <span className={dim ? 'text-dim' : 'text-text'}>{entry.title}</span>
+                    <span className={dim ? 'text-dim' : 'text-ink'}>{entry.title}</span>
                     <span className="text-[11px] text-dim">{entry.status}</span>
                     {entry.waitedFor === null ? null : (
                       // The number is the point: a card nobody has touched for
@@ -137,7 +138,7 @@ function Section({
                       </span>
                     )}
                     {(entry.contradictions ?? 0) === 0 ? null : (
-                      <span className="text-[11px] text-warn">runs into a project rule</span>
+                      <span className="text-[11px] text-danger">runs into a project rule</span>
                     )}
                     {reason === null ? null : (
                       <span className={`ml-auto text-[11px] ${reason.tone}`}>{reason.text}</span>
@@ -196,8 +197,8 @@ export function Digest({
 
   return (
     <Panel title="The morning digest" onClose={onClose}>
-      <header className="flex items-baseline gap-3 border-b border-line bg-panel px-4 py-2.5">
-        <h2 className="text-[13px] font-semibold tracking-tight text-text">While you were away</h2>
+      <header className="flex items-baseline gap-3 border-b border-line bg-surface px-4 py-2.5">
+        <h2 className="text-[13px] font-semibold tracking-tight text-ink">While you were away</h2>
         <span className="text-[11px] text-dim">
           {body === null
             ? ''
@@ -205,16 +206,18 @@ export function Digest({
         </span>
         <button
           type="button"
-          className="ml-auto rounded border border-line px-2 py-0.5 text-dim hover:text-text"
+          aria-label="Close"
+          className="ml-auto inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-dim transition-colors hover:bg-well hover:text-ink"
           onClick={onClose}
         >
-          close
+          <X size={14} aria-hidden />
+          Close
         </button>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
         <div className="mx-auto w-full max-w-4xl">
-          {error !== null ? <p className="text-warn">{error}</p> : null}
+          {error !== null ? <p className="text-danger">{error}</p> : null}
 
           {body === null && error === null ? <p className="text-dim">Loading…</p> : null}
 
