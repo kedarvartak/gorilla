@@ -108,7 +108,7 @@ Everything here currently requires a terminal.
 | T36 | Pre-merge second opinion | A fresh agent reviews the branch and its findings enter the ledger as surprises before the gate opens. | open |
 | T37 | Review checklist from the ledger | The gate shows what was established during the run, so accepting is an informed act. | open |
 | T38 | Follow-up card from a rejected entry | Rejecting a ledger entry can create the card that addresses it, linked to its origin. | open |
-| T39 | Merge dry run | The board reports whether a branch would conflict, before the operator commits to merging. | open |
+| T39 | Merge dry run | The board reports whether a branch would conflict, before the operator commits to merging. | merged |
 | T40 | Post-merge verification | The verify command runs once more on the merged result, and the card records that it did. | open |
 
 ## G. Autonomy

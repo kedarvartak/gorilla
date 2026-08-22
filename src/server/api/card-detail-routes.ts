@@ -7,6 +7,7 @@ import { assessStaleness, mergedPaths } from '../cards/staleness.js';
 import { boards, cards as cardsTable, runs } from '../db/schema.js';
 import { describeCost, type RunCost } from '../launcher/cost.js';
 import { diffSummary, UNREADABLE } from '../worktree/diff.js';
+import { forecastMerge, UNKNOWN as FORECAST_UNKNOWN } from '../review/forecast.js';
 import { cardsTouching, claimedButNotInGit, subsystemsForCard } from '../cards/subsystems.js';
 import { getCard } from './cards.js';
 import { buildMechanicalLedger } from '../ledger/mechanical.js';
@@ -162,6 +163,13 @@ export function registerCardDetailRoutes(app: FastifyInstance, context: AppConte
                 git: await manager?.statusOf(card.id),
               },
         mergeTarget: board === undefined ? null : await mergeTargetFor(board.cwd),
+        // Whether it would go in cleanly, asked before the operator commits
+        // to finding out the expensive way (T39). Costs nothing: merge-tree
+        // touches neither the working tree, the index, nor HEAD.
+        mergeForecast:
+          board === undefined || workspace === undefined
+            ? FORECAST_UNKNOWN
+            : await forecastMerge(board.cwd, await mergeTargetFor(board.cwd), workspace.branch),
         // What the branch actually changed (T30). Reviewing a card used to
         // mean leaving the board for a terminal, which is where the operator
         // loses the context the board exists to hold.
