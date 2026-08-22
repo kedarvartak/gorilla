@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
 
+import { api } from './api.js';
+
 /**
  * Rules that hold for the project rather than for one card (doc 12, output 2).
  *
@@ -48,23 +50,18 @@ export function Invariants({
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async (): Promise<void> => {
-    try {
-      const response = await fetch(`/api/boards/${boardId}/invariants`);
-      if (!response.ok) throw new Error(`Could not load the rules: ${String(response.status)}`);
-      setRules((await response.json()) as Invariant[]);
-
-      // A shortlist that will not load must not hide the rules that did.
-      const suggested = await fetch(`/api/boards/${boardId}/invariant-proposals`);
-      if (suggested.ok) {
-        const body: unknown = await suggested.json();
-        // Shape-checked rather than trusted. A server older than this bundle
-        // has no such route, and whatever answers instead must not be able to
-        // break the panel that lists the rules.
-        setProposals(Array.isArray(body) ? body.filter(isProposal) : []);
-      }
-    } catch (cause) {
-      setError((cause as Error).message);
+    const listed = await api.invariants<Invariant>(boardId);
+    if (listed === null) {
+      setError('Could not load the project rules.');
+      return;
     }
+    setRules(listed);
+
+    // A shortlist that will not load must not hide the rules that did, and a
+    // server older than this bundle answers with something else entirely - so
+    // the shape is checked rather than trusted.
+    const suggested = await api.invariantProposals<InvariantProposal>(boardId);
+    setProposals((suggested ?? []).filter(isProposal));
   }, [boardId]);
 
   useEffect(() => {
@@ -76,17 +73,12 @@ export function Invariants({
     if (text === '') return;
 
     setError(null);
-    const response = await fetch(`/api/boards/${boardId}/invariants`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ statement: text }),
-    });
-
-    if (!response.ok) {
+    try {
+      await api.addInvariant(boardId, text);
+    } catch (cause) {
       // The duplicate refusal is worth showing rather than swallowing: it is
       // the drift this screen exists to prevent, arriving by a shorter route.
-      const body = (await response.json().catch(() => ({}))) as { error?: string };
-      setError(body.error ?? `Could not add that rule: ${String(response.status)}`);
+      setError((cause as Error).message);
       return;
     }
 
@@ -102,16 +94,17 @@ export function Invariants({
    */
   async function accept(statement: string): Promise<void> {
     setError(null);
-    await fetch(`/api/boards/${boardId}/invariants`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ statement }),
-    });
+    try {
+      await api.addInvariant(boardId, statement);
+    } catch (cause) {
+      setError((cause as Error).message);
+      return;
+    }
     await load();
   }
 
   async function remove(id: string): Promise<void> {
-    await fetch(`/api/boards/${boardId}/invariants/${id}`, { method: 'DELETE' });
+    await api.removeInvariant(boardId, id);
     await load();
   }
 

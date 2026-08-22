@@ -596,10 +596,10 @@ export function CardDetail({
       })
       .then((report) => {
         setMergeReport(report);
-        return fetch(`/api/cards/${cardId}/detail`);
+        return api.cardDetail<Detail>(cardId);
       })
-      .then(async (response) => {
-        if (response.ok) setDetail((await response.json()) as Detail);
+      .then((refreshed) => {
+        if (refreshed !== null) setDetail(refreshed);
       })
       .catch((cause: Error & { refusal?: { summary: string; reach: string } }) => {
         // A refusal is not an error to report at the top of the pane: it is the
@@ -658,10 +658,10 @@ export function CardDetail({
       .then((result) => {
         setMergeReport(null);
         setResolution(result.detail);
-        return fetch(`/api/cards/${cardId}/detail`);
+        return api.cardDetail<Detail>(cardId);
       })
-      .then(async (response) => {
-        if (response.ok) setDetail((await response.json()) as Detail);
+      .then((refreshed) => {
+        if (refreshed !== null) setDetail(refreshed);
       })
       .catch((cause: Error) => setResolution(cause.message))
       .finally(() => setMerging(false));
@@ -680,9 +680,9 @@ export function CardDetail({
 
       void api
         .judgeEntry(target.entryId, { status })
-        .then(() => fetch(`/api/cards/${cardId}/brief`))
-        .then(async (response) => {
-          if (response.ok) setBrief((await response.json()) as Brief);
+        .then(() => api.cardBrief<Brief>(cardId))
+        .then((refreshed) => {
+          if (refreshed !== null) setBrief(refreshed);
         })
         .catch((cause: Error) => setError(cause.message));
     },
@@ -698,10 +698,9 @@ export function CardDetail({
    */
   const copyMarkdown = useCallback(async (): Promise<void> => {
     try {
-      const response = await fetch(`/api/cards/${cardId}/brief.md`);
-      if (!response.ok) throw new Error(`Could not export the brief: ${String(response.status)}`);
-
-      await navigator.clipboard.writeText(await response.text());
+      // Text, not JSON, so it does not go through the typed client. Named on
+      // the client anyway, so every url this component knows lives in one file.
+      await navigator.clipboard.writeText(await api.cardBriefMarkdown(cardId));
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2_000);
     } catch (cause) {
@@ -727,40 +726,31 @@ export function CardDetail({
 
     async function load(): Promise<void> {
       try {
-        const [detailResponse, briefResponse, subagentResponse, proposalResponse] =
-          await Promise.all([
-            fetch(`/api/cards/${cardId}/detail`),
-            fetch(`/api/cards/${cardId}/brief`),
-            fetch(`/api/cards/${cardId}/subagents`),
-            fetch(`/api/cards/${cardId}/guardrail-proposals`),
-          ]);
+        // Every one of these is shape-checked by the client and answers null
+        // rather than throwing. Only the detail is load-bearing; the rest are
+        // sections, and a card that will not open is worse than a card missing
+        // one of them.
+        const [detail, brief, subagentList, shortlist] = await Promise.all([
+          api.cardDetail<Detail>(cardId),
+          api.cardBrief<Brief>(cardId),
+          api.cardSubagents<Subagent>(cardId),
+          api.cardProposals<GuardrailProposal>(cardId),
+        ]);
 
-        // Same treatment as the subagents below: a shortlist that will not
-        // load is less bad than a card that will not open.
-        if (proposalResponse.ok && !cancelled) {
-          const shortlist: unknown = await proposalResponse.json();
-          if (Array.isArray(shortlist)) setProposals(shortlist as GuardrailProposal[]);
-        }
+        if (cancelled) return;
 
-        // Nothing here blocks the card: a subagent view that will not load is
-        // less bad than a card that will not open, so the shape is checked
-        // rather than assumed.
-        if (subagentResponse.ok && !cancelled) {
-          const body: unknown = await subagentResponse.json();
-          if (Array.isArray(body)) setSubagents(body as Subagent[]);
-        }
+        if (shortlist !== null) setProposals(shortlist);
+        if (subagentList !== null) setSubagents(subagentList);
 
-        if (!detailResponse.ok) throw new Error(`Could not load card: ${detailResponse.status}`);
-        const body = (await detailResponse.json()) as Detail;
-        if (!cancelled) setDetail(body);
+        if (detail === null) throw new Error('Could not load this card.');
+        setDetail(detail);
 
-        // A brief that will not load must not hide the rest of the card.
-        if (briefResponse.ok && !cancelled) setBrief((await briefResponse.json()) as Brief);
+        if (brief !== null) setBrief(brief);
 
         // Marked seen only after the brief has been computed. The other order
         // makes "since you last looked" permanently empty, because opening the
         // card would move the line the brief is measured against.
-        await fetch(`/api/cards/${cardId}/seen`, { method: 'POST' });
+        await api.markSeenQuietly(cardId);
       } catch (cause) {
         if (!cancelled) setError((cause as Error).message);
       }
@@ -1271,12 +1261,8 @@ export function CardDetail({
                         type="button"
                         className="text-left text-dim hover:text-text"
                         onClick={() => {
-                          void fetch(
-                            `/api/cards/${cardId}/diff?path=${encodeURIComponent(file.path)}`,
-                          )
-                            .then(async (response) =>
-                              response.ok ? await response.text() : 'That file could not be read.',
-                            )
+                          void api
+                            .cardDiff(cardId, file.path)
                             .then((text) => setOpenDiff({ path: file.path, text }))
                             .catch((cause: Error) => setError(cause.message));
                         }}

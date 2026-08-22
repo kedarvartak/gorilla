@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
 
+import { api } from './api.js';
+
 /**
  * The run timeline (doc 09, screen 3).
  *
@@ -50,13 +52,16 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
       if (eventFilter !== '') params.set('event', eventFilter);
       if (toolFilter !== '') params.set('tool', toolFilter);
 
-      const response = await fetch(`/api/runs/${runId}/timeline?${params.toString()}`);
-      const body = (await response.json()) as {
+      const body = await api.runTimeline<{
         total: number;
         entries: Entry[];
         nextAfter: number;
         hasMore: boolean;
-      };
+      }>(runId, params);
+
+      // Null rather than a throw: a timeline page that will not load leaves
+      // the pane showing what it already had, which beats emptying it.
+      if (body === null) return;
 
       setTotal(body.total);
       setHasMore(body.hasMore);
@@ -68,9 +73,9 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
 
   useEffect(() => {
     void load(0, true);
-    void fetch(`/api/runs/${runId}/facets`)
-      .then((response) => response.json() as Promise<Facets>)
-      .then(setFacets);
+    void api.runFacets<Facets>(runId).then((facets) => {
+      if (facets !== null) setFacets(facets);
+    });
   }, [load, runId]);
 
   const compactions = entries.filter((entry) => entry.event === 'PreCompact').length;

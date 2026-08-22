@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactElement } from 'react';
 
+import { api } from './api.js';
+
 /**
  * The morning digest (doc 18, U6).
  *
@@ -146,9 +148,13 @@ export function Digest({
 
     void (async () => {
       try {
-        const response = await fetch(`/api/boards/${boardId}/digest`);
-        if (!response.ok) throw new Error(`Could not load the digest: ${response.status}`);
-        if (!cancelled) setBody((await response.json()) as DigestBody);
+        const digest = await api.digest<DigestBody>(boardId);
+        if (cancelled) return;
+
+        // Null covers both a failure and a shape this bundle does not
+        // recognise, and the operator can act on neither differently.
+        if (digest === null) setError('Could not load the digest.');
+        else setBody(digest);
       } catch (cause) {
         if (!cancelled) setError((cause as Error).message);
       }
