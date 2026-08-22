@@ -6,6 +6,7 @@ import { blockersFor } from '../cards/eligibility.js';
 import { assessStaleness, mergedPaths } from '../cards/staleness.js';
 import { boards, cards as cardsTable, runs } from '../db/schema.js';
 import { describeCost, type RunCost } from '../launcher/cost.js';
+import { diffSummary, UNREADABLE } from '../worktree/diff.js';
 import { cardsTouching, claimedButNotInGit, subsystemsForCard } from '../cards/subsystems.js';
 import { getCard } from './cards.js';
 import { buildMechanicalLedger } from '../ledger/mechanical.js';
@@ -161,6 +162,13 @@ export function registerCardDetailRoutes(app: FastifyInstance, context: AppConte
                 git: await manager?.statusOf(card.id),
               },
         mergeTarget: board === undefined ? null : await mergeTargetFor(board.cwd),
+        // What the branch actually changed (T30). Reviewing a card used to
+        // mean leaving the board for a terminal, which is where the operator
+        // loses the context the board exists to hold.
+        diff:
+          board === undefined || workspace === undefined
+            ? UNREADABLE
+            : await diffSummary(board.cwd, workspace.branch),
         verifyCommand: guardrails.verify ?? null,
         // What the board checked, rather than what the agent claimed.
         verify: verify ?? null,
