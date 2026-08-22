@@ -66,8 +66,15 @@ the board just because it began outside it.
 | [15-phase-0-verification.md](15-phase-0-verification.md) | T10: the Phase 0 exit-gate report, with the compaction loop confirmed end to end |
 | [16-phase-1-tasks.md](16-phase-1-tasks.md) | The twelve Phase 1 tasks: plan, dispatch, observe - with no synthesis |
 | [17-phase-1-verification.md](17-phase-1-verification.md) | P12: the Phase 1 exit-gate report, and the two defects only an end-to-end run could find |
+| [18-unattended-workflow.md](18-unattended-workflow.md) | The overnight workflow: isolation, budgets, retries, windows, and being told when it stops |
+| [19-status.md](19-status.md) | What exists, what does not, and what has never happened outside a test |
+| [20-backlog.md](20-backlog.md) | Every task, numbered, with its status and the argument behind anything withdrawn |
 
 ## Reading order
+
+Doc 20 is the working reference: every numbered task, what would have to be true
+to call it done, and why five of them were withdrawn. Doc 19 says what is built;
+doc 20 says what was decided.
 
 For approval purposes, read 01, 04, 08, and 12. Those four carry the argument. The rest
 is implementation detail that follows from them.

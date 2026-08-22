@@ -18,8 +18,9 @@ paths have passing tests but have never run in anger - which
 [docs/19-status.md](docs/19-status.md) lists separately, because "the tests pass" and
 "this has worked once for real" are different claims.
 
-Start with [docs/00-overview.md](docs/00-overview.md) for what it is for, or
-[docs/19-status.md](docs/19-status.md) for what exists today.
+Start with [docs/00-overview.md](docs/00-overview.md) for what it is for,
+[docs/19-status.md](docs/19-status.md) for what exists today, or
+[docs/20-backlog.md](docs/20-backlog.md) for every task and its status.
 
 ## Using it
 
