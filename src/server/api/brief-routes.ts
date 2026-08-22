@@ -5,6 +5,7 @@ import type { AppContext } from '../app.js';
 import { boards, ledgerEntries, runs } from '../db/schema.js';
 import { getCard, listCards } from './cards.js';
 import { badRequest, conflict, notFound } from './errors.js';
+import { createCard } from './cards.js';
 import { buildMechanicalLedger } from '../ledger/mechanical.js';
 import { checkReality } from '../ledger/reality.js';
 import { buildBrief, renderBrief, type Brief } from '../brief/brief.js';
@@ -27,7 +28,7 @@ import {
 import { isOperatorStatus, OPERATOR_STATUSES } from '../ledger/entries.js';
 import { surprisesFor } from '../ledger/surprises.js';
 import { acknowledgedPaths, PATH_ACK_PREFIX } from '../review/gate.js';
-import { fail, publish } from './shared.js';
+import { fail, publish, present } from './shared.js';
 
 /**
  * The brief (U5, W1).
@@ -134,6 +135,73 @@ export function registerBriefRoutes(app: FastifyInstance, context: AppContext): 
       publish(context, 'ledger-judged', { entryId, status });
 
       return reply.send(updated);
+    },
+  );
+
+  /**
+   * Turns a rejection into the card that addresses it (T38).
+   *
+   * Rejecting an entry says the run got something wrong. That verdict went
+   * nowhere: it stayed on the entry, the work it implied lived in the
+   * operator's head, and the next run was told the claim was overruled without
+   * being told what to do instead.
+   *
+   * The new card carries the entry's statement and names where it came from,
+   * because a card saying "fix the thing" with no provenance is a card nobody
+   * can act on in a fortnight.
+   */
+  app.post<{ Params: { entryId: string }; Body: { title?: unknown } }>(
+    '/api/ledger/:entryId/follow-up',
+    (request, reply) => {
+      const { entryId } = request.params;
+
+      const entry = storedEntryById(context.database, entryId);
+      if (entry === undefined) return notFound(reply, `No such ledger entry: ${entryId}`);
+
+      const owner = context.database.db
+        .select()
+        .from(ledgerEntries)
+        .where(eq(ledgerEntries.id, entryId))
+        .get();
+
+      if (owner === undefined) return notFound(reply, `No such ledger entry: ${entryId}`);
+
+      // Only from a verdict. Raising a card from an entry nobody has read
+      // would let the ledger put work on the board by itself, which is the one
+      // thing doc 12 does not allow it to do.
+      if (entry.operatorStatus !== 'rejected' && entry.operatorStatus !== 'corrected') {
+        return conflict(
+          reply,
+          "A follow-up comes from an entry you have rejected or corrected. An unreviewed entry is the model's claim, not a decision.",
+          'entryId',
+        );
+      }
+
+      try {
+        const source = getCard(context.database, owner.cardId);
+        const title =
+          typeof request.body?.title === 'string' && request.body.title.trim() !== ''
+            ? request.body.title.trim()
+            : `Follow up: ${entry.statement}`;
+
+        const card = createCard(context.database, {
+          boardId: source.boardId,
+          title,
+          body: [
+            `Raised from a ${String(entry.operatorStatus)} entry on "${source.title}".`,
+            '',
+            `The entry said: ${entry.statement}`,
+            '',
+            'Written by the board when the entry was judged. What to do about it is not recorded here, because nobody has said yet.',
+          ].join('\n'),
+          fromEntryId: entryId,
+        });
+
+        publish(context, 'card-created', present(card));
+        return reply.code(201).send(present(card));
+      } catch (error) {
+        return fail(reply, error);
+      }
     },
   );
 

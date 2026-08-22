@@ -37,6 +37,8 @@ export interface CreateCardInput {
   readonly agentModel?: string | null;
   readonly agentEffort?: string | null;
   readonly permissionMode?: string | null;
+  /** The ledger entry this card was raised to address (T38). */
+  readonly fromEntryId?: string | null;
   readonly synthesisModel?: string | null;
   readonly priority?: CardPriority;
   readonly planId?: string | null;
@@ -102,6 +104,7 @@ export function createCard(handle: DatabaseHandle, input: CreateCardInput): Card
       ),
       goalCondition: input.goalCondition ?? null,
       guardrails: serialiseGuardrails(parseGuardrails(JSON.stringify(input.guardrails ?? {}))),
+      fromEntryId: input.fromEntryId ?? null,
       agentModel: input.agentModel ?? null,
       agentEffort: input.agentEffort ?? null,
       permissionMode: input.permissionMode ?? null,

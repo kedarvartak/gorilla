@@ -254,3 +254,52 @@ describe('promoting a judged entry into a rule', () => {
     expect(refused.body.field).toBe('target');
   });
 });
+
+describe('raising a card from a rejection', () => {
+  it('creates one carrying the entry and where it came from', async () => {
+    const entryId = entry({ statement: 'The exporter is only called from the CLI.' });
+    await json('POST', `/api/ledger/${entryId}/status`, { status: 'rejected' });
+
+    const created = await json<{ id: string; title: string; body: string }>(
+      'POST',
+      `/api/ledger/${entryId}/follow-up`,
+    );
+
+    expect(created.status).toBe(201);
+    // A card saying "fix the thing" with no provenance is a card nobody can
+    // act on in a fortnight.
+    expect(created.body.body).toContain('The exporter is only called from the CLI.');
+    expect(created.body.body).toContain('rejected entry');
+  });
+
+  it('takes a title when one is given', async () => {
+    const entryId = entry({ statement: 'Something wrong.' });
+    await json('POST', `/api/ledger/${entryId}/status`, { status: 'rejected' });
+
+    const created = await json<{ title: string }>('POST', `/api/ledger/${entryId}/follow-up`, {
+      title: 'Call the exporter from the board too',
+    });
+
+    expect(created.body.title).toBe('Call the exporter from the board too');
+  });
+
+  it('refuses an entry nobody has judged', async () => {
+    const entryId = entry({ statement: 'An unreviewed claim.' });
+
+    // Raising a card from an unread entry would let the ledger put work on the
+    // board by itself, which doc 12 does not allow.
+    const refused = await json<{ code: string }>('POST', `/api/ledger/${entryId}/follow-up`);
+
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('conflict');
+  });
+
+  it('records which entry it came from', async () => {
+    const entryId = entry({ statement: 'Something wrong.' });
+    await json('POST', `/api/ledger/${entryId}/status`, { status: 'rejected' });
+
+    const created = await json<{ fromEntryId: string }>('POST', `/api/ledger/${entryId}/follow-up`);
+
+    expect(created.body.fromEntryId).toBe(entryId);
+  });
+});
