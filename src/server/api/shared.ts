@@ -1,5 +1,6 @@
 import type { FastifyReply } from 'fastify';
 import type { AppContext } from '../app.js';
+import type { ApiErrorCode } from './errors.js';
 import { describeGuardrails, parseGuardrails } from '../cards/guardrails.js';
 import { type Card } from '../db/schema.js';
 import { CardError, PRIORITIES, isPriority, type CardPriority } from './cards.js';
@@ -12,14 +13,27 @@ import { CardError, PRIORITIES, isPriority, type CardPriority } from './cards.js
  * and `present` in particular decides what an interface is allowed to believe
  * about a guardrail.
  */
+/**
+ * The one refusal path that does not start in a handler: it begins as a thrown
+ * `CardError`. It ends in the same shape as the rest (T8) - the status the
+ * error chose, plus a code derived from it - so nothing downstream has to know
+ * which of the two paths a refusal arrived by.
+ */
 export function fail(reply: FastifyReply, error: unknown): FastifyReply {
   if (error instanceof CardError) {
     return reply.code(error.status).send({
       error: error.message,
+      code: codeForStatus(error.status),
       ...(error.field === undefined ? {} : { field: error.field }),
     });
   }
   throw error;
+}
+
+function codeForStatus(status: number): ApiErrorCode {
+  if (status === 404) return 'not-found';
+  if (status === 409) return 'conflict';
+  return 'invalid-field';
 }
 
 /** Guardrails are stored as JSON; the interface wants them parsed and described. */

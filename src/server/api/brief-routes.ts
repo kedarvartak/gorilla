@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../app.js';
 import { boards, ledgerEntries, runs } from '../db/schema.js';
 import { getCard, listCards } from './cards.js';
+import { badRequest, conflict, notFound } from './errors.js';
 import { buildMechanicalLedger } from '../ledger/mechanical.js';
 import { checkReality } from '../ledger/reality.js';
 import { buildBrief, renderBrief, type Brief } from '../brief/brief.js';
@@ -98,15 +99,16 @@ export function registerBriefRoutes(app: FastifyInstance, context: AppContext): 
       const status = request.body?.status;
 
       if (!isOperatorStatus(status)) {
-        return reply.code(400).send({
-          error: `Status must be one of ${OPERATOR_STATUSES.join(', ')}.`,
-          field: 'status',
-        });
+        return badRequest(
+          reply,
+          `Status must be one of ${OPERATOR_STATUSES.join(', ')}.`,
+          'status',
+        );
       }
 
       const existing = storedEntryById(context.database, entryId);
       if (existing === undefined) {
-        return reply.code(404).send({ error: `No such ledger entry: ${entryId}` });
+        return notFound(reply, `No such ledger entry: ${entryId}`);
       }
 
       const statement = request.body?.statement;
@@ -114,10 +116,11 @@ export function registerBriefRoutes(app: FastifyInstance, context: AppContext): 
       if (status === 'corrected' && typeof statement !== 'string') {
         // Correcting without saying what it should be would leave the entry
         // marked as fixed and still wrong, which is worse than leaving it.
-        return reply.code(400).send({
-          error: 'A corrected entry needs the statement it should read instead.',
-          field: 'statement',
-        });
+        return badRequest(
+          reply,
+          'A corrected entry needs the statement it should read instead.',
+          'statement',
+        );
       }
 
       setOperatorStatus(
@@ -149,15 +152,16 @@ export function registerBriefRoutes(app: FastifyInstance, context: AppContext): 
       const path = request.body?.path;
 
       if (typeof path !== 'string' || path.trim() === '') {
-        return reply.code(400).send({ error: 'Name the path you looked at.', field: 'path' });
+        return badRequest(reply, 'Name the path you looked at.', 'path');
       }
 
       const status = request.body?.status ?? 'accepted';
       if (!isOperatorStatus(status) || status === 'unreviewed') {
-        return reply.code(400).send({
-          error: `Status must be one of ${OPERATOR_STATUSES.filter((value) => value !== 'unreviewed').join(', ')}.`,
-          field: 'status',
-        });
+        return badRequest(
+          reply,
+          `Status must be one of ${OPERATOR_STATUSES.filter((value) => value !== 'unreviewed').join(', ')}.`,
+          'status',
+        );
       }
 
       try {
@@ -178,9 +182,10 @@ export function registerBriefRoutes(app: FastifyInstance, context: AppContext): 
         .at(-1);
 
       if (run === undefined) {
-        return reply.code(409).send({
-          error: 'This card has no run, so there is nothing recorded to acknowledge against.',
-        });
+        return conflict(
+          reply,
+          'This card has no run, so there is nothing recorded to acknowledge against.',
+        );
       }
 
       const id = randomUUID();

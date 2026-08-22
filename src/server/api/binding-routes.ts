@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../app.js';
 import { claim, claimableCards, mergeCard } from '../binding/attach.js';
+import { badRequest } from './errors.js';
 import { fail, present, publish } from './shared.js';
 
 /** Attached-mode binding (P10). */
@@ -10,10 +11,10 @@ export function registerBindingRoutes(app: FastifyInstance, context: AppContext)
     const cardId = request.body?.cardId;
 
     if (typeof sessionId !== 'string') {
-      return reply.code(400).send({ error: 'A claim needs a session id.', field: 'sessionId' });
+      return badRequest(reply, 'A claim needs a session id.', 'sessionId');
     }
     if (typeof cardId !== 'string') {
-      return reply.code(400).send({ error: 'A claim needs a card id.', field: 'cardId' });
+      return badRequest(reply, 'A claim needs a card id.', 'cardId');
     }
 
     try {
@@ -30,7 +31,7 @@ export function registerBindingRoutes(app: FastifyInstance, context: AppContext)
     (request, reply) => {
       const into = request.body?.into;
       if (typeof into !== 'string') {
-        return reply.code(400).send({ error: 'Name the card to merge into.', field: 'into' });
+        return badRequest(reply, 'Name the card to merge into.', 'into');
       }
 
       try {

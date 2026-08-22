@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../app.js';
 import { boards } from '../db/schema.js';
+import { apiError, badRequest, conflict, notFound } from './errors.js';
 import { fail } from './shared.js';
 import { fileDiff } from '../worktree/diff.js';
 import { getCard } from './cards.js';
@@ -40,17 +41,13 @@ export function registerDispatchRoutes(app: FastifyInstance, context: AppContext
     const concurrency = request.body?.concurrency;
     const policy = request.body?.policy;
     if (mode !== undefined && mode !== 'manual' && mode !== 'automatic') {
-      return reply.code(400).send({ error: 'Mode must be manual or automatic.', field: 'mode' });
+      return badRequest(reply, 'Mode must be manual or automatic.', 'mode');
     }
     if (policy !== undefined && policy !== 'review' && policy !== 'unattended') {
-      return reply
-        .code(400)
-        .send({ error: 'Policy must be review or unattended.', field: 'policy' });
+      return badRequest(reply, 'Policy must be review or unattended.', 'policy');
     }
     if (concurrency !== undefined && (!Number.isInteger(concurrency) || concurrency < 1)) {
-      return reply
-        .code(400)
-        .send({ error: 'Concurrency must be a positive integer.', field: 'concurrency' });
+      return badRequest(reply, 'Concurrency must be a positive integer.', 'concurrency');
     }
 
     if (concurrency !== undefined) context.dispatcher.setConcurrency(boardId, concurrency);
@@ -69,7 +66,7 @@ export function registerDispatchRoutes(app: FastifyInstance, context: AppContext
         .where(eq(boards.id, request.params.boardId))
         .get();
 
-      if (board === undefined) return reply.code(404).send({ error: 'No such board.' });
+      if (board === undefined) return notFound(reply, 'No such board.');
 
       const manager = context.dispatcher.worktreesFor(board.cwd);
       const workspaces = await Promise.all(
@@ -92,7 +89,7 @@ export function registerDispatchRoutes(app: FastifyInstance, context: AppContext
         .where(eq(boards.id, request.params.boardId))
         .get();
 
-      if (board === undefined) return reply.code(404).send({ error: 'No such board.' });
+      if (board === undefined) return notFound(reply, 'No such board.');
 
       // Removal is an operator action. A worktree holds a night of an agent's
       // work and is never cleaned up automatically (doc 18).
@@ -100,9 +97,7 @@ export function registerDispatchRoutes(app: FastifyInstance, context: AppContext
         .worktreesFor(board.cwd)
         .remove(request.params.cardId, { force: request.query.force === 'true' });
 
-      return result.ok
-        ? reply.send({ removed: true })
-        : reply.code(409).send({ error: result.reason });
+      return result.ok ? reply.send({ removed: true }) : conflict(reply, result.reason);
     },
   );
 
@@ -118,7 +113,7 @@ export function registerDispatchRoutes(app: FastifyInstance, context: AppContext
     async (request, reply) => {
       const path = request.query.path;
       if (path === undefined || path.trim() === '') {
-        return reply.code(400).send({ error: 'Name the file to diff.', field: 'path' });
+        return badRequest(reply, 'Name the file to diff.', 'path');
       }
 
       const card = getCard(context.database, request.params.cardId);
@@ -128,7 +123,7 @@ export function registerDispatchRoutes(app: FastifyInstance, context: AppContext
         .where(eq(boards.id, card.boardId))
         .get();
 
-      if (board === undefined) return reply.code(404).send({ error: 'No such board.' });
+      if (board === undefined) return notFound(reply, 'No such board.');
 
       const workspace = context.dispatcher.worktreesFor(board.cwd).workspaceFor(card.id);
       const diff = await fileDiff(board.cwd, workspace?.branch ?? null, path);
@@ -136,9 +131,10 @@ export function registerDispatchRoutes(app: FastifyInstance, context: AppContext
       // Null means the branch could not be read, which for a merged card is
       // the ordinary case rather than an error worth a 500.
       if (diff === null) {
-        return reply.code(404).send({
-          error: 'That branch could not be read. A merged card has usually had its branch removed.',
-        });
+        return notFound(
+          reply,
+          'That branch could not be read. A merged card has usually had its branch removed.',
+        );
       }
 
       return reply.type('text/plain; charset=utf-8').send(diff);
@@ -169,7 +165,9 @@ export function registerDispatchRoutes(app: FastifyInstance, context: AppContext
           // The dispatcher records why in the halt state rather than throwing,
           // so the reason survives for the operator to read.
           return reply.code(409).send({
-            error: 'The card could not be dispatched.',
+            ...apiError('conflict', 'The card could not be dispatched.'),
+            // The dispatcher's own state travels with the refusal, because the
+            // reason it declined is in there and nowhere else.
             state: context.dispatcher.state(request.params.boardId),
           });
         }
@@ -193,7 +191,7 @@ export function registerDispatchRoutes(app: FastifyInstance, context: AppContext
     (request, reply) => {
       const note = request.body?.note;
       if (note !== undefined && note !== null && typeof note !== 'string') {
-        return reply.code(400).send({ error: 'A retry note must be text.', field: 'note' });
+        return badRequest(reply, 'A retry note must be text.', 'note');
       }
 
       const retried = context.dispatcher.retry(
@@ -206,7 +204,7 @@ export function registerDispatchRoutes(app: FastifyInstance, context: AppContext
       // overwrite each other, and the damage surfaces at merge time.
       return retried
         ? reply.code(202).send(context.dispatcher.state(request.params.boardId))
-        : reply.code(409).send({ error: 'That card is still running.' });
+        : conflict(reply, 'That card is still running.');
     },
   );
 

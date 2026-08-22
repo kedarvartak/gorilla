@@ -45,7 +45,7 @@ Two facts that must agree, currently agreeing only by luck.
 | T5 | Migration ladder test | Every migration applies to an empty database and to the previous version's database, asserted in CI. | merged |
 | T6 | Schema drift check | CI fails when the Drizzle schema and the applied migrations disagree. | merged |
 | T7 | Dispatch idempotency constraint | A card cannot be in flight twice, enforced by the database rather than by call order. | merged |
-| T8 | Typed error bodies | One helper produces every 400/404/409 body, with a discriminated type the interface can switch on. | open |
+| T8 | Typed error bodies | One helper produces every 400/404/409 body, with a discriminated code the interface can switch on. | merged |
 
 ## B. Structure
 

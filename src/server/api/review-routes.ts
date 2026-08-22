@@ -4,6 +4,7 @@ import type { AppContext } from '../app.js';
 import { parseGuardrails } from '../cards/guardrails.js';
 import { boards, cards as cardsTable, columns, ledgerEntries } from '../db/schema.js';
 import { getCard, moveCard, updateCard } from './cards.js';
+import { apiError, badRequest, conflict, notFound } from './errors.js';
 import { markPromoted, storedEntryById } from '../ledger/store.js';
 import { promoteToGuardrail, PromotionError } from '../ledger/promote.js';
 import { proposeGuardrails } from '../ledger/propose.js';
@@ -32,14 +33,14 @@ export function registerReviewRoutes(app: FastifyInstance, context: AppContext):
       .where(eq(boards.id, request.params.boardId))
       .get();
 
-    if (board === undefined) return reply.code(404).send({ error: 'No such board.' });
+    if (board === undefined) return notFound(reply, 'No such board.');
 
     const cardIds = Array.isArray(request.body?.cardIds)
       ? (request.body.cardIds as unknown[]).filter((id): id is string => typeof id === 'string')
       : [];
 
     if (cardIds.length === 0) {
-      return reply.code(400).send({ error: 'Name the cards to merge.', field: 'cardIds' });
+      return badRequest(reply, 'Name the cards to merge.', 'cardIds');
     }
 
     const manager = context.dispatcher.worktreesFor(board.cwd);
@@ -65,7 +66,9 @@ export function registerReviewRoutes(app: FastifyInstance, context: AppContext):
 
     if (cards.length === 0) {
       return reply.code(409).send({
-        error: 'None of those cards has a worktree to merge.',
+        ...apiError('conflict', 'None of those cards has a worktree to merge.'),
+        // Which ones, because the operator asked about several and needs to
+        // know which of them the board could not find.
         missing,
       });
     }
@@ -83,7 +86,13 @@ export function registerReviewRoutes(app: FastifyInstance, context: AppContext):
         // "nothing outstanding" would make the gate silently absent exactly
         // when the card is in a state nobody has looked at.
         return reply.code(409).send({
-          error: `Nothing was merged: the brief for "${card.title}" could not be read, so the board cannot tell whether anything on it is outstanding.`,
+          ...apiError(
+            'refused',
+            `Nothing was merged: the brief for "${card.title}" could not be read, so the board cannot tell whether anything on it is outstanding.`,
+          ),
+          // The gate states its own limits alongside the refusal. Dropping
+          // these to fit a common shape would remove the part the operator
+          // acts on.
           reach: GATE_REACH,
           blocked: [],
           outstanding: 0,
@@ -170,12 +179,13 @@ export function registerReviewRoutes(app: FastifyInstance, context: AppContext):
       .where(eq(boards.id, request.params.boardId))
       .get();
 
-    if (board === undefined) return reply.code(404).send({ error: 'No such board.' });
+    if (board === undefined) return notFound(reply, 'No such board.');
 
     if (!isMerging(board.cwd)) {
-      return reply.code(409).send({
-        error: 'This repository is not part way through a merge, so there is nothing to resolve.',
-      });
+      return conflict(
+        reply,
+        'This repository is not part way through a merge, so there is nothing to resolve.',
+      );
     }
 
     const result = await resolveConflicts({
@@ -237,7 +247,7 @@ export function registerReviewRoutes(app: FastifyInstance, context: AppContext):
 
     const entry = storedEntryById(context.database, entryId);
     if (entry === undefined) {
-      return reply.code(404).send({ error: `No such ledger entry: ${entryId}` });
+      return notFound(reply, `No such ledger entry: ${entryId}`);
     }
 
     const owner = context.database.db
@@ -246,7 +256,7 @@ export function registerReviewRoutes(app: FastifyInstance, context: AppContext):
       .where(eq(ledgerEntries.id, entryId))
       .get();
 
-    if (owner === undefined) return reply.code(404).send({ error: 'No such ledger entry.' });
+    if (owner === undefined) return notFound(reply, 'No such ledger entry.');
 
     try {
       const card = getCard(context.database, owner.cardId);
@@ -273,7 +283,7 @@ export function registerReviewRoutes(app: FastifyInstance, context: AppContext):
       });
     } catch (error) {
       if (error instanceof PromotionError) {
-        return reply.code(400).send({ error: error.message, field: error.field });
+        return badRequest(reply, error.message, error.field);
       }
       return fail(reply, error);
     }
@@ -289,7 +299,7 @@ export function registerReviewRoutes(app: FastifyInstance, context: AppContext):
         .where(eq(boards.id, request.params.boardId))
         .get();
 
-      if (board === undefined) return reply.code(404).send({ error: 'No such board.' });
+      if (board === undefined) return notFound(reply, 'No such board.');
 
       const manager = context.dispatcher.worktreesFor(board.cwd);
 
