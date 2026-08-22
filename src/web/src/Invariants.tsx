@@ -113,12 +113,8 @@ export function Invariants({
   return (
     <Panel title="Project rules" onClose={onClose}>
       <header className="flex items-baseline gap-3 border-b border-line bg-panel px-4 py-2.5">
-        <h2 className="font-mono text-[13px] uppercase tracking-wider text-accent">
-          Project rules
-        </h2>
-        <span className="font-mono text-[11px] text-dim">
-          Handed to every card this board dispatches
-        </span>
+        <h2 className="text-[13px] font-semibold tracking-tight text-text">Project rules</h2>
+        <span className="text-[11px] text-dim">Handed to every card this board dispatches</span>
         <button
           type="button"
           className="ml-auto rounded border border-line px-2 py-0.5 text-dim hover:text-text"
@@ -128,94 +124,94 @@ export function Invariants({
         </button>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        <div className="mb-3 flex gap-2">
-          <input
-            className="flex-1 rounded border border-line bg-panel-2 px-2 py-1 text-text placeholder:text-dim"
-            placeholder="A rule that is true of every card on this board"
-            aria-label="New project rule"
-            value={statement}
-            onChange={(changed) => setStatement(changed.target.value)}
-            onKeyDown={(key) => {
-              if (key.key === 'Enter') void add();
-            }}
-          />
-          <button
-            type="button"
-            className="rounded border border-line bg-panel-2 px-2 py-1 text-text hover:border-dim"
-            onClick={() => void add()}
-          >
-            Add
-          </button>
-        </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+        <div className="mx-auto w-full max-w-3xl">
+          <div className="mb-3 flex gap-2">
+            <input
+              className="flex-1 rounded border border-line bg-panel-2 px-2 py-1 text-text placeholder:text-dim"
+              placeholder="A rule that is true of every card on this board"
+              aria-label="New project rule"
+              value={statement}
+              onChange={(changed) => setStatement(changed.target.value)}
+              onKeyDown={(key) => {
+                if (key.key === 'Enter') void add();
+              }}
+            />
+            <button
+              type="button"
+              className="rounded border border-line bg-panel-2 px-2 py-1 text-text hover:border-dim"
+              onClick={() => void add()}
+            >
+              Add
+            </button>
+          </div>
 
-        {error !== null ? <p className="mb-3 text-warn">{error}</p> : null}
+          {error !== null ? <p className="mb-3 text-warn">{error}</p> : null}
 
-        {rules !== null && rules.length === 0 ? (
-          // Said plainly. An empty list here is a legitimate state, not a
-          // setup step the operator has failed to complete.
-          <p className="text-dim">
-            No project rules yet. Every card carries only its own guardrails.
-          </p>
-        ) : null}
+          {rules !== null && rules.length === 0 ? (
+            // Said plainly. An empty list here is a legitimate state, not a
+            // setup step the operator has failed to complete.
+            <p className="text-dim">
+              No project rules yet. Every card carries only its own guardrails.
+            </p>
+          ) : null}
 
-        {proposals.length === 0 ? null : (
-          <div className="mb-4">
-            <h3 className="mb-1.5 font-mono text-[11px] uppercase tracking-wider text-dim">
-              Already true of several cards ({proposals.length})
-            </h3>
-            {/* A rule written onto three cards is one project rule nobody has
+          {proposals.length === 0 ? null : (
+            <div className="mb-4">
+              <h3 className="mb-1.5 eyebrow">Already true of several cards ({proposals.length})</h3>
+              {/* A rule written onto three cards is one project rule nobody has
                 written down. Left that way it drifts: the fourth card gets a
                 different wording and the fifth gets none at all. */}
-            <ul className="flex flex-col gap-1.5">
-              {proposals.map((proposal) => (
-                <li
-                  key={proposal.statement}
-                  className="rounded border border-dashed border-line bg-panel px-3 py-2"
-                >
-                  <div className="text-text">{proposal.statement}</div>
-                  <div className="font-mono text-[11px] text-dim">
-                    {/* Named, because the claim is falsifiable and the
-                        operator may disagree with it. */}
-                    {proposal.cards.map((card) => card.title).join(', ')}
-                  </div>
-                  <button
-                    type="button"
-                    className="mt-1 rounded border border-line px-2 py-0.5 font-mono text-[11px] text-dim hover:text-text"
-                    onClick={() => void accept(proposal.statement)}
+              <ul className="flex flex-col gap-1.5">
+                {proposals.map((proposal) => (
+                  <li
+                    key={proposal.statement}
+                    className="rounded border border-dashed border-line bg-panel px-3 py-2"
                   >
-                    make it a project rule
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+                    <div className="text-text">{proposal.statement}</div>
+                    <div className="text-[11px] text-dim">
+                      {/* Named, because the claim is falsifiable and the
+                        operator may disagree with it. */}
+                      {proposal.cards.map((card) => card.title).join(', ')}
+                    </div>
+                    <button
+                      type="button"
+                      className="mt-1 rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-text"
+                      onClick={() => void accept(proposal.statement)}
+                    >
+                      make it a project rule
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
-        <ul className="flex flex-col gap-1.5">
-          {(rules ?? []).map((rule) => (
-            <li
-              key={rule.id}
-              className="flex items-baseline gap-3 rounded border border-line bg-panel px-3 py-2"
-            >
-              <span className="text-text">{rule.statement}</span>
-              {rule.sourceCardId === null ? null : (
-                // Where it came from, because a rule whose origin nobody knows
-                // is a rule nobody dares remove.
-                <span className="font-mono text-[11px] text-dim">
-                  learned on {rule.sourceCardId.slice(0, 8)}
-                </span>
-              )}
-              <button
-                type="button"
-                className="ml-auto rounded border border-line px-2 py-0.5 font-mono text-[11px] text-dim hover:text-warn"
-                onClick={() => void remove(rule.id)}
+          <ul className="flex flex-col gap-1.5">
+            {(rules ?? []).map((rule) => (
+              <li
+                key={rule.id}
+                className="flex items-baseline gap-3 rounded border border-line bg-panel px-3 py-2"
               >
-                remove
-              </button>
-            </li>
-          ))}
-        </ul>
+                <span className="text-text">{rule.statement}</span>
+                {rule.sourceCardId === null ? null : (
+                  // Where it came from, because a rule whose origin nobody knows
+                  // is a rule nobody dares remove.
+                  <span className="text-[11px] text-dim">
+                    learned on {rule.sourceCardId.slice(0, 8)}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="ml-auto rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-warn"
+                  onClick={() => void remove(rule.id)}
+                >
+                  remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
     </Panel>
   );

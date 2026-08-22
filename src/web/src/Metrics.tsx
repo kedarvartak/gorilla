@@ -58,8 +58,8 @@ export function Metrics({
   return (
     <Panel title="The numbers: throughput, failures and spend" onClose={onClose}>
       <header className="flex items-baseline gap-3 border-b border-line bg-panel px-4 py-2.5">
-        <h2 className="font-mono text-[13px] uppercase tracking-wider text-accent">The numbers</h2>
-        <span className="font-mono text-[11px] text-dim">Last thirty days</span>
+        <h2 className="text-[13px] font-semibold tracking-tight text-text">The numbers</h2>
+        <span className="text-[11px] text-dim">Last thirty days</span>
         <button
           type="button"
           className="ml-auto rounded border border-line px-2 py-0.5 text-dim hover:text-text"
@@ -69,63 +69,62 @@ export function Metrics({
         </button>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        {body === null ? (
-          <p className="text-dim">Reading the board.</p>
-        ) : (
-          <>
-            {/* The prose first. Every one of these carries a caveat the number
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+        <div className="mx-auto w-full max-w-3xl">
+          {body === null ? (
+            <p className="text-dim">Reading the board.</p>
+          ) : (
+            <>
+              {/* The prose first. Every one of these carries a caveat the number
                 alone would drop - a lead time over two cards, a total over the
                 days that reported a price. */}
-            {body.notes.map((note) => (
-              <p key={note} className="mb-1 text-dim">
-                {note}
-              </p>
-            ))}
+              {body.notes.map((note) => (
+                <p key={note} className="mb-1 text-dim">
+                  {note}
+                </p>
+              ))}
 
-            {body.spendByDay.length === 0 ? null : (
-              <div className="mt-4">
-                <h3 className="mb-1.5 font-mono text-[11px] uppercase tracking-wider text-dim">
-                  Tokens by day
-                </h3>
-                <ul className="flex flex-col gap-0.5 font-mono text-[11px]">
-                  {body.spendByDay.map((day) => (
-                    <li key={day.day} className="flex items-baseline gap-2">
-                      <span className="w-24 text-dim">{day.day}</span>
-                      {/* Bars rather than a chart library: the shape is the
+              {body.spendByDay.length === 0 ? null : (
+                <div className="mt-4">
+                  <h3 className="mb-1.5 eyebrow">Tokens by day</h3>
+                  <ul className="flex flex-col gap-0.5 text-[11px]">
+                    {body.spendByDay.map((day) => (
+                      <li key={day.day} className="flex items-baseline gap-2">
+                        <span className="w-24 text-dim">{day.day}</span>
+                        {/* Bars rather than a chart library: the shape is the
                           only thing being read, and one dependency for it
                           would be a dependency for one screen. */}
-                      <span
-                        className="inline-block h-2 bg-accent/40"
-                        style={{ width: `${String(Math.round((day.tokens / busiest) * 60))}%` }}
-                      />
-                      <span className="text-text">{short(day.tokens)}</span>
-                      <span className="text-dim">
-                        {/* Said as unpriced rather than as free. */}
-                        {day.costUsd === null ? 'unpriced' : `$${day.costUsd.toFixed(2)}`}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+                        <span
+                          className="inline-block h-2 bg-accent/40"
+                          style={{ width: `${String(Math.round((day.tokens / busiest) * 60))}%` }}
+                        />
+                        <span className="text-text">{short(day.tokens)}</span>
+                        <span className="text-dim">
+                          {/* Said as unpriced rather than as free. */}
+                          {day.costUsd === null ? 'unpriced' : `$${day.costUsd.toFixed(2)}`}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
-            {body.failures.length === 0 ? null : (
-              <div className="mt-4">
-                <h3 className="mb-1.5 font-mono text-[11px] uppercase tracking-wider text-dim">
-                  How runs ended
-                </h3>
-                <ul className="flex flex-col gap-0.5 font-mono text-[11px]">
-                  {body.failures.map((failure) => (
-                    <li key={failure.reason} className="text-dim">
-                      <span className="text-text">{failure.reason}</span> · {failure.cards} card(s)
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </>
-        )}
+              {body.failures.length === 0 ? null : (
+                <div className="mt-4">
+                  <h3 className="mb-1.5 eyebrow">How runs ended</h3>
+                  <ul className="flex flex-col gap-0.5 text-[11px]">
+                    {body.failures.map((failure) => (
+                      <li key={failure.reason} className="text-dim">
+                        <span className="text-text">{failure.reason}</span> · {failure.cards}{' '}
+                        card(s)
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </Panel>
   );

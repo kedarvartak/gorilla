@@ -32,6 +32,7 @@ import { Digest } from './Digest.js';
 import { Invariants } from './Invariants.js';
 import { Activity } from './Activity.js';
 import { CardTile } from './CardTile.js';
+import { Sidebar, type View } from './Sidebar.js';
 
 /**
  * The board (doc 09, screen 1).
@@ -63,28 +64,58 @@ function ColumnView({
 }): ReactElement {
   const { setNodeRef, isOver } = useDroppable({ id: `column:${column.id}` });
 
+  // Fixed widths, packed left, except the last one. Letting every column
+  // stretch meant three empty ones claimed eleven hundred pixels of nothing;
+  // letting none of them stretch left a gap of dead board to the right of the
+  // final column, which reads as a mistake rather than as space.
+  const width = column.isTerminal ? 'min-w-56 flex-1' : 'w-64 shrink-0';
+
   return (
-    <section className="flex min-w-[260px] flex-1 flex-col">
-      <header className="flex items-baseline justify-between border-b border-line px-1 pb-1.5">
-        <h2 className="font-mono text-[11px] uppercase tracking-wider text-dim">
+    <section className={`flex min-h-0 flex-col ${width}`} aria-label={column.name}>
+      <header className="flex items-baseline gap-2 px-1 pb-2">
+        {/* The flags used to print beside the name and stutter - "Ready ready",
+            "Needs review gate". What they mean now lives in the tooltip and in
+            a single dot, because the name already carries the word. */}
+        <h2
+          className="eyebrow"
+          title={
+            column.isReady
+              ? 'Cards here are eligible for dispatch'
+              : column.isReviewGate
+                ? 'Nothing merges from here while anything on it is unjudged'
+                : undefined
+          }
+        >
           {column.name}
-          {column.isReady ? <span className="ml-1.5 text-ok">ready</span> : null}
-          {column.isReviewGate ? <span className="ml-1.5 text-accent">gate</span> : null}
         </h2>
-        <span className="font-mono text-[11px] text-dim">{cards.length}</span>
+        {column.isReady ? <span className="size-1 rounded-full bg-ok" aria-hidden /> : null}
+        {column.isReviewGate ? (
+          <span className="size-1 rounded-full bg-attention" aria-hidden />
+        ) : null}
+        <span className="text-[11px] tabular-nums text-faint">{cards.length}</span>
       </header>
 
       <SortableContext items={cards.map((card) => card.id)} strategy={verticalListSortingStrategy}>
         <ul
           ref={setNodeRef}
-          className={`mt-2 flex min-h-24 flex-col gap-2 rounded p-1 ${isOver ? 'bg-panel-2' : ''}`}
+          className={`flex min-h-32 min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-lg border border-dashed p-2 transition-colors ${
+            isOver ? 'border-accent/50 bg-accent-soft/40' : 'border-transparent'
+          }`}
         >
+          {cards.length === 0 ? (
+            /* An empty column is a legitimate state, not a setup step nobody
+               completed, so it says what would put a card here. */
+            <li className="px-1 py-2 text-[11px] text-faint">
+              {column.isTerminal ? 'Nothing finished yet.' : 'Nothing here.'}
+            </li>
+          ) : null}
           {cards.map((card) => (
             <CardTile
               key={card.id}
               card={card}
               unseen={unseenSince(card)}
               runnable={runnable.has(card.id)}
+              terminal={column.isTerminal}
               onOpen={onOpen}
               onRun={onRun}
               onCancel={onCancel}
@@ -110,10 +141,9 @@ export function Board(): ReactElement {
   const [title, setTitle] = useState('');
   const [newPriority, setNewPriority] = useState<Card['priority']>('normal');
   const [openCardId, setOpenCardId] = useState<string | null>(null);
-  const [digestOpen, setDigestOpen] = useState(false);
-  const [rulesOpen, setRulesOpen] = useState(false);
-  const [planOpen, setPlanOpen] = useState(false);
-  const [numbersOpen, setNumbersOpen] = useState(false);
+  // One view at a time, named rather than four booleans that could all be
+  // true. The rail reads the same value it sets.
+  const [view, setView] = useState<View>('board');
   const [comparing, setComparing] = useState<readonly string[] | null>(null);
   const [activityOpen, setActivityOpen] = useState(false);
   const [runnable, setRunnable] = useState<ReadonlySet<string>>(new Set());
@@ -268,342 +298,288 @@ export function Board(): ReactElement {
   }
 
   return (
-    <main className="relative flex h-full flex-col">
-      <header className="flex flex-wrap items-baseline gap-x-6 gap-y-1 border-b border-line bg-panel px-4 py-2.5">
-        <h1 className="font-mono text-[13px] uppercase tracking-wider text-accent">Gorilla</h1>
-        <span className="font-mono text-[12px] text-dim">{board.name}</span>
+    <div className="flex h-full">
+      <Sidebar
+        boardName={board.name}
+        view={view}
+        live={live}
+        spent={dispatch?.spendNote ?? null}
+        activityOpen={activityOpen}
+        onSelect={setView}
+        onToggleActivity={() => setActivityOpen((open) => !open)}
+      />
 
-        <span className="text-dim">
-          stream <b className={live ? 'text-ok' : 'text-warn'}>{live ? 'live' : 'offline'}</b>
-        </span>
-        <span className="text-dim">
-          running <b className="text-text">{dispatch?.running.length ?? 0}</b>
-        </span>
-        <span className="text-dim">
-          unseen <b className={unseen > 0 ? 'text-accent' : 'text-text'}>{unseen}</b>
-        </span>
-
-        <span className="text-dim">
-          finished{' '}
-          <b className={(dispatch?.completed.length ?? 0) > 0 ? 'text-ok' : 'text-text'}>
-            {dispatch?.completed.length ?? 0}
-          </b>
-        </span>
-
-        <label className="text-dim">
-          {/* The switch for "define tasks, run them, go to sleep". Under
-              review the queue stops after every completion; unattended keeps
-              going and collects them for the morning. */}
-          policy{' '}
-          <select
-            className="rounded border border-line bg-panel-2 px-1 py-0.5 text-text"
-            value={dispatch?.policy ?? 'review'}
-            onChange={(changed) => {
-              void api
-                .setDispatch(board.id, { policy: changed.target.value })
-                .then(setDispatch)
-                .catch((cause: Error) => setError(cause.message));
-            }}
-          >
-            <option value="review">review each</option>
-            <option value="unattended">unattended</option>
-          </select>
-        </label>
-
-        <label className="text-dim">
-          agents{' '}
-          <select
-            className="rounded border border-line bg-panel-2 px-1 py-0.5 text-text"
-            value={dispatch?.concurrency ?? 1}
-            onChange={(changed) => {
-              void api
-                .setDispatch(board.id, { concurrency: Number(changed.target.value) })
-                .then(setDispatch)
-                .catch((cause: Error) => setError(cause.message));
-            }}
-          >
-            {[1, 2, 3, 4, 6].map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <input
-          className="w-52 rounded border border-line bg-panel-2 px-2 py-0.5 text-text placeholder:text-dim"
-          placeholder="find a card, or a file it touched"
-          aria-label="Search cards"
-          value={query}
-          onChange={(changed) => {
-            const next = changed.target.value;
-            setQuery(next);
-            if (next.trim() === '') {
-              setHits(null);
-              return;
-            }
-            void api
-              .search(board.id, next)
-              .then(setHits)
-              .catch((cause: Error) => setError(cause.message));
-          }}
-        />
-
-        {/* Today's spend, always shown. The number is worth seeing on its own,
-            and it is the only way to pick a budget that is neither pointless
-            nor hit within the hour. The note carries its own caveat when some
-            of today's runs recorded no usage. */}
-        <span className="text-dim" title={dispatch?.spendNote ?? ''}>
-          spent{' '}
-          <span
-            className={
-              dispatch !== null &&
-              dispatch.budget !== null &&
-              dispatch.spend.tokens >= dispatch.budget
-                ? 'text-warn'
-                : 'text-text'
-            }
-          >
-            {dispatch === null ? '—' : `${String(Math.round(dispatch.spend.tokens / 1000))}k`}
-          </span>
-          {dispatch === null || dispatch.budget === null
-            ? ''
-            : ` / ${String(Math.round(dispatch.budget / 1000))}k`}
-          {/* A plus, because runs that recorded no usage make this a lower
-              bound rather than a measurement. */}
-          {dispatch !== null && dispatch.spend.unrecorded > 0 ? '+' : ''}
-        </span>
-
-        <label className="text-dim">
-          dispatch{' '}
-          <select
-            className="rounded border border-line bg-panel-2 px-1 py-0.5 text-text"
-            value={dispatch?.mode ?? 'manual'}
-            onChange={(changed) => {
-              void api
-                .setDispatch(board.id, { mode: changed.target.value })
-                .then(setDispatch)
-                .catch((cause: Error) => setError(cause.message));
-            }}
-          >
-            <option value="manual">manual</option>
-            <option value="automatic">automatic</option>
-          </select>
-        </label>
-
-        <button
-          type="button"
-          className="rounded border border-line bg-panel-2 px-2 py-1 text-text hover:border-dim"
-          title="Every active card, ranked by what needs you first."
-          onClick={() => setDigestOpen(true)}
-        >
-          digest
-        </button>
-
-        <button
-          type="button"
-          className="rounded border border-line bg-panel-2 px-2 py-1 text-text hover:border-dim"
-          title="The order the board will work in, and what each card is waiting for."
-          onClick={() => setPlanOpen(true)}
-        >
-          order
-        </button>
-
-        <button
-          type="button"
-          className="rounded border border-line bg-panel-2 px-2 py-1 text-text hover:border-dim"
-          title="Throughput, what actually breaks, and what each day cost."
-          onClick={() => setNumbersOpen(true)}
-        >
-          numbers
-        </button>
-
-        <button
-          type="button"
-          className="rounded border border-line bg-panel-2 px-2 py-1 text-text hover:border-dim"
-          title="Rules handed to every card this board dispatches."
-          onClick={() => setRulesOpen(true)}
-        >
-          rules
-        </button>
-
-        <button
-          type="button"
-          className={`rounded border px-2 py-1 hover:border-dim ${
-            activityOpen ? 'border-info text-info' : 'border-line bg-panel-2 text-text'
-          }`}
-          title="What the agents are doing right now, as it happens."
-          onClick={() => setActivityOpen(!activityOpen)}
-        >
-          activity
-        </button>
-
-        <div className="ml-auto flex items-center gap-2">
-          {/* Set at creation, because priority is a statement about the batch
-              and the moment you are describing the work is when you know it. */}
-          <select
-            className="rounded border border-line bg-panel-2 px-1 py-1 text-text"
-            value={newPriority}
-            aria-label="Priority for the new card"
-            title="High and low reorder the dispatch queue within a column."
-            onChange={(changed) => setNewPriority(changed.target.value as Card['priority'])}
-          >
-            <option value="high">high</option>
-            <option value="normal">normal</option>
-            <option value="low">low</option>
-          </select>
+      <main className="relative flex min-w-0 flex-1 flex-col">
+        <header className="flex items-center gap-3 border-b border-line bg-panel px-4 py-2.5">
+          {/* Search first and widest. On a board of sixty cards it is the
+              fastest route to any of them, and it was previously one control
+              among sixteen. */}
           <input
-            className="w-56 rounded border border-line bg-panel-2 px-2 py-1 text-text placeholder:text-dim"
-            placeholder="New card title"
-            value={title}
-            onChange={(changed) => setTitle(changed.target.value)}
-            onKeyDown={(key) => {
-              if (key.key === 'Enter') void addCard();
+            className="w-72 rounded-md border border-line bg-panel-2 px-2.5 py-1.5 text-text transition-colors placeholder:text-faint focus:border-edge"
+            placeholder="Find a card, or a file it touched"
+            aria-label="Search cards"
+            value={query}
+            onChange={(changed) => {
+              const next = changed.target.value;
+              setQuery(next);
+              if (next.trim() === '') {
+                setHits(null);
+                return;
+              }
+              void api
+                .search(board.id, next)
+                .then(setHits)
+                .catch((cause: Error) => setError(cause.message));
             }}
           />
-          <button
-            type="button"
-            className="rounded border border-line bg-panel-2 px-2 py-1 text-text hover:border-dim"
-            onClick={() => void addCard()}
-          >
-            Add
-          </button>
-        </div>
-      </header>
 
-      {dispatch?.halted !== null && dispatch?.halted !== undefined ? (
-        <div className="border-b border-warn/40 bg-warn/10 px-4 py-2 text-warn">
-          {/* A stopped queue must not look like a finished one. */}
-          <b>Dispatch halted</b> on “{dispatch.halted.cardTitle}” — {dispatch.halted.detail}{' '}
-          <button
-            type="button"
-            className="ml-2 rounded border border-warn/50 px-2 py-0.5 hover:bg-warn/20"
-            onClick={() => {
-              void api.resumeDispatch(board.id).then(setDispatch);
-            }}
-          >
-            Resume
-          </button>
-        </div>
-      ) : null}
+          {/* Three numbers, and only three. What is happening, what wants you,
+              what finished - in that order, because that is the order an
+              operator asks. */}
+          <dl className="flex items-baseline gap-4 text-[11px]">
+            <div className="flex items-baseline gap-1.5">
+              <dt className="text-faint">Running</dt>
+              <dd className="tabular-nums text-text">{dispatch?.running.length ?? 0}</dd>
+            </div>
+            <div className="flex items-baseline gap-1.5">
+              <dt className="text-faint">Unseen</dt>
+              <dd className={`tabular-nums ${unseen > 0 ? 'text-attention' : 'text-text'}`}>
+                {unseen}
+              </dd>
+            </div>
+            <div className="flex items-baseline gap-1.5">
+              <dt className="text-faint">Finished</dt>
+              <dd className="tabular-nums text-text">{dispatch?.completed.length ?? 0}</dd>
+            </div>
+          </dl>
 
-      {/* Shown above everything, because the symptom otherwise looks like a
+          {/* How the queue behaves, grouped as one control rather than three
+              labelled fields spread across the bar. */}
+          <div className="ml-auto flex items-center gap-1 rounded-md border border-line bg-panel-2 p-0.5">
+            <select
+              className="rounded-sm bg-transparent px-1.5 py-1 text-dim focus:text-text"
+              aria-label="Dispatch mode"
+              title="Manual holds the queue. Automatic starts the next card itself."
+              value={dispatch?.mode ?? 'manual'}
+              onChange={(changed) => {
+                void api
+                  .setDispatch(board.id, { mode: changed.target.value })
+                  .then(setDispatch)
+                  .catch((cause: Error) => setError(cause.message));
+              }}
+            >
+              <option value="manual">Manual</option>
+              <option value="automatic">Automatic</option>
+            </select>
+            <span className="h-4 w-px bg-line" aria-hidden />
+            <select
+              className="rounded-sm bg-transparent px-1.5 py-1 text-dim focus:text-text"
+              aria-label="Review policy"
+              title="Review stops the queue after every card. Unattended collects them for the morning."
+              value={dispatch?.policy ?? 'review'}
+              onChange={(changed) => {
+                void api
+                  .setDispatch(board.id, { policy: changed.target.value })
+                  .then(setDispatch)
+                  .catch((cause: Error) => setError(cause.message));
+              }}
+            >
+              <option value="review">Review each</option>
+              <option value="unattended">Unattended</option>
+            </select>
+            <span className="h-4 w-px bg-line" aria-hidden />
+            <select
+              className="rounded-sm bg-transparent px-1.5 py-1 text-dim focus:text-text"
+              aria-label="Agents at once"
+              title="How many cards this board runs at the same time."
+              value={dispatch?.concurrency ?? 1}
+              onChange={(changed) => {
+                void api
+                  .setDispatch(board.id, { concurrency: Number(changed.target.value) })
+                  .then(setDispatch)
+                  .catch((cause: Error) => setError(cause.message));
+              }}
+            >
+              {[1, 2, 3, 4, 6].map((n) => (
+                <option key={n} value={n}>
+                  {n} agent{n === 1 ? '' : 's'}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* The composer. One cluster, so adding a card reads as one action
+              rather than three adjacent controls. */}
+          <div className="flex items-center rounded-md border border-line bg-panel-2">
+            <select
+              className="rounded-l-md bg-transparent py-1.5 pl-2 pr-1 text-dim focus:text-text"
+              value={newPriority}
+              aria-label="Priority for the new card"
+              title="High and low reorder the dispatch queue within a column."
+              onChange={(changed) => setNewPriority(changed.target.value as Card['priority'])}
+            >
+              <option value="high">High</option>
+              <option value="normal">Normal</option>
+              <option value="low">Low</option>
+            </select>
+            <input
+              className="w-52 bg-transparent px-2 py-1.5 text-text placeholder:text-faint"
+              placeholder="New card"
+              aria-label="New card title"
+              value={title}
+              onChange={(changed) => setTitle(changed.target.value)}
+              onKeyDown={(key) => {
+                if (key.key === 'Enter') void addCard();
+              }}
+            />
+            <button
+              type="button"
+              className="rounded-r-md border-l border-line px-2.5 py-1.5 text-dim transition-colors hover:bg-panel-3 hover:text-text"
+              onClick={() => void addCard()}
+            >
+              Add
+            </button>
+          </div>
+        </header>
+
+        {dispatch?.halted !== null && dispatch?.halted !== undefined ? (
+          <div className="border-b border-warn/40 bg-warn/10 px-4 py-2 text-warn">
+            {/* A stopped queue must not look like a finished one. */}
+            <b>Dispatch halted</b> on “{dispatch.halted.cardTitle}” — {dispatch.halted.detail}{' '}
+            <button
+              type="button"
+              className="ml-2 rounded border border-warn/50 px-2 py-0.5 hover:bg-warn/20"
+              onClick={() => {
+                void api.resumeDispatch(board.id).then(setDispatch);
+              }}
+            >
+              Resume
+            </button>
+          </div>
+        ) : null}
+
+        {/* Shown above everything, because the symptom otherwise looks like a
           missing feature rather than an old bundle - which is what it looked
           like the two times this actually happened. */}
-      {staleBuild === null ? null : (
-        <div className="border-b border-line bg-panel-2 px-4 py-2 text-warn">{staleBuild}</div>
-      )}
+        {staleBuild === null ? null : (
+          <div className="border-b border-line bg-panel-2 px-4 py-2 text-warn">{staleBuild}</div>
+        )}
 
-      {/* A hold is not an error and not a halt: the clock will clear it. Said
+        {/* A hold is not an error and not a halt: the clock will clear it. Said
           in its own line so it does not read as something to fix. */}
-      {dispatch === null || dispatch.holdingFor === null ? null : (
-        <div className="border-b border-line bg-panel-2 px-4 py-2 text-dim">
-          {dispatch.holdingFor}
-        </div>
-      )}
+        {dispatch === null || dispatch.holdingFor === null ? null : (
+          <div className="border-b border-line bg-panel-2 px-4 py-2 text-dim">
+            {dispatch.holdingFor}
+          </div>
+        )}
 
-      {hits === null ? null : (
-        <div className="border-b border-line bg-panel-2 px-4 py-2 font-mono text-[11px]">
-          {hits.length === 0 ? (
-            <span className="text-dim">Nothing matches “{query}”.</span>
-          ) : (
-            <ul className="flex flex-wrap gap-x-4 gap-y-1">
-              {hits.map((hit) => (
-                <li key={hit.cardId} className="text-dim">
-                  <button
-                    type="button"
-                    className="text-text hover:underline"
-                    onClick={() => setOpenCardId(hit.cardId)}
-                  >
-                    {hit.title}
-                  </button>{' '}
-                  {/* Says why, because a hit that cannot explain itself reads
+        {hits === null ? null : (
+          <div className="border-b border-line bg-panel-2 px-4 py-2 text-[11px]">
+            {hits.length === 0 ? (
+              <span className="text-dim">Nothing matches “{query}”.</span>
+            ) : (
+              <ul className="flex flex-wrap gap-x-4 gap-y-1">
+                {hits.map((hit) => (
+                  <li key={hit.cardId} className="text-dim">
+                    <button
+                      type="button"
+                      className="text-text hover:underline"
+                      onClick={() => setOpenCardId(hit.cardId)}
+                    >
+                      {hit.title}
+                    </button>{' '}
+                    {/* Says why, because a hit that cannot explain itself reads
                       as a broken search. */}
-                  {hit.path === null ? hit.matched.join(', ') : hit.path}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
+                    {hit.path === null ? hit.matched.join(', ') : hit.path}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
-      {error !== null ? (
-        <div className="border-b border-line bg-panel-2 px-4 py-2 text-warn">{error}</div>
-      ) : null}
+        {error !== null ? (
+          <div className="border-b border-line bg-panel-2 px-4 py-2 text-warn">{error}</div>
+        ) : null}
 
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCorners}
-        onDragEnd={(event) => void onDragEnd(event)}
-      >
-        <div className="flex flex-1 gap-4 overflow-x-auto p-4">
-          {columns.map((column) => (
-            <ColumnView
-              key={column.id}
-              column={column}
-              cards={byColumn.get(column.id) ?? []}
-              runnable={runnable}
-              onOpen={(card) => setOpenCardId(card.id)}
-              onRun={(card) => void run(card)}
-              onCancel={(card) => void cancel(card)}
-            />
-          ))}
-        </div>
-      </DndContext>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCorners}
+          onDragEnd={(event) => void onDragEnd(event)}
+        >
+          <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-3 py-4">
+            {columns.map((column) => (
+              <ColumnView
+                key={column.id}
+                column={column}
+                cards={byColumn.get(column.id) ?? []}
+                runnable={runnable}
+                onOpen={(card) => setOpenCardId(card.id)}
+                onRun={(card) => void run(card)}
+                onCancel={(card) => void cancel(card)}
+              />
+            ))}
+          </div>
+        </DndContext>
 
-      {!digestOpen ? null : (
-        <Digest
-          boardId={board.id}
-          onOpen={(cardId) => {
-            setDigestOpen(false);
-            setOpenCardId(cardId);
-          }}
-          onClose={() => setDigestOpen(false)}
-        />
-      )}
-
-      {comparing === null ? null : (
-        <Compare boardId={board.id} cardIds={comparing} onClose={() => setComparing(null)} />
-      )}
-
-      {!numbersOpen ? null : <Metrics boardId={board.id} onClose={() => setNumbersOpen(false)} />}
-
-      {!planOpen ? null : (
-        <Plan
-          boardId={board.id}
-          onOpen={(cardId) => {
-            setPlanOpen(false);
-            setOpenCardId(cardId);
-          }}
-          onClose={() => setPlanOpen(false)}
-        />
-      )}
-
-      {!rulesOpen ? null : <Invariants boardId={board.id} onClose={() => setRulesOpen(false)} />}
-
-      {!activityOpen ? null : (
-        <div className="h-56 shrink-0">
-          <Activity
-            live={live}
-            titleFor={(cardId) =>
-              cardId === null
-                ? 'unbound session'
-                : (cards.find((card) => card.id === cardId)?.title ?? 'unknown card')
-            }
+        {view !== 'digest' ? null : (
+          <Digest
+            boardId={board.id}
+            onOpen={(cardId) => {
+              setView('board');
+              setOpenCardId(cardId);
+            }}
+            onClose={() => setView('board')}
           />
-        </div>
-      )}
+        )}
 
-      {openCardId === null ? null : (
-        <CardDetail
-          cardId={openCardId}
-          onCompare={(otherCardId) => setComparing([openCardId, otherCardId])}
-          onClose={() => {
-            setOpenCardId(null);
-            void load();
-          }}
-        />
-      )}
-    </main>
+        {comparing === null ? null : (
+          <Compare boardId={board.id} cardIds={comparing} onClose={() => setComparing(null)} />
+        )}
+
+        {view !== 'numbers' ? null : (
+          <Metrics boardId={board.id} onClose={() => setView('board')} />
+        )}
+
+        {view !== 'order' ? null : (
+          <Plan
+            boardId={board.id}
+            onOpen={(cardId) => {
+              setView('board');
+              setOpenCardId(cardId);
+            }}
+            onClose={() => setView('board')}
+          />
+        )}
+
+        {view !== 'rules' ? null : (
+          <Invariants boardId={board.id} onClose={() => setView('board')} />
+        )}
+
+        {!activityOpen ? null : (
+          <div className="h-56 shrink-0">
+            <Activity
+              live={live}
+              titleFor={(cardId) =>
+                cardId === null
+                  ? 'unbound session'
+                  : (cards.find((card) => card.id === cardId)?.title ?? 'unknown card')
+              }
+            />
+          </div>
+        )}
+
+        {openCardId === null ? null : (
+          <CardDetail
+            cardId={openCardId}
+            onCompare={(otherCardId) => setComparing([openCardId, otherCardId])}
+            onClose={() => {
+              setOpenCardId(null);
+              void load();
+            }}
+          />
+        )}
+      </main>
+    </div>
   );
 }

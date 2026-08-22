@@ -1,29 +1,54 @@
 @import 'tailwindcss';
 
 /**
- * Dark, dense, instrument-like (doc 09). The reference points are a monitoring
- * console and Linear, not a consumer productivity app: the operator opens this
- * at a moment of low context, and it should read as a panel that answers
- * questions.
+ * An instrument for work that happened while nobody was watching (doc 09).
  *
- * Colour is reserved for state. There is only so much of it, and six card
- * states need to be distinguishable at a glance.
+ * The operator opens this at a moment of low context - it is usually morning,
+ * and the question is always "what needs me". Everything here serves that: the
+ * palette spends colour only where attention should go, the type scale is
+ * tight enough to read a board at a glance, and the numerals are tabular
+ * because half this interface is counts, durations and token figures that have
+ * to line up to be compared.
+ *
+ * Deliberately not a terminal. The previous palette was GitHub's, which is a
+ * borrowed identity, and monospace was doing the work of a status vocabulary -
+ * which is what made a board of ordinary English read as a log dump.
  */
 @theme {
-  --color-bg: #0d1117;
-  --color-panel: #161b22;
-  --color-panel-2: #1c2129;
-  --color-line: #21262d;
-  --color-text: #e6edf3;
-  --color-dim: #7d8590;
-  --color-accent: #d29922;
-  --color-ok: #3fb950;
-  --color-warn: #f85149;
-  --color-info: #58a6ff;
+  /* Surfaces: ink, then two steps up. Cool, close together, so a raised
+     element reads as raised without a border doing all the work. */
+  --color-bg: #0a0c10;
+  --color-panel: #12151b;
+  --color-panel-2: #191d25;
+  --color-panel-3: #20252f;
+
+  /* Two weights of rule. The hairline separates, the edge outlines. */
+  --color-line: #222732;
+  --color-edge: #2c3340;
+
+  --color-text: #e7eaf0;
+  --color-dim: #98a1b0;
+  --color-faint: #6a7382;
+
+  /* The product's own colour. Focus, the active view, nothing else - so that
+     seeing it always means "this is where you are". */
+  --color-accent: #6e7bf2;
+  --color-accent-soft: #1c2040;
+
+  /* State. Four, and each one earns its place: something wants you, something
+     went wrong, something worked, something is merely informative. */
+  --color-attention: #e0a33e;
+  --color-warn: #e2564e;
+  --color-ok: #4caf7d;
+  --color-info: #5b9cf8;
 
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 10px;
 }
 
 html,
@@ -38,21 +63,82 @@ body {
   color: var(--color-text);
   font-family: var(--font-sans);
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.45;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  /* The detail that makes a dense board readable: every count, duration and
+     token figure in a column lines up, so two numbers can be compared by
+     length instead of by reading them. */
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.005em;
+}
+
+/* Small uppercase labels are structure, not text. Tracked out so they read as
+   a different kind of thing from the content beneath them. */
+.eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-faint);
+}
+
+/* Identifiers only - session ids, branches, paths, commands. Status words are
+   English and are set in the body face like everything else. */
+.ident {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: -0.01em;
 }
 
 /* Keyboard focus must be obvious: the board is fully operable without a mouse. */
 :focus-visible {
-  outline: 2px solid var(--color-info);
+  outline: 2px solid var(--color-accent);
   outline-offset: 2px;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
   background: var(--color-line);
-  border-radius: 5px;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-edge);
+  background-clip: content-box;
+}
+
+/* A card arriving, and a panel opening. Short enough not to be noticed, long
+   enough that nothing jumps. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.rise {
+  animation: rise 140ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

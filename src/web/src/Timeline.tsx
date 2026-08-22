@@ -90,7 +90,7 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
   return (
     <div className="flex h-[60%] flex-col border-t border-line bg-panel">
       <header className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-line px-4 py-2">
-        <h2 className="font-mono text-[11px] uppercase tracking-wider text-dim">Timeline</h2>
+        <h2 className="eyebrow">Timeline</h2>
         <span className="text-dim">
           showing <b className="text-text">{entries.length}</b> of{' '}
           <b className="text-text">{total}</b>
@@ -106,7 +106,7 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
             this path since Phase 0 and never opened it. */}
         <button
           type="button"
-          className="ml-auto rounded border border-line px-2 py-0.5 font-mono text-[11px] text-dim hover:text-text"
+          className="ml-auto rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-text"
           onClick={() => {
             if (transcript !== null) {
               setTranscript(null);
@@ -181,7 +181,7 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
       )}
 
       <ol
-        className={`min-h-0 flex-1 overflow-y-auto px-4 py-2 font-mono text-[11px] ${
+        className={`min-h-0 flex-1 overflow-y-auto px-4 py-2 text-[11px] ${
           transcript === null ? '' : 'hidden'
         }`}
       >

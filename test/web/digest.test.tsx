@@ -107,7 +107,12 @@ describe('Digest', () => {
     respondWith([UNSEEN]);
     await render();
 
-    expect(container.textContent).toContain('Quietly finished: 4 new entries');
+    // The brief's words, minus the card's title. The brief opens with the
+    // title because it is read on the card; here the title is the line
+    // directly above, and printing it twice is what a list looks like when
+    // nobody read it back.
+    expect(container.textContent).toContain('4 new entries');
+    expect(container.textContent).not.toContain('Quietly finished: 4 new entries');
   });
 
   it('answers the quiet morning in one line', async () => {
