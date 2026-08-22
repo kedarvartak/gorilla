@@ -198,6 +198,27 @@ that stopped working because a status page was down would be a worse product
 than one with no webhook. `gorilla doctor` fails on a url that is not http or
 https, because that is a webhook which silently never fires.
 
+## Sharing one machine between boards
+
+Concurrency is a board setting. Two boards set to three agents each is six
+agents on one laptop, competing for the same cores, the same test runner and
+the same rate limit - and neither board can see the other, so neither can be
+blamed and nothing gets slower on purpose.
+
+`GORILLA_MAX_AGENTS` caps the total, defaulting to four. It is read from the
+lease table, which already knows what is in flight everywhere because that is
+how a card is stopped from being dispatched twice.
+
+The cap alone would not be fair. Whichever board woke first would take every
+slot and the other would wait for it to finish, which is not starvation the
+operator can see: both boards look like they are working. So while another
+board holds a slot, no board may hold more than its share of the cap. A board
+running on its own is unaffected, which is the common case and the one that
+must not get slower for the sake of the other.
+
+Shares round up. With a cap of three and two boards each gets two, because
+rounding down would leave a slot nobody is allowed to take.
+
 ## Working only at night
 
 "Define tasks, run them, go to sleep" has an unstated bound: the operator wants
