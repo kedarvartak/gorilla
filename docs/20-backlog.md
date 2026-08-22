@@ -134,7 +134,7 @@ The point of the product: work that continues correctly while nobody is watching
 | T50 | Import GitHub issues as cards | Issues become cards with their origin recorded, without polling anything on a timer by default. | open |
 | T51 | Bulk card creation from a file | A markdown list becomes cards in one operation, with a dry run. | open |
 | T52 | Card splitting | A card too large to dispatch can be split into dependent cards, preserving its context. | open |
-| T53 | Duplicate card detection | A new card that restates an existing one is flagged at creation. | open |
+| T53 | Duplicate card detection | A new card that restates an existing one is flagged at creation. | merged |
 
 ## I. Command line and export
 

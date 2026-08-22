@@ -8,6 +8,7 @@ import { blockersFor, dispatchableCards } from '../cards/eligibility.js';
 import { executionOrder } from '../cards/order.js';
 import { proposeInvariants } from '../cards/invariant-proposals.js';
 import { searchCards } from '../cards/search.js';
+import { describeDuplicates, findDuplicates } from '../cards/duplicates.js';
 import { looksFinished } from '../cards/staleness.js';
 import { canonicaliseCwd } from '../ingest/binding.js';
 import { boards, cardDependencies, columns, invariants, runs, type Card } from '../db/schema.js';
@@ -338,7 +339,23 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
         });
 
         publish('card-created', present(card));
-        return reply.code(201).send(present(card));
+
+        // Checked after creation, not before it (T53). A warning, never a
+        // refusal: two cards that read alike are sometimes two genuinely
+        // different pieces of work, and a board that refused the second is one
+        // the operator learns to word their titles around.
+        const duplicates = findDuplicates(
+          context.database.sqlite,
+          request.params.boardId,
+          card.title,
+          card.id,
+        );
+
+        return reply.code(201).send({
+          ...present(card),
+          duplicates,
+          duplicateNote: describeDuplicates(duplicates),
+        });
       } catch (error) {
         return fail(reply, error);
       }
