@@ -380,7 +380,7 @@ with one theoretical caller is machinery that does not exist.
 | Id | Task | Done when | Status |
 | --- | --- | --- | --- |
 | T78 | Move around the board without a mouse | Open a card, move it, dispatch it, close it. | open |
-| T79 | The panels announce themselves | Five overlay panels have been added and none of them says what it is to a screen reader. | open |
+| T79 | The panels announce themselves | One shared frame: named, modal, focused on open, and dismissed with escape. | merged |
 
 ## Not on this list
 

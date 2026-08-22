@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactElement } from 'react';
 
+import { Panel } from './Panel.js';
+
 import { api } from './api.js';
 
 /**
@@ -54,7 +56,7 @@ export function Metrics({
   const busiest = Math.max(1, ...(body?.spendByDay ?? []).map((day) => day.tokens));
 
   return (
-    <div className="absolute inset-0 z-10 flex flex-col bg-bg/95">
+    <Panel title="The numbers: throughput, failures and spend" onClose={onClose}>
       <header className="flex items-baseline gap-3 border-b border-line bg-panel px-4 py-2.5">
         <h2 className="font-mono text-[13px] uppercase tracking-wider text-accent">The numbers</h2>
         <span className="font-mono text-[11px] text-dim">Last thirty days</span>
@@ -125,6 +127,6 @@ export function Metrics({
           </>
         )}
       </div>
-    </div>
+    </Panel>
   );
 }

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
 
+import { Panel } from './Panel.js';
+
 import { api } from './api.js';
 
 /**
@@ -109,7 +111,7 @@ export function Invariants({
   }
 
   return (
-    <div className="absolute inset-0 z-10 flex flex-col bg-bg/95">
+    <Panel title="Project rules" onClose={onClose}>
       <header className="flex items-baseline gap-3 border-b border-line bg-panel px-4 py-2.5">
         <h2 className="font-mono text-[13px] uppercase tracking-wider text-accent">
           Project rules
@@ -215,6 +217,6 @@ export function Invariants({
           ))}
         </ul>
       </div>
-    </div>
+    </Panel>
   );
 }
