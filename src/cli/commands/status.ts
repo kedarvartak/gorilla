@@ -4,6 +4,7 @@ import { openDatabase, resolveDatabasePath } from '../../server/db/client.js';
 import { DEFAULT_HOST, DEFAULT_PORT } from '../../server/index.js';
 import type { Health } from '../../server/health.js';
 import type { Command, CommandResult } from '../cli.js';
+import { schemaTooOld } from './read-only.js';
 
 /**
  * What the board is doing, without opening the interface (T55, T58).
@@ -151,7 +152,18 @@ export const statusCommand: Command = {
       }
 
       const databasePath = resolveDatabasePath(dbIndex === -1 ? undefined : args[dbIndex + 1]);
-      const offline = fromDatabase(databasePath);
+
+      let offline: Offline | null;
+      try {
+        offline = fromDatabase(databasePath);
+      } catch (error) {
+        // Same hazard as the export: this opens the database without migrating
+        // it, so a database from an older build is missing columns this one
+        // reads, and the bare SQLite error is no use to anybody.
+        const note = schemaTooOld(error);
+        if (note === null) throw error;
+        return { exitCode: 1, stdout: '', stderr: note };
+      }
 
       if (offline === null) {
         return {
