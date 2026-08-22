@@ -124,7 +124,7 @@ The point of the product: work that continues correctly while nobody is watching
 | T45 | Webhook on state change | Card state changes can be posted to a configured endpoint, with the same no-interpolation discipline as `GORILLA_NOTIFY`. | merged |
 | T46 | Checkpoint a long run | A run's progress is recorded at intervals so a killed process resumes rather than restarts. | open |
 | T47 | Restart recovery for in-flight runs | A server restart reconciles running cards against live processes instead of leaving them in progress forever. | merged |
-| T48 | Orphan worktree reaper | Worktrees with no card are removed on a schedule, with a report of what was removed. | open |
+| T48 | Orphan worktree reaper | ~~Rescoped: it reports, it does not reap.~~ Worktrees nothing is waiting on are surfaced with the reason; removal stays an operator action. | merged |
 
 ## H. Intake
 
@@ -180,6 +180,14 @@ because each one is reachable from what exists, not because the category has the
 ---
 
 ## Rescopes
+
+**T48, 22 August 2026.** Written as a reaper that removes orphan worktrees on
+a schedule. Doc 18 already says why that is wrong: an unreviewed worktree holds
+a night of an agent's work, and deleting one because a process restarted is
+unrecoverable. A scheduled remover would eventually do exactly that, at 3am, to
+the one that mattered. So it finds them and says so, with the reason attached,
+and removal stays where it already was - an operator action, one worktree at a
+time, through a route that exists.
 
 **T58, 22 August 2026.** "Every command takes `--json`" turned out to be the
 wrong target. Five commands take it, and they are the five a script would ever

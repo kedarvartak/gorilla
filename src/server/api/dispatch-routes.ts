@@ -5,6 +5,7 @@ import { boards } from '../db/schema.js';
 import { apiError, badRequest, conflict, notFound } from './errors.js';
 import { fail } from './shared.js';
 import { fileDiff } from '../worktree/diff.js';
+import { describeOrphans, findOrphans } from '../worktree/orphans.js';
 import { describeVerify } from '../verify/run.js';
 import { getCard } from './cards.js';
 import { describeSpend, spentSince, startOfDay } from '../dispatch/budget.js';
@@ -70,14 +71,21 @@ export function registerDispatchRoutes(app: FastifyInstance, context: AppContext
       if (board === undefined) return notFound(reply, 'No such board.');
 
       const manager = context.dispatcher.worktreesFor(board.cwd);
+      const orphans = findOrphans(context.database.sqlite, manager.list());
+      const orphanBy = new Map(orphans.map((orphan) => [orphan.cardId, orphan.reason]));
+
       const workspaces = await Promise.all(
         manager.list().map(async (workspace) => ({
           ...workspace,
           status: await manager.statusOf(workspace.cardId),
+          // Why nothing is waiting on it, or null. Named rather than implied,
+          // because a merged card's leftover and a deleted card's orphan are
+          // different decisions for the operator (T48).
+          orphanReason: orphanBy.get(workspace.cardId) ?? null,
         })),
       );
 
-      return reply.send(workspaces);
+      return reply.send({ workspaces, orphans, orphanNote: describeOrphans(orphans) });
     },
   );
 
