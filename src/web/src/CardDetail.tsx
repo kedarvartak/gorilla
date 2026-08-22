@@ -738,6 +738,19 @@ export function CardDetail({
   );
 
   useEffect(() => {
+    // Escape closes the card, like the overlay panels (T78, T79). Without it
+    // the only way out of the busiest screen in the product is a mouse.
+    function onKey(event: KeyboardEvent): void {
+      if (event.key === 'Escape') onClose();
+    }
+
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function load(): Promise<void> {

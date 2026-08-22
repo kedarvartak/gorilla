@@ -59,9 +59,23 @@ export function CardTile({
       {...attributes}
       {...listeners}
       onDoubleClick={() => onOpen(card)}
+      onKeyDown={(event) => {
+        // Not Enter or Space: the drag sensor owns both, and taking one would
+        // make a card impossible to move without a mouse in exchange for
+        // making it possible to open (T78).
+        if (event.key === 'o') {
+          event.preventDefault();
+          onOpen(card);
+          return;
+        }
+        if (event.key === 'd' && runnable) {
+          event.preventDefault();
+          onRun(card);
+        }
+      }}
       aria-label={`${card.title}, ${status.label}${
         card.priority === 'normal' ? '' : `, ${card.priority} priority`
-      }${unseen ? ', unseen changes' : ''}`}
+      }${unseen ? ', unseen changes' : ''}. Press o to open${runnable ? ', d to dispatch' : ''}.`}
     >
       <div className="flex items-start justify-between gap-2">
         <span className="text-text leading-snug">

@@ -379,7 +379,7 @@ with one theoretical caller is machinery that does not exist.
 
 | Id | Task | Done when | Status |
 | --- | --- | --- | --- |
-| T78 | Move around the board without a mouse | Open a card, move it, dispatch it, close it. | open |
+| T78 | Move around the board without a mouse | A focused card opens with o and dispatches with d; escape closes the card and every panel. Enter and space stay with the drag sensor. | merged |
 | T79 | The panels announce themselves | One shared frame: named, modal, focused on open, and dismissed with escape. | merged |
 
 ## Not on this list
