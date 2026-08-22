@@ -3,7 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { formatReport, runDoctor, type DoctorReport } from '../src/cli/commands/doctor.js';
+import {
+  doctorCommand,
+  formatReport,
+  runDoctor,
+  type DoctorReport,
+} from '../src/cli/commands/doctor.js';
 import { runInit } from '../src/cli/commands/init.js';
 import { HOOK_DEFINITIONS } from '../src/hooks/definitions.js';
 import { openDatabase } from '../src/server/db/client.js';
@@ -346,5 +351,25 @@ describe('boards that are really worktrees', () => {
     // reattachment wrong would move one card's history onto another, which is
     // worse than a board list with junk in it.
     expect(check?.detail).toContain('Nothing removes them automatically');
+  });
+});
+
+describe('machine-readable output', () => {
+  it('answers with the whole report, not a summary', async () => {
+    const result = await doctorCommand.run(['--dir', dir, '--port', String(PORT), '--json']);
+    const parsed = JSON.parse(result.stdout) as { ok: boolean; checks: { name: string }[] };
+
+    // A monitor that can see only ok:false has to run the command again in the
+    // other mode to find out what is wrong, which is two runs for one question.
+    expect(parsed.checks.length).toBeGreaterThan(3);
+    expect(typeof parsed.ok).toBe('boolean');
+  });
+
+  it('keeps the exit code it would have had', async () => {
+    const text = await doctorCommand.run(['--dir', dir, '--port', String(PORT)]);
+    const json = await doctorCommand.run(['--dir', dir, '--port', String(PORT), '--json']);
+
+    // Otherwise a script that switched to --json would silently stop failing.
+    expect(json.exitCode).toBe(text.exitCode);
   });
 });

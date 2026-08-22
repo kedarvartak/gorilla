@@ -144,7 +144,7 @@ The point of the product: work that continues correctly while nobody is watching
 | T55 | `gorilla status` | Queue state, in-flight runs and halt state, without opening the interface. | merged |
 | T56 | `gorilla dispatch` | ~~Rescoped: it is an HTTP client, and has to be.~~ A card is dispatched from the command line by asking the running board. | merged |
 | T57 | `gorilla verify` | The verify command runs against a card's worktree from the terminal, through the board, reporting as the board would. | merged |
-| T58 | Machine-readable output | `status` takes `--json`. The rest of the commands do not yet. | open |
+| T58 | Machine-readable output | `status`, `doctor`, `export`, `dispatch` and `verify` take `--json`. `serve`, `probe`, `replay`, `init` and `backfill` do not: see the note. | merged |
 
 ## L. Found while building
 
@@ -180,6 +180,16 @@ because each one is reachable from what exists, not because the category has the
 ---
 
 ## Rescopes
+
+**T58, 22 August 2026.** "Every command takes `--json`" turned out to be the
+wrong target. Five commands take it, and they are the five a script would ever
+call: `status`, `doctor`, `export`, `dispatch`, `verify`. The others are not
+worth it and one of them cannot be. `serve` is a long-running process whose
+output is a log; `probe` and `replay` are interactive diagnostics; `init` and
+`backfill` report what they changed to the person who asked them to change it.
+Adding a flag to each so the row could be ticked would be five surfaces to
+maintain for nobody.
+
 
 **T10, T56 and T57, 22 August 2026.** T10 existed to make card operations
 "reachable from the CLI", and building the CLI showed that they must not be.
