@@ -132,7 +132,7 @@ The point of the product: work that continues correctly while nobody is watching
 | --- | --- | --- | --- |
 | T49 | Card templates | A card can be created from a named template carrying its guardrails and verify command. | open |
 | T50 | Import GitHub issues as cards | Issues become cards with their origin recorded, without polling anything on a timer by default. | open |
-| T51 | Bulk card creation from a file | A markdown list becomes cards in one operation, with a dry run. | open |
+| T51 | Bulk card creation from a file | A markdown list becomes cards in one operation, with a dry run. | merged |
 | T52 | Card splitting | A card too large to dispatch can be split into dependent cards, preserving its context. | open |
 | T53 | Duplicate card detection | A new card that restates an existing one is flagged at creation. | merged |
 
@@ -165,7 +165,7 @@ because each one is reachable from what exists, not because the category has the
 | --- | --- | --- | --- |
 | T61 | Several attempts at one card | A card can be run N times on N branches, and the board presents the attempts side by side for the operator to choose between. | open |
 | T62 | Steer a running session | An operator note reaches a live run without cancelling it, and the run records that it was steered. | open |
-| T63 | Keep the transcript after the worktree is gone | Removing a worktree no longer discards the run's evidence. | open |
+| T63 | Keep the transcript after the worktree is gone | ~~Withdrawn: the premise is false.~~ Transcripts live in `~/.claude/projects/`, outside the worktree; `git worktree remove` does not touch them. Checked against the real database. | dropped |
 | T64 | Dependency graph on the board | The dependency edges are visible as a graph, not only as a blocked badge. | open |
 | T65 | Fairness across boards | Two boards on one machine cannot starve each other of the concurrency budget. | open |
 | T66 | Replay a card's run as a fixture | A recorded run becomes a regression fixture, so a dispatch bug is reproduced rather than described. | open |
@@ -180,6 +180,14 @@ because each one is reachable from what exists, not because the category has the
 ---
 
 ## Rescopes
+
+**T63, 22 August 2026. Withdrawn.** The entry assumed removing a worktree
+discards the run's evidence. It does not. Transcripts are written to
+`~/.claude/projects/<encoded-cwd>/<session>.jsonl` and the board stores the
+absolute path, so `git worktree remove` leaves them where they are - verified
+against the rows in the real database rather than reasoned about. There is
+nothing to fix, and building a copier would have added a second store of
+something already stored.
 
 **T48, 22 August 2026.** Written as a reaper that removes orphan worktrees on
 a schedule. Doc 18 already says why that is wrong: an unreviewed worktree holds
