@@ -338,3 +338,55 @@ The dependencies are real and worth respecting.
   into failing tests rather than into broken screens.
 
 Everything else is independent and can be taken in any order.
+
+---
+
+# Wave two, 22 August 2026
+
+The first sixty-eight are done. These are not a fresh brainstorm: every one
+comes from something this session established, measured, or left half-connected.
+Anything speculative was left out, because a backlog padded to look full is how
+the first list acquired the six entries that had to be withdrawn.
+
+## M. Left half-connected
+
+Routes that exist and nothing calls. The pattern that produced T14 - machinery
+with one theoretical caller is machinery that does not exist.
+
+| Id | Task | Done when | Status |
+| --- | --- | --- | --- |
+| T69 | Ask for a second opinion from the card | The reviewer route has a button, with what it will cost said before it is pressed. | open |
+| T70 | Compare two cards from the board | The comparison route has a screen; today it can only be reached with curl. | open |
+| T71 | Read the run's transcript, not only its events | The timeline shows what the hooks saw. The transcript is on disk and the board stores its path, and nothing has ever opened it. | open |
+
+## N. Measured, not guessed
+
+| Id | Task | Done when | Status |
+| --- | --- | --- | --- |
+| T72 | Stop asking git the same question twice per request | `mergeTargetFor` runs twice in one card-detail request. Measured at 60-84ms per open with fourteen merged cards, so this is tidiness rather than a fix - and it is written down as tidiness rather than sold as performance. | open |
+| T73 | A budget for the card-detail request | The route runs seven git subprocesses plus one per merged card. It is fast enough on a small repository and nobody has measured a large one. Either bound it or record the number. | open |
+
+## O. What the board still cannot tell you
+
+| Id | Task | Done when | Status |
+| --- | --- | --- | --- |
+| T74 | What the board has spent over time | Cost is recorded per run and reported for today. A week of it is the number that decides whether this is affordable. | open |
+| T75 | Say when the batch finished, not only when it halted | `GORILLA_NOTIFY` fires on a halt. An operator waking to a finished queue gets nothing, and cannot tell it from a queue that never started. | open |
+| T76 | Carry the new signals into the digest | The digest predates cost, contradictions, readiness and the plan. The morning view is the one place they would be read. | open |
+| T77 | Archive a card without deleting it | A finished board grows forever. Deleting loses the history the ledger exists to keep. | open |
+
+## P. Reachable from the keyboard
+
+| Id | Task | Done when | Status |
+| --- | --- | --- | --- |
+| T78 | Move around the board without a mouse | Open a card, move it, dispatch it, close it. | open |
+| T79 | The panels announce themselves | Five overlay panels have been added and none of them says what it is to a screen reader. | open |
+
+## Not on this list
+
+Doc 19's "what has never happened" is the largest remaining risk and none of it
+is a coding task. A real compaction, a real conflict resolution, a real halt
+notification, a token ceiling stopping a real run, a second opinion from a real
+model, an import against real GitHub, and one unattended batch that completes
+clean. Every one of those needs the thing to be used, not built, and putting
+them here would let a merged pull request stand in for evidence.
