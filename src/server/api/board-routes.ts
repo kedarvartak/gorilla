@@ -8,6 +8,7 @@ import { blockersFor, dispatchableCards } from '../cards/eligibility.js';
 import { executionOrder } from '../cards/order.js';
 import { proposeInvariants } from '../cards/invariant-proposals.js';
 import { searchCards } from '../cards/search.js';
+import { buildPlan, describePlan } from '../cards/plan.js';
 import { describeMetrics, readMetrics } from '../metrics.js';
 import { isValidHour } from '../dispatch/window.js';
 import { describeDuplicates, findDuplicates } from '../cards/duplicates.js';
@@ -367,6 +368,14 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
       return { ...metrics, notes: describeMetrics(metrics) };
     },
   );
+
+  /**
+   * The order the board will work in, and why anything is waiting (T64).
+   */
+  app.get<{ Params: { boardId: string } }>('/api/boards/:boardId/plan', (request) => {
+    const plan = buildPlan(context.database.db, request.params.boardId);
+    return { ...plan, note: describePlan(plan) };
+  });
 
   app.get<{ Params: { boardId: string } }>('/api/boards/:boardId/dispatchable', (request) => {
     return dispatchableCards(context.database.db, request.params.boardId);
