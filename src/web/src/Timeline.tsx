@@ -46,6 +46,7 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
   const [eventFilter, setEventFilter] = useState('');
   const [toolFilter, setToolFilter] = useState('');
   const [density, setDensity] = useState<string | null>(null);
+  const [repeats, setRepeats] = useState<string | null>(null);
 
   const load = useCallback(
     async (from: number, replace: boolean) => {
@@ -59,6 +60,7 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
         nextAfter: number;
         hasMore: boolean;
         density?: { note: string };
+        repeatNote?: string | null;
       }>(runId, params);
 
       // Null rather than a throw: a timeline page that will not load leaves
@@ -66,6 +68,7 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
       if (body === null) return;
 
       setDensity(body.density?.note ?? null);
+      setRepeats(body.repeatNote ?? null);
       setTotal(body.total);
       setHasMore(body.hasMore);
       setAfter(body.nextAfter);
@@ -94,6 +97,9 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
         {/* Where the time went, over the events on screen. A list of evenly
             spaced rows says a run happened and nothing about its shape. */}
         {density === null ? null : <span className="text-dim">{density}</span>}
+        {/* A denial storm renders as eighty rows that each look like work.
+            This is the one line that says they were all the same call. */}
+        {repeats === null ? null : <span className="text-warn">{repeats}</span>}
         {compactions > 0 ? (
           <span className="text-warn">
             {compactions} compaction{compactions === 1 ? '' : 's'}
