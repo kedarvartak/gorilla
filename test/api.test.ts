@@ -662,3 +662,53 @@ describe('staleness on the board', () => {
     expect(cards.body.find((entry) => entry.title === 'Done already')?.looksFinished).toBe(false);
   });
 });
+
+describe('updating a card with a field it does not have', () => {
+  it('refuses instead of ignoring it', async () => {
+    const card = await json<{ id: string }>('POST', `/api/boards/${boardId}/cards`, {
+      title: 'a card',
+    });
+
+    // An update that accepts a field it does not know reports success for a
+    // change it did not make, and the operator finds out when the card behaves
+    // as though they never edited it (T4).
+    const refused = await json<{ error: string; field: string }>(
+      'PATCH',
+      `/api/cards/${card.body.id}`,
+      { titel: 'a typo' },
+    );
+
+    expect(refused.status).toBe(400);
+    expect(refused.body.field).toBe('titel');
+  });
+
+  it('says which fields it does have', async () => {
+    const card = await json<{ id: string }>('POST', `/api/boards/${boardId}/cards`, {
+      title: 'a card',
+    });
+
+    const refused = await json<{ error: string }>('PATCH', `/api/cards/${card.body.id}`, {
+      nonsense: 1,
+    });
+
+    // A refusal that does not say what would have worked leaves the operator
+    // guessing at an API they cannot see.
+    expect(refused.body.error).toContain('goalCondition');
+  });
+
+  it('still accepts every field it does have', async () => {
+    const card = await json<{ id: string }>('POST', `/api/boards/${boardId}/cards`, {
+      title: 'a card',
+    });
+
+    const updated = await json('PATCH', `/api/cards/${card.body.id}`, {
+      title: 'renamed',
+      body: 'described',
+      goalCondition: 'measurable',
+      priority: 'high',
+      tokenCeiling: 1_000,
+    });
+
+    expect(updated.status).toBe(200);
+  });
+});
