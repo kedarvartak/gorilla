@@ -81,3 +81,31 @@ describe('with no board serving', () => {
     expect(parsed.boards).toHaveLength(1);
   });
 });
+
+describe('a board with nothing on it', () => {
+  it('is counted rather than listed', async () => {
+    handle.db
+      .insert(boards)
+      .values({ id: 'empty-1', name: 'nothing here', cwd: `${dir}/e1`, createdAt: 1 })
+      .run();
+    createDefaultColumns(handle.db, 'empty-1');
+    createCard(handle, { boardId: BOARD, title: 'the one that matters' });
+
+    const output = (await status()).stdout;
+
+    // Four empty boards listed in full is a report that is mostly padding, and
+    // the board that matters is harder to find for it.
+    expect(output).toContain('1 other board(s) have nothing on them');
+    expect(output).not.toContain('nothing here:');
+  });
+
+  it('still says the database holds none at all', async () => {
+    handle.sqlite.prepare('DELETE FROM cards').run();
+    handle.sqlite.prepare('DELETE FROM columns').run();
+    handle.sqlite.prepare('DELETE FROM boards').run();
+
+    // "Which boards does this database hold" is a real question, and none is a
+    // real answer to it.
+    expect((await status()).stdout).toContain('holds no boards');
+  });
+});
