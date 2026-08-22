@@ -177,6 +177,27 @@ queue never waits for it, and a notifier that fails, hangs or does not exist
 never unhalts the board or breaks the gate. `gorilla doctor` warns when nothing
 is configured.
 
+## Posting to something that is not a person
+
+`GORILLA_NOTIFY` runs a command, which is right for waking somebody up and
+wrong for everything else. A status page, a relay, or a second machine wanting
+to know a card finished all want a request rather than a shell.
+
+`GORILLA_WEBHOOK` names a url. The board posts JSON to it when a card settles
+and when a queue halts. From the environment, like the notify command, because
+a delivery configured only through the interface goes missing on the night it
+matters.
+
+What is sent is ids, a title, a status and a timestamp - never the card body,
+the diff, the ledger, or anything a run said. This is a wire out of a process
+that reads source code and transcripts, and the useful payload is "something
+happened, come and look" rather than the thing itself.
+
+Nothing waits for it. An unreachable endpoint is logged and forgotten: a board
+that stopped working because a status page was down would be a worse product
+than one with no webhook. `gorilla doctor` fails on a url that is not http or
+https, because that is a webhook which silently never fires.
+
 ## Working only at night
 
 "Define tasks, run them, go to sleep" has an unstated bound: the operator wants
