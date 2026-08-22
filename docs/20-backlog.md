@@ -184,7 +184,7 @@ because each one is reachable from what exists, not because the category has the
 | T61 | Several attempts at one card | A card can be run N times on N branches, and the board presents the attempts side by side for the operator to choose between. | open |
 | T62 | Steer a running session | ~~Withdrawn: not reachable.~~ A headless run reads its prompt from argv and the launcher gives it no stdin; there is no channel to steer it through. See the rescope. | dropped |
 | T63 | Keep the transcript after the worktree is gone | ~~Withdrawn: the premise is false.~~ Transcripts live in `~/.claude/projects/`, outside the worktree; `git worktree remove` does not touch them. Checked against the real database. | dropped |
-| T64 | Dependency graph on the board | The dependency edges are visible as a graph, not only as a blocked badge. | open |
+| T64 | Dependency graph on the board | ~~Rescoped: a plan, not a picture.~~ The order the board will work in, with each waiting card naming what it waits for. | merged |
 | T65 | Fairness across boards | Two boards on one machine cannot starve each other of the concurrency budget. | merged |
 | T66 | Replay a card's run as a fixture | A run already in the database becomes a replayable fixture, so a bug found afterwards is reproduced rather than described. | merged |
 
@@ -222,6 +222,19 @@ Code already keeps, which is where the session lives and what `--resume` reads.
 The launcher has been able to pass `--resume` since it was written and nothing
 ever set it, so the work was not building a checkpointer - it was using the
 checkpoint that was already there.
+
+**T64, 22 August 2026.** Written as a drawn dependency graph. Edges answer
+"what depends on what"; the operator's question is "why has nothing started",
+and rank already existed on every tile. What was missing was the reason beside
+it, which is another card's title and does not fit on a tile. So it is a
+layered list: forty cards of edges is a picture nobody can read, and the
+question is an ordering question anyway.
+
+Writing it removed a case rather than adding one. A board where nothing can
+start is unreachable - dependencies that would cycle are refused at creation,
+and a finite acyclic graph always has a source - so the message drafted for it
+was deleted. One that nobody can ever reach is worse than absent, because it
+sits in the code looking like a handled case.
 
 **T63, 22 August 2026. Withdrawn.** The entry assumed removing a worktree
 discards the run's evidence. It does not. Transcripts are written to

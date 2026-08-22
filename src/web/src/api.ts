@@ -404,6 +404,9 @@ export const api = {
   markSeenQuietly: (cardId: string) =>
     fetch(`/api/cards/${cardId}/seen`, { method: 'POST' }).catch(() => undefined),
 
+  /** The order the board will work in, and what each card waits for (T64). */
+  plan: <T>(boardId: string) => optional<T>(`/api/boards/${boardId}/plan`, isRecord),
+
   dispatchable: (boardId: string) =>
     request<{ id: string; title: string }[]>(`/api/boards/${boardId}/dispatchable`),
 };
