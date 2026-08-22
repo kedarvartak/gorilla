@@ -44,8 +44,8 @@ export function findDuplicates(
   if (trimmed === '') return [];
 
   const cards = sqlite
-    .prepare('SELECT id, title, status FROM cards WHERE board_id = ?')
-    .all(boardId) as { id: string; title: string; status: string }[];
+    .prepare('SELECT id, title, status, archived_at AS archivedAt FROM cards WHERE board_id = ?')
+    .all(boardId) as { id: string; title: string; status: string; archivedAt: number | null }[];
 
   return (
     cards
@@ -54,7 +54,7 @@ export function findDuplicates(
       // not happening, and warning about it invites them to un-decide by
       // accident. Done cards are kept - restating finished work is the mistake
       // this exists to catch.
-      .filter((card) => card.status !== 'abandoned')
+      .filter((card) => card.status !== 'abandoned' && card.archivedAt === null)
       .map((card) => ({
         cardId: card.id,
         title: card.title,

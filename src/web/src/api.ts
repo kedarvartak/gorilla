@@ -330,6 +330,13 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  /** Puts a card away, or brings it back. Nothing is deleted (T77). */
+  archiveCard: (cardId: string, archived: boolean) =>
+    request<Card>(`/api/cards/${cardId}/archive`, {
+      method: 'POST',
+      body: JSON.stringify({ archived }),
+    }),
+
   /** A new card shaped like this one, without anything that happened to it (T49). */
   cloneCard: (cardId: string, title?: string) =>
     request<Card>(`/api/cards/${cardId}/clone`, {

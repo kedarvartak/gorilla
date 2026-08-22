@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql, isNull } from 'drizzle-orm';
 
 import type { Db } from '../db/client.js';
 import { cardDependencies, cards, columns } from '../db/schema.js';
@@ -112,6 +112,9 @@ export function dispatchableCards(db: Db, boardId: string): { id: string; title:
         eq(cards.boardId, boardId),
         eq(columns.isReady, true),
         eq(cards.status, 'idle'),
+        // An archived card is one the operator put away. Dispatching it would
+        // be the board reaching into a drawer they closed (T77).
+        isNull(cards.archivedAt),
         sql`trim(coalesce(${cards.goalCondition}, '')) <> ''`,
       ),
     )
