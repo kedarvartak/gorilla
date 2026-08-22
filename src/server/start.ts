@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm';
 
 import { buildApp, contextOf } from './app.js';
 import { createDefaultColumns } from './cards/defaults.js';
-import { canonicaliseCwd } from './ingest/binding.js';
+import { owningBoardCwd } from './ingest/binding.js';
 import { boards } from './db/schema.js';
 import type { FixtureRecorder } from './fixtures/recorder.js';
 import { openDatabase, type DatabaseHandle } from './db/client.js';
@@ -32,7 +32,9 @@ export interface EnsuredBoard {
  * the directory is not a guess.
  */
 export function ensureBoardForCwd(database: DatabaseHandle, cwd: string): EnsuredBoard {
-  const canonical = canonicaliseCwd(cwd);
+  // Serving from inside a card's worktree resolves to the project, rather than
+  // creating a second board for a directory this system made itself (T67).
+  const canonical = owningBoardCwd(cwd);
 
   const existing = database.db.select().from(boards).where(eq(boards.cwd, canonical)).get();
   if (existing !== undefined) {

@@ -38,6 +38,32 @@ export function canonicaliseCwd(cwd: string): string {
   }
 }
 
+/**
+ * The board a directory belongs to, which is not always the directory (T67).
+ *
+ * A dispatched card runs in `<board>/.gorilla/worktrees/<cardId>`, and its
+ * session reports that path as its cwd. Taken literally, every card the board
+ * ever dispatched becomes a board of its own, named after a uuid, holding the
+ * runs that should have been attributed to the project. Found by running
+ * `gorilla status` against a real database and seeing five boards where there
+ * is one project.
+ *
+ * The worktrees live at a path this system chose, so recognising them is not a
+ * heuristic about directory names - it is reading back a convention the board
+ * wrote itself.
+ */
+export function owningBoardCwd(cwd: string): string {
+  const canonical = canonicaliseCwd(cwd);
+  const marker = canonical.includes('\\') ? '\\.gorilla\\worktrees\\' : '/.gorilla/worktrees/';
+  const at = canonical.indexOf(marker);
+
+  // Not in a worktree, or is the worktrees directory itself rather than a card
+  // inside it. Either way the directory is its own board.
+  if (at <= 0) return canonical;
+
+  return canonical.slice(0, at);
+}
+
 function boardNameFor(cwd: string): string {
   const segments = canonicaliseCwd(cwd).split(/[/\\]/).filter(Boolean);
   return segments[segments.length - 1] ?? cwd;
@@ -64,7 +90,10 @@ export class BindingResolver {
   }
 
   boardForCwd(cwd: string): string {
-    const canonical = canonicaliseCwd(cwd);
+    // The owning project, not the worktree. A card's session reports its
+    // worktree as its cwd, and taking that literally gives every dispatched
+    // card a board of its own (T67).
+    const canonical = owningBoardCwd(cwd);
 
     const cached = this.#boardCache.get(canonical);
     if (cached !== undefined) return cached;

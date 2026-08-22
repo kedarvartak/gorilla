@@ -7,6 +7,7 @@ import { formatReport, runDoctor, type DoctorReport } from '../src/cli/commands/
 import { runInit } from '../src/cli/commands/init.js';
 import { HOOK_DEFINITIONS } from '../src/hooks/definitions.js';
 import { openDatabase } from '../src/server/db/client.js';
+import { boards } from '../src/server/db/schema.js';
 import { startServer, type RunningServer } from '../src/server/start.js';
 
 let dir: string;
@@ -300,5 +301,50 @@ describe('formatReport', () => {
     expect(output).toContain('[ok  ] hook configuration:');
     expect(output).toContain('[warn]');
     expect(output.split('\n').length).toBeGreaterThan(4);
+  });
+});
+
+describe('boards that are really worktrees', () => {
+  it('reports the ones registered before this was fixed', async () => {
+    const handle = openDatabase({ path: join(dir, 'phantom.db') });
+    handle.db.insert(boards).values({ id: 'real', name: 'project', cwd: dir, createdAt: 1 }).run();
+    handle.db
+      .insert(boards)
+      .values({
+        id: 'phantom',
+        name: 'card-1',
+        cwd: join(dir, '.gorilla/worktrees/card-1'),
+        createdAt: 1,
+      })
+      .run();
+    handle.close();
+
+    const report = await runDoctor({ cwd: dir, port: PORT, dbPath: join(dir, 'phantom.db') });
+    const check = report.checks.find((entry) => entry.name === 'boards');
+
+    expect(check?.status).toBe('warn');
+    expect(check?.detail).toContain('card-1');
+  });
+
+  it('does not offer to remove them', async () => {
+    const handle = openDatabase({ path: join(dir, 'phantom.db') });
+    handle.db
+      .insert(boards)
+      .values({
+        id: 'phantom',
+        name: 'card-1',
+        cwd: join(dir, '.gorilla/worktrees/card-1'),
+        createdAt: 1,
+      })
+      .run();
+    handle.close();
+
+    const report = await runDoctor({ cwd: dir, port: PORT, dbPath: join(dir, 'phantom.db') });
+    const check = report.checks.find((entry) => entry.name === 'boards');
+
+    // Those rows have runs and events hanging off them. A cleanup that got the
+    // reattachment wrong would move one card's history onto another, which is
+    // worse than a board list with junk in it.
+    expect(check?.detail).toContain('Nothing removes them automatically');
   });
 });

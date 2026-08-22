@@ -13,6 +13,7 @@ import { openDatabase, resolveDatabasePath } from '../../server/db/client.js';
 import { DEFAULT_PORT, DEFAULT_HOST } from '../../server/index.js';
 import { readTranscript } from '../../server/transcript/index.js';
 import { NOTIFY_ENV } from '../../server/notify/notify.js';
+import { owningBoardCwd } from '../../server/ingest/binding.js';
 import { assessHookTarget, configuredBaseUrl } from '../../hooks/target.js';
 import type { Command, CommandResult } from '../cli.js';
 
@@ -327,6 +328,45 @@ function checkNotify(): Check {
  * events are demonstrably going nowhere and this fails. With nothing listening,
  * the port is the operator's hypothesis rather than an observation, so it warns.
  */
+/**
+ * Boards that are really worktrees (T67).
+ *
+ * A card's session used to report its worktree as its cwd and be given a board
+ * of its own. That is fixed going forward, but the boards it already made are
+ * still there, holding runs that belong to the project.
+ *
+ * Reported rather than deleted. Those rows have runs and events hanging off
+ * them, and a cleanup that got the reattachment wrong would silently move one
+ * card's history onto another - worse than a board list with some junk in it.
+ */
+function checkPhantomBoards(dbPath: string): Check {
+  if (!existsSync(dbPath)) {
+    return { name: 'boards', status: 'ok', detail: 'No board database yet.' };
+  }
+
+  const handle = openDatabase({ path: dbPath, migrate: false });
+
+  try {
+    const boards = handle.sqlite.prepare('SELECT name, cwd FROM boards').all() as {
+      name: string;
+      cwd: string;
+    }[];
+
+    const phantom = boards.filter((board) => owningBoardCwd(board.cwd) !== board.cwd);
+
+    return {
+      name: 'boards',
+      status: phantom.length === 0 ? 'ok' : 'warn',
+      detail:
+        phantom.length === 0
+          ? `${String(boards.length)} board(s), each a project directory.`
+          : `${String(phantom.length)} of ${String(boards.length)} board(s) are card worktrees that were registered as boards before this was fixed: ${phantom.map((board) => board.name).join(', ')}. They hold runs that belong to the project. Nothing removes them automatically, because a wrong reattachment would move one card's history onto another.`,
+    };
+  } finally {
+    handle.close();
+  }
+}
+
 function checkHookTarget(cwd: string, port: number, serverPresent: boolean): Check[] {
   const checks: Check[] = [];
 
@@ -374,6 +414,7 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
   checks.push(...checkHookTarget(options.cwd, options.port, portState === 'in-use'));
 
   checks.push(checkNotify());
+  checks.push(checkPhantomBoards(dbPath));
   checks.push(...checkDeliveries(dbPath, silentAfterMs));
   checks.push(await checkTranscripts(dbPath));
 

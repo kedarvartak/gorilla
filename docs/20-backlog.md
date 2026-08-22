@@ -153,7 +153,7 @@ defects have come from.
 
 | Id | Task | Done when | Status |
 | --- | --- | --- | --- |
-| T67 | A worktree must not register as a board of its own | `gorilla status` lists five boards on this machine, four of them named after card uuids: every dispatched card's worktree is a directory, `ensureBoardForCwd` runs per directory, and each one gets a board. Found when the status command first ran against the real database. | open |
+| T67 | A worktree must not register as a board of its own | `gorilla status` lists five boards on this machine, four of them named after card uuids: every dispatched card's worktree is a directory, `ensureBoardForCwd` runs per directory, and each one gets a board. Found when the status command first ran against the real database. | merged |
 | T68 | Say nothing about a board with nothing on it | The status output is four-fifths empty boards. Partly T67's fault, but a board with no cards is worth one line at most. | open |
 
 ## K. Beyond one agent per card
