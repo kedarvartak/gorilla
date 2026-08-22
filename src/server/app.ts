@@ -147,6 +147,12 @@ export function buildApp(options: AppOptions): FastifyInstance {
           onError: (error) => app.log.error({ err: error }, 'webhook delivery failed'),
         });
       },
+      onResumed: (boardId, cardId, why) => {
+        // Logged as well as published: this is the kind of thing an operator
+        // reads about in the morning rather than watches happen.
+        app.log.info({ boardId, cardId }, why);
+        broadcaster.publish('card-resumed', { boardId, cardId, why });
+      },
       onRunFinished: (boardId, cardId, result) =>
         broadcaster.publish('run-finished', {
           boardId,

@@ -27,6 +27,7 @@ import { describeSpend, overBudget, spentSince, startOfDay } from './budget.js';
 import { classifyLaunchFailure, decideRetry, DEFAULT_MAX_ATTEMPTS } from './retry.js';
 import { describeWindow, isOpen, msUntilOpen, type DispatchWindow } from './window.js';
 import { acquireLease, ownerId, releaseLease } from './lease.js';
+import { describeResume, resumableFor } from './resume.js';
 
 /**
  * Decides which Ready card starts next (doc 05).
@@ -116,6 +117,8 @@ export interface DispatcherEvents {
   readonly onHalted?: (boardId: string, halt: HaltState) => void;
   /** Fired when a card goes back in the queue rather than being blocked (T42). */
   readonly onRetried?: (boardId: string, cardId: string, why: string) => void;
+  /** Fired when a run continues an interrupted session rather than starting one (T46). */
+  readonly onResumed?: (boardId: string, cardId: string, why: string) => void;
   /**
    * Fired when a card stops for good, whichever way it stopped (T45).
    *
@@ -680,6 +683,13 @@ export class Dispatcher {
     // construction - see CostMeter - so the ceiling stops a run just after it
     // crosses rather than just before, which beats killing runs that had not
     // actually overspent.
+    const resumable = resumableFor(this.database.sqlite, cardId);
+    if (resumable !== null) {
+      // Said, not inferred. A resumed run behaves differently from a fresh one
+      // and the operator reading the log should know which they got.
+      this.events.onResumed?.(boardId, cardId, describeResume(resumable));
+    }
+
     const meter = new CostMeter();
 
     const running = this.#registry.track(
@@ -700,6 +710,10 @@ export class Dispatcher {
         // subsequent run would teach the agent to skim the block it most needs
         // to read.
         operatorNote: card.retryNote,
+        // Continue the session that was cut off, when there is one (T46).
+        // Claude Code already stores it; this is the board finally using the
+        // checkpoint that exists rather than keeping a second one.
+        ...(resumable === null ? {} : { resumeSessionId: resumable.sessionId }),
         agentModel: card.agentModel,
         agentEffort: card.agentEffort,
         permissionMode: card.permissionMode,
