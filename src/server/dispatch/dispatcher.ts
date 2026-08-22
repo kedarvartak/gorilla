@@ -115,6 +115,19 @@ export interface DispatcherEvents {
   readonly onHalted?: (boardId: string, halt: HaltState) => void;
   /** Fired when a card goes back in the queue rather than being blocked (T42). */
   readonly onRetried?: (boardId: string, cardId: string, why: string) => void;
+  /**
+   * Fired when a card stops for good, whichever way it stopped (T45).
+   *
+   * Separate from `onRunFinished`, which reports a process exiting. A run that
+   * fails and is retried has finished twice and settled once, and something
+   * relaying to a status page cares about the second number.
+   */
+  readonly onCardSettled?: (
+    boardId: string,
+    cardId: string,
+    cardTitle: string,
+    status: 'blocked' | 'awaiting-review' | 'abandoned',
+  ) => void;
 }
 
 interface BoardState {
@@ -762,6 +775,20 @@ export class Dispatcher {
       .run();
   }
 
+  /** Says a card stopped for good, once, wherever it stopped (T45). */
+  #settled(
+    boardId: string,
+    cardId: string,
+    cardTitle: string,
+    status: 'blocked' | 'awaiting-review' | 'abandoned',
+  ): void {
+    try {
+      this.events.onCardSettled?.(boardId, cardId, cardTitle, status);
+    } catch {
+      /* telling someone is not worth breaking the queue for */
+    }
+  }
+
   /**
    * Sends a blocked card back to the queue, with what the operator said (T21, T22).
    *
@@ -843,6 +870,10 @@ export class Dispatcher {
     const state = this.#stateFor(boardId);
     state.failureStreak += 1;
 
+    // Reported here rather than at every caller: this is the one place a card
+    // stops for a reason, whatever the reason was.
+    this.#settled(boardId, cardId, halt.cardTitle, 'blocked');
+
     if (state.policy === 'review' || state.failureStreak >= this.failureStreakLimit) {
       // The streak's own halt says what it is, because "the session exited with
       // code 1" on the fourth card in a row invites the operator to debug that
@@ -921,6 +952,7 @@ export class Dispatcher {
       }
 
       updateCard(this.database, cardId, { status: 'abandoned' });
+      this.#settled(boardId, cardId, card.title, 'abandoned');
       this.#halt(boardId, {
         reason: 'cancelled',
         cardId,
@@ -999,6 +1031,16 @@ export class Dispatcher {
       return;
     }
 
+    // A card got all the way through, so whatever the last failures had in
+    // common is not stopping work now. The streak starts again from here.
+    //
+    // Above the policy branch, not below it: under `review` the queue halts
+    // for the operator, but the card still finished, and a streak that only
+    // reset in unattended mode would stop a reviewed board after three
+    // successes.
+    state.failureStreak = 0;
+    this.#settled(boardId, cardId, card.title, 'awaiting-review');
+
     if (state.policy === 'review') {
       this.#halt(boardId, {
         reason: 'awaiting-review',
@@ -1013,10 +1055,6 @@ export class Dispatcher {
       this.#publish(boardId);
       return;
     }
-
-    // A card got all the way through, so whatever the last failures had in
-    // common is not stopping work now. The streak starts again from here.
-    state.failureStreak = 0;
 
     // Unattended: the completion is recorded and the queue moves on. Stopping
     // here would mean waking to one finished task and a queue that never

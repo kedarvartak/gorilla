@@ -13,6 +13,7 @@ import { openDatabase, resolveDatabasePath } from '../../server/db/client.js';
 import { DEFAULT_PORT, DEFAULT_HOST } from '../../server/index.js';
 import { readTranscript } from '../../server/transcript/index.js';
 import { NOTIFY_ENV } from '../../server/notify/notify.js';
+import { isDeliverable, WEBHOOK_ENV } from '../../server/notify/webhook.js';
 import { owningBoardCwd } from '../../server/ingest/binding.js';
 import { assessHookTarget, configuredBaseUrl } from '../../hooks/target.js';
 import type { Command, CommandResult } from '../cli.js';
@@ -339,6 +340,29 @@ function checkNotify(): Check {
  * them, and a cleanup that got the reattachment wrong would silently move one
  * card's history onto another - worse than a board list with some junk in it.
  */
+/** Where board events are posted, if anywhere (T45). */
+function checkWebhook(): Check {
+  const url = (process.env[WEBHOOK_ENV] ?? '').trim();
+
+  if (url === '') {
+    return {
+      name: 'webhook',
+      status: 'ok',
+      detail: `${WEBHOOK_ENV} is not set. Nothing is posted anywhere, which is the default.`,
+    };
+  }
+
+  // A url the delivery will refuse is worth failing on here rather than at
+  // 3am, where it appears as a webhook that silently never fires.
+  return isDeliverable(url)
+    ? { name: 'webhook', status: 'ok', detail: `Board events are posted to ${url}` }
+    : {
+        name: 'webhook',
+        status: 'fail',
+        detail: `${WEBHOOK_ENV} is not an http or https url, so nothing will ever be posted: ${url}`,
+      };
+}
+
 function checkPhantomBoards(dbPath: string): Check {
   if (!existsSync(dbPath)) {
     return { name: 'boards', status: 'ok', detail: 'No board database yet.' };
@@ -414,6 +438,7 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
   checks.push(...checkHookTarget(options.cwd, options.port, portState === 'in-use'));
 
   checks.push(checkNotify());
+  checks.push(checkWebhook());
   checks.push(checkPhantomBoards(dbPath));
   checks.push(...checkDeliveries(dbPath, silentAfterMs));
   checks.push(await checkTranscripts(dbPath));

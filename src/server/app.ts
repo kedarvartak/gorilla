@@ -23,6 +23,7 @@ import { Dispatcher } from './dispatch/dispatcher.js';
 import { readHealth } from './health.js';
 import { boards } from './db/schema.js';
 import { NOTIFY_ENV, notifyHalt } from './notify/notify.js';
+import { deliverWebhook, WEBHOOK_ENV } from './notify/webhook.js';
 import { PendingBindings } from './binding/pending.js';
 import { ExtractionService } from './ledger/service.js';
 import type { ExtractionModel } from './ledger/model.js';
@@ -109,11 +110,43 @@ export function buildApp(options: AppOptions): FastifyInstance {
           cwd: board?.cwd,
           onError: (error) => app.log.error({ err: error }, 'halt notification failed'),
         });
+
+        // The same fact, for something that is not a person (T45).
+        deliverWebhook({
+          url: process.env[WEBHOOK_ENV],
+          event: {
+            event: 'queue-halted',
+            boardId,
+            boardName: board?.name ?? 'gorilla',
+            cardId: halt.cardId,
+            cardTitle: halt.cardTitle,
+            detail: halt.reason,
+            at: halt.at,
+          },
+          onError: (error) => app.log.error({ err: error }, 'webhook delivery failed'),
+        });
       },
       // Published so a watching interface can tell a card that went back in the
       // queue from one that never started. Both read as idle on the board.
       onRetried: (boardId, cardId, why) =>
         broadcaster.publish('card-retried', { boardId, cardId, why }),
+      onCardSettled: (boardId, cardId, cardTitle, status) => {
+        const board = options.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
+
+        deliverWebhook({
+          url: process.env[WEBHOOK_ENV],
+          event: {
+            event: status === 'blocked' ? 'card-blocked' : 'card-finished',
+            boardId,
+            boardName: board?.name ?? 'gorilla',
+            cardId,
+            cardTitle,
+            detail: status,
+            at: Date.now(),
+          },
+          onError: (error) => app.log.error({ err: error }, 'webhook delivery failed'),
+        });
+      },
       onRunFinished: (boardId, cardId, result) =>
         broadcaster.publish('run-finished', {
           boardId,
