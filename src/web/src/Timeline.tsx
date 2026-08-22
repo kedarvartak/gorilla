@@ -106,7 +106,7 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
             this path since Phase 0 and never opened it. */}
         <button
           type="button"
-          className="ml-auto rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-ink"
+          className="ml-auto rounded border border-line px-2 py-0.5 text-[12.5px] text-dim hover:text-ink"
           onClick={() => {
             if (transcript !== null) {
               setTranscript(null);
@@ -173,7 +173,7 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
           {transcript.text === undefined ? (
             <p className="text-dim">{transcript.note}</p>
           ) : (
-            <pre className="whitespace-pre-wrap font-mono text-[11px] text-dim">
+            <pre className="whitespace-pre-wrap font-mono text-[12.5px] text-dim">
               {transcript.text === '' ? 'The transcript is empty.' : transcript.text}
             </pre>
           )}
@@ -181,7 +181,7 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
       )}
 
       <ol
-        className={`min-h-0 flex-1 overflow-y-auto px-4 py-2 text-[11px] ${
+        className={`min-h-0 flex-1 overflow-y-auto px-4 py-2 text-[12.5px] ${
           transcript === null ? '' : 'hidden'
         }`}
       >

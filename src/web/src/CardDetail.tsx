@@ -2,7 +2,17 @@ import { useCallback, useEffect, useRef, useState, type ReactElement } from 'rea
 
 import { Timeline } from './Timeline.js';
 
-import { Archive, ArrowsInSimple, ArrowsOutSimple, Copy, X } from '@phosphor-icons/react';
+import {
+  Archive,
+  ArrowsInSimple,
+  ArrowsOutSimple,
+  CheckCircle,
+  Copy,
+  DownloadSimple,
+  Question,
+  Warning,
+  X,
+} from '@phosphor-icons/react';
 
 import {
   api,
@@ -395,7 +405,7 @@ function TextField({
   return (
     <>
       <textarea
-        className={`w-full resize-y rounded border bg-well px-1 py-0.5 text-[11px] text-ink placeholder:text-dim ${
+        className={`w-full resize-y rounded-md border bg-well px-2 py-1 text-[13px] text-ink placeholder:text-dim ${
           invalid ? 'border-danger/60' : 'border-line'
         }`}
         rows={1}
@@ -420,7 +430,7 @@ function TextField({
         }}
       />
       {invalid && invalidNote !== undefined && !editing ? (
-        <div className="text-[10px] text-danger">{invalidNote}</div>
+        <div className="text-[11.5px] text-danger">{invalidNote}</div>
       ) : null}
     </>
   );
@@ -450,7 +460,7 @@ function FieldSelect({
       </dt>
       <dd>
         <select
-          className="w-full rounded border border-line bg-well px-1 py-0.5 text-ink"
+          className="w-full rounded-md border border-line bg-well px-2 py-1 text-ink"
           value={value ?? ''}
           aria-label={label}
           onChange={(changed) => onPick(changed.target.value === '' ? null : changed.target.value)}
@@ -484,13 +494,16 @@ function Rail({
 }) {
   return (
     <section className={`min-w-0 overflow-y-auto px-6 py-5 ${className}`}>
-      {/* Keep a readable measure on wide monitors. The unused space is
-          intentional: it separates this decision surface from the busy board
-          still visible above it. */}
-      <div className="mx-auto w-full max-w-5xl">
-        <h3 className="mb-5 eyebrow">{title}</h3>
-        {children}
-      </div>
+      {/* Full width. A centred measure left a margin either side of a pane the
+          operator had deliberately expanded, which reads as the pane failing to
+          fill the space it was given. The measure is kept where it matters
+          instead - inside each section, which is narrow enough to read. */}
+      <h3 className="sr-only">{title}</h3>
+      {/* Flowed into columns rather than stacked. A dozen independent sections
+          in one column is a document to be scrolled; in columns it is a surface
+          to be surveyed, which is what somebody deciding whether to merge is
+          doing. */}
+      <div className="sections">{children}</div>
     </section>
   );
 }
@@ -855,14 +868,14 @@ export function CardDetail({
 
       <header className="flex items-baseline gap-3 border-b border-line px-5 py-3">
         <h2 className="text-ink">{detail.card.title}</h2>
-        <span className="text-[11px] text-dim">{detail.card.status}</span>
+        <span className="text-[12.5px] text-dim">{detail.card.status}</span>
         {/* Only on a card that stopped. Offering it on a running card would
             invite two runs in one worktree, and the server refuses that
             anyway - a button that returns 409 is worse than no button. */}
         {detail.card.status !== 'blocked' && detail.card.status !== 'abandoned' ? null : (
           <button
             type="button"
-            className="ml-auto rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-ink"
+            className="ml-auto rounded border border-line px-2 py-0.5 text-[12.5px] text-dim hover:text-ink"
             title="Sends the card back to the queue, keeping its worktree, with what you say about it."
             onClick={() => setRetrying(true)}
           >
@@ -873,7 +886,7 @@ export function CardDetail({
             there is no template store to keep - just this. */}
         <button
           type="button"
-          className={`${detail.card.status === 'blocked' || detail.card.status === 'abandoned' ? '' : 'ml-auto '}inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-dim transition-colors hover:bg-well hover:text-ink`}
+          className={`${detail.card.status === 'blocked' || detail.card.status === 'abandoned' ? '' : 'ml-auto '}inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink`}
           title="A new card with this one's body, guardrails, goal and model. Nothing that happened to this card comes with it."
           onClick={() => {
             void api.cloneCard(cardId).catch((cause: Error) => setError(cause.message));
@@ -884,7 +897,7 @@ export function CardDetail({
         </button>
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-dim transition-colors hover:bg-well hover:text-ink"
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
           onClick={toggleMaximised}
           title={maximised ? 'Restore the previous height' : 'Stretch the pane over the board'}
         >
@@ -899,7 +912,7 @@ export function CardDetail({
             judgements with it - the history this product exists to keep. */}
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-dim transition-colors hover:bg-well hover:text-ink"
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
           title="Takes this off the board and out of the queue. Its runs, ledger and judgements stay."
           onClick={() => {
             void api
@@ -923,7 +936,7 @@ export function CardDetail({
       </header>
 
       <nav
-        className="flex shrink-0 items-center gap-2 border-b border-line bg-well px-5 py-2"
+        className="flex shrink-0 items-center gap-5 border-b border-line bg-surface px-6"
         aria-label="Card detail sections"
       >
         {(
@@ -941,10 +954,13 @@ export function CardDetail({
           <button
             key={pane}
             type="button"
-            className={`rounded px-2 py-1 text-[11px] transition-colors ${
+            // An underline, not a tint. A tinted pill on a tinted bar was
+            // invisible, and a tab bar whose current tab cannot be found is a
+            // tab bar that has stopped being navigation.
+            className={`-mb-px border-b-2 px-1 py-2 transition-colors ${
               activePane === pane
-                ? 'bg-brand-tint text-ink'
-                : 'text-dim hover:bg-well hover:text-ink'
+                ? 'border-brand font-medium text-ink'
+                : 'border-transparent text-dim hover:text-ink'
             }`}
             aria-current={activePane === pane ? 'page' : undefined}
             onClick={() => setActivePane(pane)}
@@ -965,7 +981,7 @@ export function CardDetail({
           />
           <button
             type="button"
-            className="rounded border border-line px-2 py-1 text-[11px] text-ink hover:border-dim"
+            className="rounded border border-line px-2 py-1 text-[12.5px] text-ink hover:border-dim"
             onClick={() => {
               void api
                 .retryCard(detail.card.boardId, cardId, retryNote.trim() === '' ? null : retryNote)
@@ -980,7 +996,7 @@ export function CardDetail({
           </button>
           <button
             type="button"
-            className="rounded border border-line px-2 py-1 text-[11px] text-dim hover:text-ink"
+            className="rounded border border-line px-2 py-1 text-[12.5px] text-dim hover:text-ink"
             onClick={() => setRetrying(false)}
           >
             cancel
@@ -994,151 +1010,167 @@ export function CardDetail({
           className={activePane === 'specification' ? 'h-full' : 'hidden'}
         >
           <>
-            {detail.card.body === '' ? (
-              <p className="mb-3 text-dim">No description.</p>
-            ) : (
-              <p className="mb-3 whitespace-pre-wrap text-ink">{detail.card.body}</p>
-            )}
+            <div className="section">
+              <h4 className="mb-2 eyebrow">What this card is</h4>
+              {detail.card.body === '' ? (
+                <p className="text-dim">
+                  No description. An agent reads this before anything else, so a card with none is a
+                  card that starts from its title alone.
+                </p>
+              ) : (
+                <p className="whitespace-pre-wrap text-ink">{detail.card.body}</p>
+              )}
+            </div>
 
-            <dl className="mb-5 grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 text-[11px]">
-              <FieldSelect
-                label="priority"
-                value={detail.card.priority === 'normal' ? null : detail.card.priority}
-                options={['high', 'low']}
-                title="Reorders the dispatch queue within this card's column."
-                neutralLabel="normal"
-                onPick={(priority) =>
-                  patch({ priority: (priority ?? 'normal') as Card['priority'] })
-                }
-              />
-              <FieldSelect
-                label="agent"
-                value={detail.card.agentModel}
-                options={AGENT_MODELS}
-                title="Reaches `claude --model` for this card's run."
-                onPick={(agentModel) => patch({ agentModel })}
-              />
-              <FieldSelect
-                label="effort"
-                value={detail.card.agentEffort}
-                options={EFFORTS}
-                title="Reaches `claude --effort` for this card's run."
-                onPick={(agentEffort) => patch({ agentEffort })}
-              />
-              <FieldSelect
-                label="synthesis"
-                value={detail.card.synthesisModel}
-                options={AGENT_MODELS}
-                title="Used only for windows that escalate - compaction, and manual re-extraction. Not the model that does the work."
-                onPick={(synthesisModel) => patch({ synthesisModel })}
-              />
-              <dt
-                className="text-dim"
-                title="Tokens a run may spend before the board stops it. This one is enforced: the board terminates the session."
-              >
-                ceiling
-              </dt>
-              <dd>
-                {/* Named as a hard limit rather than a preference. The board
+            <div className="section">
+              <h4 className="mb-3 eyebrow">How it will run</h4>
+              <dl className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 text-[12.5px]">
+                <FieldSelect
+                  label="Priority"
+                  value={detail.card.priority === 'normal' ? null : detail.card.priority}
+                  options={['high', 'low']}
+                  title="Reorders the dispatch queue within this card's column."
+                  neutralLabel="normal"
+                  onPick={(priority) =>
+                    patch({ priority: (priority ?? 'normal') as Card['priority'] })
+                  }
+                />
+                <FieldSelect
+                  label="Agent"
+                  value={detail.card.agentModel}
+                  options={AGENT_MODELS}
+                  title="Reaches `claude --model` for this card's run."
+                  onPick={(agentModel) => patch({ agentModel })}
+                />
+                <FieldSelect
+                  label="Effort"
+                  value={detail.card.agentEffort}
+                  options={EFFORTS}
+                  title="Reaches `claude --effort` for this card's run."
+                  onPick={(agentEffort) => patch({ agentEffort })}
+                />
+                <FieldSelect
+                  label="Synthesis"
+                  value={detail.card.synthesisModel}
+                  options={AGENT_MODELS}
+                  title="Used only for windows that escalate - compaction, and manual re-extraction. Not the model that does the work."
+                  onPick={(synthesisModel) => patch({ synthesisModel })}
+                />
+                <dt
+                  className="text-dim"
+                  title="Tokens a run may spend before the board stops it. This one is enforced: the board terminates the session."
+                >
+                  Ceiling
+                </dt>
+                <dd>
+                  {/* Named as a hard limit rather than a preference. The board
                     kills the process when it is crossed, unlike the guardrails
                     below, which are written into settings and can be argued
                     with. */}
-                <TextField
-                  label="token ceiling"
-                  value={detail.card.tokenCeiling === null ? '' : String(detail.card.tokenCeiling)}
-                  placeholder="no ceiling"
-                  onSave={(next) =>
-                    patch({ tokenCeiling: next.trim() === '' ? null : Number(next) })
-                  }
-                />
-              </dd>
-              <dt
-                className="text-dim"
-                title="What /goal is given. Without one, the card cannot be dispatched."
-              >
-                goal
-              </dt>
-              <dd>
-                {/* Editable, because a card added from the board header has no
+                  <TextField
+                    label="token ceiling"
+                    value={
+                      detail.card.tokenCeiling === null ? '' : String(detail.card.tokenCeiling)
+                    }
+                    placeholder="no ceiling"
+                    onSave={(next) =>
+                      patch({ tokenCeiling: next.trim() === '' ? null : Number(next) })
+                    }
+                  />
+                </dd>
+                <dt
+                  className="text-dim"
+                  title="What /goal is given. Without one, the card cannot be dispatched."
+                >
+                  Goal
+                </dt>
+                <dd>
+                  {/* Editable, because a card added from the board header has no
                     goal and therefore cannot be dispatched - the Add button led
                     to a dead end, and every real card had to be made by curl. */}
-                <TextField
-                  label="goal condition"
-                  value={detail.card.goalCondition ?? ''}
-                  placeholder="measurable end state, a stated check, and a turn bound"
-                  invalid={detail.card.goalCondition === null}
-                  invalidNote="Not set, so this card cannot be dispatched."
-                  onSave={(next) => patch({ goalCondition: next === '' ? null : next })}
-                />
-              </dd>
-              <dt
-                className="text-dim"
-                title="A command the board runs itself after the run. Hard: the card halts if it does not pass."
-              >
-                verify
-              </dt>
-              <dd>
-                <TextField
-                  label="verify command"
-                  value={detail.verifyCommand ?? ''}
-                  placeholder="npm test"
-                  onSave={(next) =>
-                    patch({
-                      guardrails: { ...rails, verify: next === '' ? null : next },
-                    })
-                  }
-                />
-              </dd>
-              <dt
-                className="text-dim"
-                title="Paths the agent should confine itself to. Advisory: it is prompt text, not a rule."
-              >
-                scope
-              </dt>
-              <dd>
-                <TextField
-                  label="scope paths"
-                  value={rails.scope.join(', ')}
-                  placeholder="src/server/, test/"
-                  onSave={(next) => patch({ guardrails: { ...rails, scope: asList(next) } })}
-                />
-              </dd>
-              <dt
-                className="text-dim"
-                title="Hard where a rule names a path or a command pattern, advisory otherwise. The list below says which."
-              >
-                prohibit
-              </dt>
-              <dd>
-                <TextField
-                  label="prohibitions"
-                  value={rails.prohibit.join(', ')}
-                  placeholder="src/db/schema.ts, Bash(git push *)"
-                  onSave={(next) => patch({ guardrails: { ...rails, prohibit: asList(next) } })}
-                />
-              </dd>
-            </dl>
+                  <TextField
+                    label="goal condition"
+                    value={detail.card.goalCondition ?? ''}
+                    placeholder="measurable end state, a stated check, and a turn bound"
+                    invalid={detail.card.goalCondition === null}
+                    invalidNote="Not set, so this card cannot be dispatched."
+                    onSave={(next) => patch({ goalCondition: next === '' ? null : next })}
+                  />
+                </dd>
+                <dt
+                  className="text-dim"
+                  title="A command the board runs itself after the run. Hard: the card halts if it does not pass."
+                >
+                  Verify
+                </dt>
+                <dd>
+                  <TextField
+                    label="verify command"
+                    value={detail.verifyCommand ?? ''}
+                    placeholder="npm test"
+                    onSave={(next) =>
+                      patch({
+                        guardrails: { ...rails, verify: next === '' ? null : next },
+                      })
+                    }
+                  />
+                </dd>
+                <dt
+                  className="text-dim"
+                  title="Paths the agent should confine itself to. Advisory: it is prompt text, not a rule."
+                >
+                  Scope
+                </dt>
+                <dd>
+                  <TextField
+                    label="scope paths"
+                    value={rails.scope.join(', ')}
+                    placeholder="src/server/, test/"
+                    onSave={(next) => patch({ guardrails: { ...rails, scope: asList(next) } })}
+                  />
+                </dd>
+                <dt
+                  className="text-dim"
+                  title="Hard where a rule names a path or a command pattern, advisory otherwise. The list below says which."
+                >
+                  Prohibit
+                </dt>
+                <dd>
+                  <TextField
+                    label="prohibitions"
+                    value={rails.prohibit.join(', ')}
+                    placeholder="src/db/schema.ts, Bash(git push *)"
+                    onSave={(next) => patch({ guardrails: { ...rails, prohibit: asList(next) } })}
+                  />
+                </dd>
+              </dl>
+            </div>
 
-            <h4 className="mb-1 eyebrow">Guardrails</h4>
-            {detail.guardrailDetail.length === 0 ? (
-              <p className="text-dim">None.</p>
-            ) : (
-              <ul className="flex flex-col gap-2">
-                {detail.guardrailDetail.map((rail) => (
-                  <li key={`${rail.kind}:${rail.text}`} className="leading-snug">
-                    <span
-                      className={`mr-1.5 rounded-sm px-1 text-[10px] uppercase ${
-                        rail.enforcement === 'hard' ? 'bg-ok/20 text-ok' : 'bg-dim/20 text-dim'
-                      }`}
-                      title={rail.because}
-                    >
-                      {rail.enforcement}
-                    </span>
-                    <span className="text-ink">{rail.text}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <div className="section">
+              <h4 className="mb-2 eyebrow">Guardrails</h4>
+              {detail.guardrailDetail.length === 0 ? (
+                <p className="text-dim">
+                  None. Nothing constrains what this card&rsquo;s run may touch.
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {detail.guardrailDetail.map((rail) => (
+                    <li key={`${rail.kind}:${rail.text}`} className="leading-snug">
+                      {/* A guardrail the board enforces and one it merely asks
+                          for are different promises, so they are different
+                          chips rather than the same word in two greys (R10). */}
+                      <span
+                        className={`chip mr-1.5 ${rail.enforcement === 'hard' ? 'chip-ok' : ''}`}
+                        title={rail.because}
+                      >
+                        {rail.enforcement === 'hard' ? 'Enforced' : 'Asked for'}
+                      </span>
+                      <span className="text-ink">{rail.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
 
             {detail.staleness?.suspect !== true ? null : (
               /* A suspicion, never a verdict. The board says what it noticed and
@@ -1151,14 +1183,14 @@ export function CardDetail({
                   <p key={finding.signal} className="mb-1 leading-snug text-ink">
                     {finding.detail}
                     {finding.evidence.length === 0 ? null : (
-                      <span className="ml-1 text-[10px] text-dim">
+                      <span className="ml-1 text-[11.5px] text-dim">
                         ({finding.evidence.slice(0, 4).join(', ')})
                       </span>
                     )}
                   </p>
                 ))}
                 {detail.staleness.advice === null ? null : (
-                  <p className="text-[10px] text-dim">{detail.staleness.advice}</p>
+                  <p className="text-[11.5px] text-dim">{detail.staleness.advice}</p>
                 )}
               </div>
             )}
@@ -1188,32 +1220,10 @@ export function CardDetail({
               <div className="mb-3 rounded border border-danger/40 bg-danger/10 px-2 py-1.5 text-danger">
                 {/* The board ran this. It does not depend on the agent
                     reporting honestly, which is the whole point (R10). */}
-                <div className="text-[11px]">{detail.verifyNote}</div>
-                <pre className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap font-mono text-[10px] text-dim">
+                <div className="text-[12.5px]">{detail.verifyNote}</div>
+                <pre className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap font-mono text-[11.5px] text-dim">
                   {detail.verify.output}
                 </pre>
-              </div>
-            )}
-
-            {brief === null ? null : (
-              // A brief that stays on this screen is a brief the rest of the
-              // team never reads. The two exits are copy, for a pull request
-              // body or a message, and download, for something kept.
-              <div className="mb-3 flex items-center gap-2">
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-dim transition-colors hover:bg-well hover:text-ink"
-                  onClick={() => void copyMarkdown()}
-                >
-                  {copied ? 'copied' : 'copy markdown'}
-                </button>
-                <a
-                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-dim transition-colors hover:bg-well hover:text-ink"
-                  href={`/api/cards/${cardId}/brief.md`}
-                  download
-                >
-                  download .md
-                </a>
               </div>
             )}
 
@@ -1222,7 +1232,7 @@ export function CardDetail({
             ) : (
               <>
                 {brief.extraction.note === null ? null : (
-                  <p className="mb-3 rounded border border-danger/40 bg-danger/10 px-2 py-1.5 text-[11px] text-danger">
+                  <p className="mb-3 rounded border border-danger/40 bg-danger/10 px-2 py-1.5 text-[12.5px] text-danger">
                     {brief.extraction.note}
                   </p>
                 )}
@@ -1238,7 +1248,7 @@ export function CardDetail({
                       {mergeRefusal?.summary ??
                         'These have not been read yet. Accept or reject each and the merge becomes available.'}
                     </p>
-                    <p className="mb-2 text-[10px] text-dim">
+                    <p className="mb-2 text-[11.5px] text-dim">
                       {mergeRefusal?.reach ??
                         'This is the board declining to merge for you, not a lock on the repository. ' +
                           'A `git merge` run in a terminal will merge this branch with nothing to stop it.'}
@@ -1253,23 +1263,23 @@ export function CardDetail({
                       {brief.surprises.map((surprise) => (
                         <li key={surprise.id} className="leading-snug">
                           <div className="text-ink">{surprise.headline}</div>
-                          <div className="text-[10px] text-dim">{surprise.why}</div>
+                          <div className="text-[11.5px] text-dim">{surprise.why}</div>
                           {surprise.target.type === 'path' ? (
-                            <div className="text-[10px] text-dim">
+                            <div className="text-[11.5px] text-dim">
                               Not an entry, so there is nothing to accept: open the file.
                             </div>
                           ) : (
                             <div className="mt-0.5 flex gap-2">
                               <button
                                 type="button"
-                                className="rounded border border-ok/50 px-1.5 text-[10px] text-ok hover:bg-ok/10"
+                                className="rounded border border-ok/50 px-1.5 text-[11.5px] text-ok hover:bg-ok/10"
                                 onClick={() => judge(surprise.target, 'accepted')}
                               >
                                 accept
                               </button>
                               <button
                                 type="button"
-                                className="rounded border border-danger/50 px-1.5 text-[10px] text-danger hover:bg-danger/10"
+                                className="rounded border border-danger/50 px-1.5 text-[11.5px] text-danger hover:bg-danger/10"
                                 title="Kept on the card, but no longer stated as fact in the brief."
                                 onClick={() => judge(surprise.target, 'rejected')}
                               >
@@ -1280,7 +1290,7 @@ export function CardDetail({
                                   the operator's head until they forget it. */}
                               <button
                                 type="button"
-                                className="rounded border border-line px-1.5 text-[10px] text-dim hover:text-ink"
+                                className="rounded border border-line px-1.5 text-[11.5px] text-dim hover:text-ink"
                                 title="Rejects this and raises a card to address it, linked back to here."
                                 onClick={() => {
                                   const entryId =
@@ -1306,10 +1316,7 @@ export function CardDetail({
                 )}
 
                 {brief.sections.map((section) => (
-                  <div
-                    key={section.title}
-                    className="mb-6 border-b border-line/70 pb-5 last:mb-0 last:border-0 last:pb-0"
-                  >
+                  <div key={section.title} className="section">
                     <h4 className="mb-1 eyebrow">{section.title}</h4>
                     {section.lines.map((line, index) => (
                       <p
@@ -1335,10 +1342,10 @@ export function CardDetail({
             {entries.length === 0 ? (
               <></>
             ) : (
-              <div className="border-t border-line pt-2">
+              <div className="section">
                 <button
                   type="button"
-                  className="text-[11px] text-info hover:underline"
+                  className="text-[12.5px] text-info hover:underline"
                   onClick={() => setShowEntries(!showEntries)}
                 >
                   {showEntries ? 'hide' : 'show'} the {entries.length} underlying entr
@@ -1350,7 +1357,7 @@ export function CardDetail({
                     {entries.map((entry, index) => (
                       <li key={`${entry.kind}-${index}`} className="border-l-2 border-line pl-2">
                         <span
-                          className={`mr-1.5 text-[10px] uppercase ${
+                          className={`mr-1.5 text-[11.5px] uppercase ${
                             KIND_COLOUR[entry.kind] ?? 'text-dim'
                           }`}
                         >
@@ -1358,9 +1365,9 @@ export function CardDetail({
                         </span>
                         <span className="text-ink">{entry.statement}</span>
                         {entry.detail === undefined ? null : (
-                          <div className="mt-0.5 text-[11px] text-dim">{entry.detail}</div>
+                          <div className="mt-0.5 text-[12.5px] text-dim">{entry.detail}</div>
                         )}
-                        <div className="text-[10px] text-dim">
+                        <div className="text-[11.5px] text-dim">
                           {/* Every entry names its evidence; nothing here is
                               unfalsifiable (doc 08). */}
                           {entry.sourceEventIds.length} source event(s)
@@ -1373,10 +1380,10 @@ export function CardDetail({
             )}
 
             {detail.workspace === null || onCompare === undefined ? null : (
-              <div className="mb-3">
+              <div className="section">
                 {/* Most useful straight after cloning, which is why it sits on
                     the card rather than behind a selection on the board. */}
-                <label className="text-[11px] text-dim">
+                <label className="text-[12.5px] text-dim">
                   compare with{' '}
                   <select
                     className="rounded border border-line bg-well px-1 py-0.5 text-ink"
@@ -1404,12 +1411,12 @@ export function CardDetail({
             )}
 
             {detail.workspace === null ? null : (
-              <div className="mb-3">
+              <div className="section">
                 {/* What it costs, before it is pressed. A button that quietly
                     spends a model call is one an operator presses twice. */}
                 <button
                   type="button"
-                  className="rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-ink disabled:opacity-50"
+                  className="rounded border border-line px-2 py-0.5 text-[12.5px] text-dim hover:text-ink disabled:opacity-50"
                   disabled={reviewing}
                   title="Asks a session that did not write this branch to read it. One model call on your Claude Code quota. Anything it raises has to be judged before this merges."
                   onClick={() => {
@@ -1425,32 +1432,43 @@ export function CardDetail({
                   {reviewing ? 'reading the branch…' : 'ask for a second opinion'}
                 </button>
                 {reviewNote === null ? null : (
-                  <p className="mt-1 text-[11px] text-dim">{reviewNote}</p>
+                  <p className="mt-1 text-[12.5px] text-dim">{reviewNote}</p>
                 )}
               </div>
             )}
 
             {(detail.readiness?.checks ?? []).length === 0 ? null : (
-              <div className="mb-3">
+              <div className="section">
                 <h4 className="mb-1 eyebrow">Before you merge</h4>
-                <ul className="flex flex-col gap-0.5 text-[11px]">
+                <ul className="flex flex-col gap-0.5 text-[12.5px]">
                   {(detail.readiness?.checks ?? []).map((check) => (
-                    <li key={check.name} className="text-dim">
+                    <li key={check.name} className="flex items-start gap-2 text-dim">
                       {/* Three states, not two. A check the board could not run
                           and a check that passed are the two things this list
-                          exists to keep apart. */}
-                      <span
-                        className={
-                          check.state === 'settled'
-                            ? 'text-ok'
-                            : check.state === 'needs-you'
-                              ? 'text-danger'
-                              : 'text-dim'
-                        }
-                      >
-                        {check.state === 'settled' ? '·' : check.state === 'needs-you' ? '!' : '?'}
-                      </span>{' '}
-                      <span className="text-ink">{check.name}</span> {check.detail}
+                          exists to keep apart, so the third has its own mark
+                          rather than borrowing one of the others. */}
+                      {check.state === 'settled' ? (
+                        <CheckCircle
+                          size={15}
+                          className="mt-0.5 shrink-0 text-ok"
+                          aria-label="Settled"
+                        />
+                      ) : check.state === 'needs-you' ? (
+                        <Warning
+                          size={15}
+                          className="mt-0.5 shrink-0 text-danger"
+                          aria-label="Needs you"
+                        />
+                      ) : (
+                        <Question
+                          size={15}
+                          className="mt-0.5 shrink-0 text-faint"
+                          aria-label="Not known"
+                        />
+                      )}
+                      <span>
+                        <span className="text-ink">{check.name}</span> {check.detail}
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -1467,7 +1485,7 @@ export function CardDetail({
             )}
 
             {detail.diff === undefined || !detail.diff.readable ? null : (
-              <div className="mt-4 border-t border-line pt-2">
+              <div className="section">
                 <h4 className="mb-1 eyebrow">
                   Diff ({detail.diff.files.length} file(s), +{detail.diff.insertions} −
                   {detail.diff.deletions})
@@ -1475,7 +1493,7 @@ export function CardDetail({
                 {/* Reviewing used to mean leaving the board for a terminal,
                     which is where the operator loses the context the board
                     exists to hold. */}
-                <ul className="flex flex-col gap-0.5 text-[11px]">
+                <ul className="flex flex-col gap-0.5 text-[12.5px]">
                   {detail.diff.files.map((file) => (
                     <li key={file.path}>
                       <button
@@ -1507,16 +1525,16 @@ export function CardDetail({
                 {openDiff === null ? null : (
                   <div className="mt-2 border-t border-line pt-2">
                     <div className="mb-1 flex items-baseline gap-2">
-                      <span className="font-mono text-[11px] text-ink">{openDiff.path}</span>
+                      <span className="font-mono text-[12.5px] text-ink">{openDiff.path}</span>
                       <button
                         type="button"
-                        className="text-[11px] text-dim hover:text-ink"
+                        className="text-[12.5px] text-dim hover:text-ink"
                         onClick={() => setOpenDiff(null)}
                       >
                         close
                       </button>
                     </div>
-                    <pre className="max-h-96 overflow-auto whitespace-pre bg-well p-2 font-mono text-[11px] text-dim">
+                    <pre className="max-h-96 overflow-auto whitespace-pre bg-well p-2 font-mono text-[12.5px] text-dim">
                       {openDiff.text}
                     </pre>
                   </div>
@@ -1525,12 +1543,12 @@ export function CardDetail({
             )}
 
             {proposals.length === 0 ? null : (
-              <div className="mt-4 border-t border-line pt-2">
+              <div className="section">
                 <h4 className="mb-1 eyebrow">Worth making a rule ({proposals.length})</h4>
                 {/* Proposals, never applied on their own. An entry becoming a
                     rule without a human reading it would let the ledger
                     constrain the agent by itself, which doc 12 never allows. */}
-                <ul className="flex flex-col gap-2 text-[11px]">
+                <ul className="flex flex-col gap-2 text-[12.5px]">
                   {proposals.map((proposal) => (
                     <li key={proposal.entryId} className="border-l-2 border-line pl-2">
                       <div className="text-ink">{proposal.statement}</div>
@@ -1575,9 +1593,9 @@ export function CardDetail({
             )}
 
             {(detail.contradictions ?? []).length === 0 ? null : (
-              <div className="mt-4 border-t border-line pt-2">
+              <div className="section">
                 <h4 className="mb-1 eyebrow text-danger">Runs into a project rule</h4>
-                <ul className="flex flex-col gap-1 text-[11px]">
+                <ul className="flex flex-col gap-1 text-[12.5px]">
                   {(detail.contradictions ?? []).map((entry) => (
                     <li key={`${entry.invariant}-${entry.conflict}`} className="text-dim">
                       {/* Scope is a claim about where the work will happen. A
@@ -1593,13 +1611,13 @@ export function CardDetail({
             )}
 
             {(detail.blastRadius?.paths ?? []).length === 0 ? null : (
-              <div className="mt-4 border-t border-line pt-2">
+              <div className="section">
                 <h4 className="mb-1 eyebrow">Cards like this touched</h4>
                 {/* A guess from similar wording, said as one. 'These files'
                     invites acceptance; 'these files, because these cards
                     touched them' invites checking, which is what an operator
                     should do with a guess. */}
-                <ul className="flex flex-col gap-0.5 text-[11px]">
+                <ul className="flex flex-col gap-0.5 text-[12.5px]">
                   {(detail.blastRadius?.paths ?? []).slice(0, 8).map((entry) => (
                     <li key={entry.path} className="text-dim">
                       <span className="text-ink">{entry.path}</span> · {entry.cards} card(s)
@@ -1614,9 +1632,9 @@ export function CardDetail({
             )}
 
             {(detail.subsystems ?? []).length === 0 ? null : (
-              <div className="mt-4 border-t border-line pt-2">
+              <div className="section">
                 <h4 className="mb-1 eyebrow">Touched</h4>
-                <ul className="flex flex-col gap-0.5 text-[11px]">
+                <ul className="flex flex-col gap-0.5 text-[12.5px]">
                   {(detail.subsystems ?? []).map((entry) => (
                     <li key={entry.subsystem} className="text-dim">
                       <span className="text-ink">{entry.subsystem}</span> · {entry.paths} file(s)
@@ -1637,11 +1655,11 @@ export function CardDetail({
             )}
 
             {(detail.relatedCards ?? []).length === 0 ? null : (
-              <div className="mt-4 border-t border-line pt-2">
+              <div className="section">
                 <h4 className="mb-1 eyebrow">Also worked here</h4>
                 {/* The point of the map: whatever an earlier card learned about
                     these files was learned the expensive way. */}
-                <ul className="flex flex-col gap-0.5 text-[11px]">
+                <ul className="flex flex-col gap-0.5 text-[12.5px]">
                   {(detail.relatedCards ?? []).map((related) => (
                     <li key={related.cardId} className="text-dim">
                       <span className="text-ink">{related.title}</span> · {related.shared.length}{' '}
@@ -1653,7 +1671,7 @@ export function CardDetail({
             )}
 
             {detail.realityNotes.length > 0 ? (
-              <div className="mt-4 border-t border-line pt-2">
+              <div className="section">
                 <h4 className="mb-1 eyebrow">Claim versus reality</h4>
                 {detail.realityNotes.map((note) => (
                   <p key={note} className="text-dim">
@@ -1664,6 +1682,31 @@ export function CardDetail({
             ) : (
               <></>
             )}
+
+            {brief === null ? null : (
+              // A brief that stays on this screen is a brief the rest of the
+              // team never reads. The two exits are copy, for a pull request
+              // body or a message, and download, for something kept.
+              <div className="section flex items-center gap-2">
+                <span className="eyebrow mr-1">Export</span>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
+                  onClick={() => void copyMarkdown()}
+                >
+                  <Copy size={13} aria-hidden />
+                  {copied ? 'Copied' : 'Copy markdown'}
+                </button>
+                <a
+                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
+                  href={`/api/cards/${cardId}/brief.md`}
+                  download
+                >
+                  <DownloadSimple size={13} aria-hidden />
+                  Download .md
+                </a>
+              </div>
+            )}
           </>
         </Rail>
 
@@ -1673,12 +1716,14 @@ export function CardDetail({
         >
           <>
             {detail.runs.length === 0 ? (
-              <p className="text-dim">
-                Never run. Nothing has been dispatched against this card, so there is nothing to
-                review.
-              </p>
+              <div className="section">
+                <h4 className="mb-1 eyebrow">Nothing to review</h4>
+                <p className="text-dim">
+                  Nothing has been dispatched against this card, so there is no run to read.
+                </p>
+              </div>
             ) : (
-              <ul className="mb-3 flex flex-col gap-2 text-[11px]">
+              <ul className="mb-3 flex flex-col gap-2 text-[12.5px]">
                 {detail.runs.map((run) => {
                   const ended = endedNote(run);
                   return (
@@ -1717,12 +1762,12 @@ export function CardDetail({
             )}
 
             {subagents.length === 0 ? null : (
-              <div className="mb-3 border-t border-line pt-2">
+              <div className="section">
                 <h4 className="mb-1 eyebrow">Subagents ({subagents.length})</h4>
                 {/* Shown as work in its own right. A subagent's context is
                     discarded when it stops, so these files would otherwise
                     appear in the blast radius with nothing accounting for them. */}
-                <ul className="flex flex-col gap-3 text-[11px]">
+                <ul className="flex flex-col gap-3 text-[12.5px]">
                   {subagents.map((agent) => (
                     <li key={agent.agentId} className="border-l-2 border-info/40 pl-2">
                       <div className="text-ink">
@@ -1753,22 +1798,22 @@ export function CardDetail({
 
             {/* The close-out. Everything the operator needs in order to decide
                 is above; this is the decision, named rather than implied. */}
-            <div className="border-t border-line pt-2">
+            <div className="section">
               <h4 className="mb-1 eyebrow">Review and close</h4>
 
               {detail.card.mergedAt !== null ? (
-                <p className="mb-2 text-[11px] text-ok">
+                <p className="mb-2 text-[12.5px] text-ok">
                   Merged into {detail.card.mergedInto ?? 'the target branch'} from{' '}
                   {detail.card.mergedBranch ?? 'its branch'} on{' '}
                   {new Date(detail.card.mergedAt).toLocaleString()}.
                 </p>
               ) : detail.workspace === null ? (
-                <p className="text-[11px] text-dim">
+                <p className="text-[12.5px] text-dim">
                   No worktree, and the board has not merged this card. If it is finished, the work
                   reached the target some other way.
                 </p>
               ) : (
-                <div className="mb-2 text-[11px]">
+                <div className="mb-2 text-[12.5px]">
                   <div className="text-ink">{detail.workspace.branch}</div>
                   <div className="text-dim">{detail.workspace.worktree}</div>
                   {detail.workspace.git === null ? null : (
@@ -1789,7 +1834,7 @@ export function CardDetail({
                      doing the work rather than reporting that it is needed. */
                   <button
                     type="button"
-                    className="rounded border border-brand/60 px-2 py-0.5 text-[11px] text-brand hover:bg-brand/10 disabled:opacity-40"
+                    className="rounded border border-brand/60 px-2 py-0.5 text-[12.5px] text-brand hover:bg-brand/10 disabled:opacity-40"
                     disabled={merging}
                     title={
                       'Resolves the conflict, commits the merge, and runs the verify command. ' +
@@ -1802,7 +1847,7 @@ export function CardDetail({
                 ) : (
                   <button
                     type="button"
-                    className="rounded border border-ok/50 px-2 py-0.5 text-[11px] text-ok hover:bg-ok/10 disabled:opacity-40"
+                    className="rounded border border-ok/50 px-2 py-0.5 text-[12.5px] text-ok hover:bg-ok/10 disabled:opacity-40"
                     // Disabled rather than left to fail. The gate refuses this
                     // request anyway, and a button that looks available and
                     // answers 409 teaches the operator that the board is
@@ -1829,17 +1874,17 @@ export function CardDetail({
 
                 <button
                   type="button"
-                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-dim transition-colors hover:bg-well hover:text-ink"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
                   title="Marks the card finished without merging anything. Use when the work landed another way, or was not needed."
                   onClick={() => patch({ status: 'done' })}
                 >
-                  mark done
+                  Mark done
                 </button>
 
                 {detail.card.status === 'idle' ? null : (
                   <button
                     type="button"
-                    className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-dim transition-colors hover:bg-well hover:text-ink"
+                    className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
                     title="Back to idle, which is the only status the queue will dispatch."
                     onClick={() => patch({ status: 'idle' })}
                   >
@@ -1850,7 +1895,7 @@ export function CardDetail({
 
               {mergeReport === null ? null : (
                 <pre
-                  className={`mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-[10px] ${
+                  className={`mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-[11.5px] ${
                     mergeReport.clean ? 'text-ok' : 'text-danger'
                   }`}
                 >
@@ -1859,7 +1904,7 @@ export function CardDetail({
               )}
 
               {resolution === null ? null : (
-                <p className="mt-2 text-[10px] leading-snug text-dim">{resolution}</p>
+                <p className="mt-2 text-[11.5px] leading-snug text-dim">{resolution}</p>
               )}
             </div>
           </>

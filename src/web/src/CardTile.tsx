@@ -124,7 +124,7 @@ export function CardTile({
           {/* A fixed gutter, so titles line up down the column whether or not a
               card has a number. */}
           <span
-            className={`w-4 shrink-0 pt-px text-right text-[11px] ${
+            className={`w-4 shrink-0 pt-px text-right text-[12.5px] ${
               card.rankBlocked ? 'text-faint' : 'text-dim'
             }`}
             title={
@@ -238,7 +238,7 @@ export function CardTile({
           {card.status === 'running' ? (
             <button
               type="button"
-              className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium text-danger transition-colors hover:bg-danger-tint"
+              className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12.5px] font-medium text-danger transition-colors hover:bg-danger-tint"
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.stopPropagation();
@@ -251,7 +251,7 @@ export function CardTile({
           ) : runnable ? (
             <button
               type="button"
-              className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium text-ok opacity-0 transition-opacity hover:bg-ok-tint focus-visible:opacity-100 group-hover:opacity-100"
+              className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12.5px] font-medium text-ok opacity-0 transition-opacity hover:bg-ok-tint focus-visible:opacity-100 group-hover:opacity-100"
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.stopPropagation();

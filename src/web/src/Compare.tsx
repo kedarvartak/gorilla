@@ -59,8 +59,8 @@ export function Compare({
   return (
     <Panel title="Two attempts compared" onClose={onClose}>
       <header className="flex items-baseline gap-3 border-b border-line bg-surface px-4 py-2.5">
-        <h2 className="text-[13px] font-semibold tracking-tight text-ink">Compared</h2>
-        <span className="text-[11px] text-dim">{body?.note ?? ''}</span>
+        <h2 className="text-[14.5px] font-semibold tracking-tight text-ink">Compared</h2>
+        <span className="text-[12.5px] text-dim">{body?.note ?? ''}</span>
         <button
           type="button"
           aria-label="Close"
@@ -85,7 +85,7 @@ export function Compare({
                     className="rounded border border-line bg-surface p-3"
                   >
                     <h3 className="mb-1 text-ink">{candidate.title}</h3>
-                    <dl className="grid grid-cols-[auto_1fr] gap-x-3 text-[11px]">
+                    <dl className="grid grid-cols-[auto_1fr] gap-x-3 text-[12.5px]">
                       <dt className="text-dim">verify</dt>
                       <dd
                         className={
@@ -127,7 +127,7 @@ export function Compare({
                   <h3 className="mb-1 eyebrow">Touched by both</h3>
                   {/* Where two alternatives disagree, which is the first thing
                     to read and the reason to open this at all. */}
-                  <ul className="flex flex-col gap-0.5 text-[11px] text-dim">
+                  <ul className="flex flex-col gap-0.5 text-[12.5px] text-dim">
                     {body.shared.map((path) => (
                       <li key={path}>{path}</li>
                     ))}

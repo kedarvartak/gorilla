@@ -56,8 +56,8 @@ export function Plan({
   return (
     <Panel title="The order the board will work in" onClose={onClose}>
       <header className="flex items-baseline gap-3 border-b border-line bg-surface px-4 py-2.5">
-        <h2 className="text-[13px] font-semibold tracking-tight text-ink">The order</h2>
-        <span className="text-[11px] text-dim">{body?.note ?? ''}</span>
+        <h2 className="text-[14.5px] font-semibold tracking-tight text-ink">The order</h2>
+        <span className="text-[12.5px] text-dim">{body?.note ?? ''}</span>
         <button
           type="button"
           aria-label="Close"
@@ -80,7 +80,7 @@ export function Plan({
                   key={card.cardId}
                   className="flex items-baseline gap-3 rounded border border-line bg-surface px-3 py-2"
                 >
-                  <span className="text-[11px] text-dim">{card.rank}</span>
+                  <span className="text-[12.5px] text-dim">{card.rank}</span>
                   <button
                     type="button"
                     className="text-ink hover:underline"
@@ -88,12 +88,12 @@ export function Plan({
                   >
                     {card.title}
                   </button>
-                  <span className="text-[11px] text-dim">{card.status}</span>
+                  <span className="text-[12.5px] text-dim">{card.status}</span>
                   {/* The reason, which is the whole point of this screen. A
                     blocked badge says a card cannot start; this says what it
                     is waiting for, by name. */}
                   {card.waitingFor.length === 0 ? null : (
-                    <span className="ml-auto text-[11px] text-danger">
+                    <span className="ml-auto text-[12.5px] text-danger">
                       waiting for {card.waitingFor.join(', ')}
                     </span>
                   )}

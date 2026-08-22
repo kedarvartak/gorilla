@@ -78,8 +78,8 @@ export function Sidebar({
   return (
     <nav aria-label="Views" className="flex w-52 shrink-0 flex-col border-r border-line bg-surface">
       <div className="border-b border-line px-4 py-3.5">
-        <div className="text-[14px] font-semibold tracking-tight text-ink">Gorilla</div>
-        <div className="mt-0.5 truncate text-[11px] text-faint" title={boardName}>
+        <div className="text-[15px] font-semibold tracking-tight text-ink">Gorilla</div>
+        <div className="mt-0.5 truncate text-[12.5px] text-faint" title={boardName}>
           {boardName}
         </div>
       </div>
@@ -123,7 +123,7 @@ export function Sidebar({
         </li>
       </ul>
 
-      <div className="border-t border-line px-4 py-3 text-[11px]">
+      <div className="border-t border-line px-4 py-3 text-[12.5px]">
         {/* The two facts worth knowing without asking: whether the board is
             still hearing from its agents, and what the day has cost. */}
         <div

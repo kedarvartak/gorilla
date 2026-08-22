@@ -59,8 +59,8 @@ export function Metrics({
   return (
     <Panel title="The numbers: throughput, failures and spend" onClose={onClose}>
       <header className="flex items-baseline gap-3 border-b border-line bg-surface px-4 py-2.5">
-        <h2 className="text-[13px] font-semibold tracking-tight text-ink">The numbers</h2>
-        <span className="text-[11px] text-dim">Last thirty days</span>
+        <h2 className="text-[14.5px] font-semibold tracking-tight text-ink">The numbers</h2>
+        <span className="text-[12.5px] text-dim">Last thirty days</span>
         <button
           type="button"
           aria-label="Close"
@@ -90,7 +90,7 @@ export function Metrics({
               {body.spendByDay.length === 0 ? null : (
                 <div className="mt-4">
                   <h3 className="mb-1.5 eyebrow">Tokens by day</h3>
-                  <ul className="flex flex-col gap-0.5 text-[11px]">
+                  <ul className="flex flex-col gap-0.5 text-[12.5px]">
                     {body.spendByDay.map((day) => (
                       <li key={day.day} className="flex items-baseline gap-2">
                         <span className="w-24 text-dim">{day.day}</span>
@@ -115,7 +115,7 @@ export function Metrics({
               {body.failures.length === 0 ? null : (
                 <div className="mt-4">
                   <h3 className="mb-1.5 eyebrow">How runs ended</h3>
-                  <ul className="flex flex-col gap-0.5 text-[11px]">
+                  <ul className="flex flex-col gap-0.5 text-[12.5px]">
                     {body.failures.map((failure) => (
                       <li key={failure.reason} className="text-dim">
                         <span className="text-ink">{failure.reason}</span> · {failure.cards} card(s)
