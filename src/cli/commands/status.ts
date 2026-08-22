@@ -87,7 +87,15 @@ function fromDatabase(databasePath: string): Offline | null {
 function renderLive(health: Health): string {
   const lines = [`status: ${health.status}`];
 
-  for (const board of health.boards) {
+  // Same rule as the offline render below (T68), which is where this was
+  // fixed and this was not. Running the command against a live board is what
+  // found the half: four empty boards listed in full, and the one that matters
+  // fourth from the top.
+  const busy = health.boards.filter(
+    (board) => board.queued > 0 || board.running > 0 || board.blocked > 0 || board.halted !== null,
+  );
+
+  for (const board of busy) {
     lines.push(
       `${board.name}: ${String(board.queued)} queued, ${String(board.running)} running, ${String(board.blocked)} blocked`,
     );
@@ -95,6 +103,9 @@ function renderLive(health: Health): string {
       lines.push(`  halted: ${board.halted.reason} on "${board.halted.cardTitle}"`);
     }
   }
+
+  const idle = health.boards.length - busy.length;
+  if (idle > 0) lines.push(`${String(idle)} other board(s) have nothing on them.`);
 
   if (health.lastEventAt === null) {
     // Not "quiet". No event has ever arrived, which usually means the hooks

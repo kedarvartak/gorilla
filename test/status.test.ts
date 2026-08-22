@@ -8,6 +8,7 @@ import { createDefaultColumns } from '../src/server/cards/defaults.js';
 import { openDatabase, type DatabaseHandle } from '../src/server/db/client.js';
 import { boards } from '../src/server/db/schema.js';
 import { statusCommand } from '../src/cli/commands/status.js';
+import { startServer } from '../src/server/start.js';
 
 /**
  * What the board is doing, from the shell (T55, T58).
@@ -107,5 +108,37 @@ describe('a board with nothing on it', () => {
     // "Which boards does this database hold" is a real question, and none is a
     // real answer to it.
     expect((await status()).stdout).toContain('holds no boards');
+  });
+});
+
+describe('against a live board', () => {
+  it('counts the empty ones there too', async () => {
+    // T68 fixed the offline renderer and not this one. Running the command
+    // against a real board is what found the half.
+    const server = await startServer({
+      port: 4492,
+      dbPath: join(dir, 'live.db'),
+      cwd: dir,
+      logger: false,
+    });
+
+    try {
+      const handle = openDatabase({ path: join(dir, 'live.db') });
+      // One board with something on it, one without, so the assertion is about
+      // the rule rather than about how many boards a fresh server makes.
+      createCard(handle, { boardId: server.board?.id ?? '', title: 'the one that matters' });
+      handle.db
+        .insert(boards)
+        .values({ id: 'empty-1', name: 'nothing here', cwd: `${dir}/e1`, createdAt: 1 })
+        .run();
+      handle.close();
+
+      const output = (await statusCommand.run(['--port', '4492'])).stdout;
+
+      expect(output).toContain('1 other board(s) have nothing on them');
+      expect(output).not.toContain('nothing here:');
+    } finally {
+      await server.stop();
+    }
   });
 });
