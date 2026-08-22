@@ -146,16 +146,12 @@ export function Board(): ReactElement {
 
     // Asked once, at open. The answer cannot change while the page is loaded:
     // a rebuilt server is a restarted server, and this bundle would be gone.
-    void fetch('/health')
-      .then(async (response): Promise<unknown> => (response.ok ? await response.json() : null))
-      .then((body: unknown) => {
-        if (cancelled || typeof body !== 'object' || body === null) return;
-        const build = (body as { build?: { note?: string | null } }).build;
-        setStaleBuild(build?.note ?? null);
-      })
-      .catch(() => {
-        /* the banner is a courtesy; failing to fetch it must not break the board */
-      });
+    void api.health<{ build?: { note?: string | null } }>().then((body) => {
+      if (cancelled) return;
+      // The banner is a courtesy. A health endpoint that will not answer must
+      // not be able to take the board down with it.
+      setStaleBuild(body?.build?.note ?? null);
+    });
 
     return () => {
       cancelled = true;

@@ -126,7 +126,13 @@ describe('Invariants', () => {
 
     await clickButton('Add');
 
+    // Asserted on the method rather than on the presence of an init argument:
+    // the shared client passes options on reads too, so "has options" stopped
+    // meaning "is a write".
     const calls = (globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
-    expect(calls.filter((call) => call[1] !== undefined)).toHaveLength(0);
+    const writes = calls.filter(
+      (call) => (call[1] as RequestInit | undefined)?.method !== undefined,
+    );
+    expect(writes).toHaveLength(0);
   });
 });

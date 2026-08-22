@@ -172,6 +172,42 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
 }
 
+/**
+ * For a request whose failure must not take the screen down with it (T12).
+ *
+ * Several panels load something alongside the thing the operator asked for -
+ * a shortlist, a subagent view, a set of proposals - and a card that will not
+ * open because a secondary route answered 404 is a worse outcome than a card
+ * missing one section.
+ *
+ * The guard is the other half. A server older than this bundle answers some
+ * of these with something else entirely, and `as T` would push that straight
+ * into a render. Six web tests failed exactly that way before this existed.
+ */
+async function optional<T>(url: string, isValid: (value: unknown) => boolean): Promise<T | null> {
+  try {
+    // No content-type: there is no body to describe, and a GET that announces
+    // one is noise in every network log that ever reads it.
+    const response = await fetch(url);
+    if (!response.ok) return null;
+
+    const body: unknown = await response.json();
+    return isValid(body) ? (body as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Anything shaped like a list. The commonest optional response here. */
+export function isList(value: unknown): boolean {
+  return Array.isArray(value);
+}
+
+/** Anything shaped like an object, which is the other one. */
+export function isRecord(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 export const api = {
   boards: () => request<Board[]>('/api/boards'),
   columns: (boardId: string) => request<Column[]>(`/api/boards/${boardId}/columns`),
@@ -308,6 +344,51 @@ export const api = {
   /** Finds a card by its words or by a file it touched (T34). */
   search: (boardId: string, query: string) =>
     request<SearchHit[]>(`/api/boards/${boardId}/search?q=${encodeURIComponent(query)}`),
+
+  /** Refuses a duplicate with a 409, which the panel shows rather than swallows. */
+  addInvariant: (boardId: string, statement: string) =>
+    request<{ id: string }>(`/api/boards/${boardId}/invariants`, {
+      method: 'POST',
+      body: JSON.stringify({ statement }),
+    }),
+
+  removeInvariant: (boardId: string, invariantId: string) =>
+    request<void>(`/api/boards/${boardId}/invariants/${invariantId}`, { method: 'DELETE' }),
+
+  /* Everything below loads alongside something else. A failure here removes a
+     section, never the screen. */
+
+  cardDetail: <T>(cardId: string) => optional<T>(`/api/cards/${cardId}/detail`, isRecord),
+  cardBrief: <T>(cardId: string) => optional<T>(`/api/cards/${cardId}/brief`, isRecord),
+  cardSubagents: <T>(cardId: string) => optional<T[]>(`/api/cards/${cardId}/subagents`, isList),
+  cardProposals: <T>(cardId: string) =>
+    optional<T[]>(`/api/cards/${cardId}/guardrail-proposals`, isList),
+  invariants: <T>(boardId: string) => optional<T[]>(`/api/boards/${boardId}/invariants`, isList),
+  invariantProposals: <T>(boardId: string) =>
+    optional<T[]>(`/api/boards/${boardId}/invariant-proposals`, isList),
+  digest: <T>(boardId: string) => optional<T>(`/api/boards/${boardId}/digest`, isRecord),
+  health: <T>() => optional<T>('/health', isRecord),
+
+  runTimeline: <T>(runId: string, query: URLSearchParams) =>
+    optional<T>(`/api/runs/${runId}/timeline?${query.toString()}`, isRecord),
+
+  runFacets: <T>(runId: string) => optional<T>(`/api/runs/${runId}/facets`, isRecord),
+
+  /** Text rather than JSON, so it does not go through the typed client. */
+  cardBriefMarkdown: async (cardId: string): Promise<string> => {
+    const response = await fetch(`/api/cards/${cardId}/brief.md`);
+    if (!response.ok) throw new Error(`Could not export the brief: ${String(response.status)}`);
+    return response.text();
+  },
+
+  /** One file's patch. A branch that is gone reads as a message, not an error. */
+  cardDiff: async (cardId: string, path: string): Promise<string> => {
+    const response = await fetch(`/api/cards/${cardId}/diff?path=${encodeURIComponent(path)}`);
+    return response.ok ? response.text() : 'That file could not be read.';
+  },
+
+  markSeenQuietly: (cardId: string) =>
+    fetch(`/api/cards/${cardId}/seen`, { method: 'POST' }).catch(() => undefined),
 
   dispatchable: (boardId: string) =>
     request<{ id: string; title: string }[]>(`/api/boards/${boardId}/dispatchable`),
