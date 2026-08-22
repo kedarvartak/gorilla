@@ -23,11 +23,12 @@ quota by default; the `ANTHROPIC_API_KEY` path exists only behind
 `GORILLA_EXTRACTION=api` and is off unless asked for. The second-opinion
 reviewer in T36 dispatches through the same CLI for the same reason.
 
-**T50 is deferred on these grounds, 22 August 2026.** Importing issues needs a
-GitHub token, which is not available. Building it now would mean shipping a
-command nobody here can run and whose failure mode nobody here can see, which
-is how a feature acquires a bug that only appears for the first person to try
-it.
+**T50 was deferred on these grounds and then built, 22 August 2026.** A token
+is coming, so the command exists and is tested against a stubbed transport.
+What the tests prove is the shape handling - pull requests dropped, a 403 named
+as a token problem, a 404 not claimed as a missing repository. What they do not
+prove is that GitHub agrees, and doc 19 says so under what has never happened
+rather than the suite implying otherwise.
 
 ## How this list was chosen
 
@@ -148,7 +149,7 @@ The point of the product: work that continues correctly while nobody is watching
 | Id | Task | Done when | Status |
 | --- | --- | --- | --- |
 | T49 | Card templates | ~~Rescoped: cards are the templates.~~ A card can be cloned - body, guardrails, goal, models - without anything that happened to it. | merged |
-| T50 | Import GitHub issues as cards | Issues become cards with their origin recorded, without polling anything on a timer by default. | deferred |
+| T50 | Import GitHub issues as cards | Issues become cards with their origin recorded, on demand and never on a timer. Built against a stubbed transport; unproven against real GitHub until a token exists. | merged |
 | T51 | Bulk card creation from a file | A markdown list becomes cards in one operation, with a dry run. | merged |
 | T52 | Card splitting | A card too large to dispatch can be split into cards that depend on it, carrying its context. | merged |
 | T53 | Duplicate card detection | A new card that restates an existing one is flagged at creation. | merged |

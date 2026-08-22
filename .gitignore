@@ -4,6 +4,8 @@ coverage/
 *.log
 .env
 .env.*
+# The template is the point: it carries names, never values.
+!.env.example
 /fixtures/
 .DS_Store
 *.tsbuildinfo
