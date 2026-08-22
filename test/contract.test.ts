@@ -151,6 +151,7 @@ describe('what a card answers with', () => {
     // The list the interface actually depends on. A field disappearing from
     // here is a blank panel, and this is the test that says so first.
     expect(keysAt(shape)).toEqual([
+      'blastRadius',
       'blockers',
       'card',
       'claimedNotInGit',

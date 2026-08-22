@@ -261,6 +261,12 @@ interface Detail {
     readonly readable: boolean;
     readonly note: string;
   };
+  /** What cards like this one have touched before (T18). A guess, said as one. */
+  readonly blastRadius?: {
+    readonly paths: readonly { path: string; cards: number }[];
+    readonly subsystems: readonly string[];
+    readonly from: readonly { cardId: string; title: string }[];
+  };
   /** What the branch changed, from git (T30). */
   readonly diff?: {
     readonly files: readonly {
@@ -1352,6 +1358,29 @@ export function CardDetail({
                     </li>
                   ))}
                 </ul>
+              </div>
+            )}
+
+            {(detail.blastRadius?.paths ?? []).length === 0 ? null : (
+              <div className="mt-4 border-t border-line pt-2">
+                <h4 className="mb-1 font-mono text-[11px] uppercase tracking-wider text-dim">
+                  Cards like this touched
+                </h4>
+                {/* A guess from similar wording, said as one. 'These files'
+                    invites acceptance; 'these files, because these cards
+                    touched them' invites checking, which is what an operator
+                    should do with a guess. */}
+                <ul className="flex flex-col gap-0.5 font-mono text-[11px]">
+                  {(detail.blastRadius?.paths ?? []).slice(0, 8).map((entry) => (
+                    <li key={entry.path} className="text-dim">
+                      <span className="text-text">{entry.path}</span> · {entry.cards} card(s)
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1 text-dim">
+                  From{' '}
+                  {(detail.blastRadius?.from ?? []).map((card) => `“${card.title}”`).join(', ')}.
+                </p>
               </div>
             )}
 

@@ -9,6 +9,7 @@ import { describeCost, type RunCost } from '../launcher/cost.js';
 import { diffSummary, UNREADABLE } from '../worktree/diff.js';
 import { forecastMerge, UNKNOWN as FORECAST_UNKNOWN } from '../review/forecast.js';
 import { cardsTouching, claimedButNotInGit, subsystemsForCard } from '../cards/subsystems.js';
+import { proposeBlastRadius, NOTHING as NOTHING_TOUCHED } from '../cards/blast-radius.js';
 import { getCard } from './cards.js';
 import { buildMechanicalLedger } from '../ledger/mechanical.js';
 import { checkReality, describeReality } from '../ledger/reality.js';
@@ -186,6 +187,13 @@ export function registerCardDetailRoutes(app: FastifyInstance, context: AppConte
         // same files (T13). Empty for every card that ran before the map
         // existed - absent evidence, not evidence the card touched nothing.
         subsystems: subsystemsForCard(context.database.sqlite, card.id),
+        // What a card like this one has touched before (T18). Offered only
+        // while the card has no history of its own: once it has run, what it
+        // actually touched outranks a guess from similar wording.
+        blastRadius:
+          subsystemsForCard(context.database.sqlite, card.id).length > 0
+            ? NOTHING_TOUCHED
+            : proposeBlastRadius(context.database.sqlite, card.boardId, card.title, card.id),
         relatedCards: cardsTouching(context.database.sqlite, card.boardId, card.id),
         // Surfaced as a question rather than an accusation: work reverted
         // before the commit and files written outside the worktree both land

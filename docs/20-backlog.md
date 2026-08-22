@@ -70,7 +70,7 @@ established; both promotion paths are manual.
 | T15 | Propose a board invariant | A rule appearing on three or more cards is offered as a project rule. | merged |
 | T16 | Contradiction check on a new card | A card whose text conflicts with a standing invariant is flagged before dispatch. | open |
 | T17 | Retirement candidates | An invariant no run has exercised across N cards is surfaced as removable. | open |
-| T18 | Blast radius from history | A card's likely blast radius is proposed from the subsystem map of prior cards touching the same paths. | open |
+| T18 | Blast radius from history | A card's likely blast radius is proposed from what similarly-worded cards actually touched. | merged |
 | T19 | Related cards | A card links to earlier cards that touched the same subsystem, so an agent inherits the prior finding. | merged |
 
 ## D. Operating the loop
