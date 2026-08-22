@@ -40,7 +40,7 @@ Two facts that must agree, currently agreeing only by luck.
 | --- | --- | --- | --- |
 | T1 | Build handshake between server and interface | The server compares when the interface was built against when it was built itself, and the board says so. Reports rather than refuses: see the note below. | merged |
 | T2 | Refuse to serve a stale bundle | ~~Rescoped: reports rather than refuses.~~ Folded into T1. | merged |
-| T3 | Route contract tests | Every route in the API has a test asserting its response shape, so a shape change breaks a test rather than a screen. | open |
+| T3 | Route contract tests | The routes the interface depends on have shape assertions, and the route count is a tripwire for the rest. | merged |
 | T4 | Reject unknown fields on card update | `PATCH /api/cards/:cardId` returns 400 for a field it does not know, instead of accepting and dropping it. | merged |
 | T5 | Migration ladder test | Every migration applies to an empty database and to the previous version's database, asserted in CI. | merged |
 | T6 | Schema drift check | CI fails when the Drizzle schema and the applied migrations disagree. | merged |
