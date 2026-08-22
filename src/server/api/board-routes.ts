@@ -7,6 +7,7 @@ import { parseGuardrails } from '../cards/guardrails.js';
 import { blockersFor, dispatchableCards } from '../cards/eligibility.js';
 import { executionOrder } from '../cards/order.js';
 import { proposeInvariants } from '../cards/invariant-proposals.js';
+import { searchCards } from '../cards/search.js';
 import { looksFinished } from '../cards/staleness.js';
 import { canonicaliseCwd } from '../ingest/binding.js';
 import { boards, cardDependencies, columns, invariants, runs, type Card } from '../db/schema.js';
@@ -284,6 +285,20 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
     '/api/boards/:boardId/invariant-proposals',
     (request) => {
       return proposeInvariants(context.database.sqlite, request.params.boardId);
+    },
+  );
+
+  /**
+   * Finding a card again (T34).
+   *
+   * Searches the paths a card touched as well as its words: the card that
+   * edited a file is usually the card being looked for, and its title may not
+   * mention the file at all.
+   */
+  app.get<{ Params: { boardId: string }; Querystring: { q?: string } }>(
+    '/api/boards/:boardId/search',
+    (request) => {
+      return searchCards(context.database.sqlite, request.params.boardId, request.query.q ?? '');
     },
   );
 
