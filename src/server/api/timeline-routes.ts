@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../app.js';
 import { parseObject } from '../json.js';
 import { densityOf, describeDensity, totalsOf } from '../timeline/density.js';
+import { describeRepeats, repeatsIn } from '../timeline/repeats.js';
 
 /**
  * Run timeline (P9).
@@ -58,6 +59,8 @@ export function registerTimelineRoutes(app: FastifyInstance, context: AppContext
     // Computed over the page rather than the whole run: the gaps between the
     // events on screen are the ones the operator is looking at. The totals
     // below say so, rather than implying they cover the run (T32).
+    const repeats = repeatsIn(context.database.sqlite, runId);
+
     const density = densityOf(
       rows.map((row) => ({ event: row.event_name, receivedAt: row.received_at })),
     );
@@ -67,6 +70,10 @@ export function registerTimelineRoutes(app: FastifyInstance, context: AppContext
       runId,
       total,
       density: { ...totals, note: describeDensity(totals), overPage: true },
+      // Over the whole run, not the page: a denial storm is exactly the thing
+      // that spans more pages than anybody scrolls through (T33).
+      repeats,
+      repeatNote: describeRepeats(repeats),
       entries: rows.map((row, index) => {
         // Through the shared parser, not `JSON.parse` with a cast (T11). A
         // payload that is valid JSON but not an object - the events table only
