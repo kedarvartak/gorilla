@@ -504,3 +504,28 @@ export const cardPaths = sqliteTable(
     index('card_paths_path').on(table.path),
   ],
 );
+
+/**
+ * One row per card that is currently in flight (T7).
+ *
+ * The dispatcher already refused to start a card twice, using an in-memory
+ * set. That guard is per-process and it sits after the worktree is created, so
+ * two servers on one database - or one server racing itself between the
+ * worktree and the launch - could both get past it and put two agents in one
+ * checkout, where they overwrite each other and the damage surfaces at merge.
+ *
+ * A primary key is the cheapest possible way to make that impossible. The
+ * insert either succeeds or it does not, and SQLite decides.
+ */
+export const cardLeases = sqliteTable('card_leases', {
+  cardId: text('card_id')
+    .primaryKey()
+    .references(() => cards.id, { onDelete: 'cascade' }),
+  acquiredAt: integer('acquired_at').notNull(),
+  /**
+   * Which process holds it. Startup clears its own, because dispatch is
+   * in-process and a lease that outlived the process that took it is holding a
+   * card against a run that no longer exists.
+   */
+  owner: text('owner').notNull(),
+});

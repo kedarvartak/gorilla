@@ -1,5 +1,7 @@
 import type { Database } from 'better-sqlite3';
 
+import { clearLeases } from '../dispatch/lease.js';
+
 /**
  * Cards left running when the board stopped (T47).
  *
@@ -21,6 +23,14 @@ export interface InterruptedCard {
 
 export interface CardReconcileResult {
   readonly interrupted: readonly InterruptedCard[];
+  /**
+   * In-flight claims released (T7).
+   *
+   * A lease found at startup was taken by a process that is gone. Leaving it
+   * would make every card that was running during a restart permanently
+   * undispatchable - the same shape of bug as the cards left marked running.
+   */
+  readonly leasesCleared: number;
 }
 
 /**
@@ -38,14 +48,15 @@ export function reconcileRunningCards(sqlite: Database, now: number): CardReconc
     .prepare("SELECT id, title FROM cards WHERE status = 'running'")
     .all() as InterruptedCard[];
 
-  if (running.length === 0) return { interrupted: [] };
+  const leasesCleared = clearLeases(sqlite);
+  if (running.length === 0) return { interrupted: [], leasesCleared };
 
   const block = sqlite.prepare("UPDATE cards SET status = 'blocked', updated_at = ? WHERE id = ?");
   sqlite.transaction(() => {
     for (const card of running) block.run(now, card.id);
   })();
 
-  return { interrupted: running };
+  return { interrupted: running, leasesCleared };
 }
 
 /**
