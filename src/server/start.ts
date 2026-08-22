@@ -14,6 +14,7 @@ import { DEFAULT_HOST, DEFAULT_PORT } from './index.js';
 import type { ExtractionModel } from './ledger/model.js';
 import { describeReconcile, reconcileOpenRuns } from './ingest/lifecycle.js';
 import { describeCardReconcile, reconcileRunningCards } from './cards/reconcile.js';
+import { readBuildStamp } from './web/stamp.js';
 
 export interface EnsuredBoard {
   readonly id: string;
@@ -72,6 +73,8 @@ export interface RunningServer {
   readonly reconciled: string | null;
   /** Cards that were mid-run when the board last stopped. */
   readonly reconciledCards: string | null;
+  /** Set when the served interface is older than the server serving it. */
+  readonly staleBuild: string | null;
   /** Worktrees rediscovered on disk. */
   readonly adopted: number;
   stop(): Promise<void>;
@@ -129,6 +132,7 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
     board,
     reconciled,
     reconciledCards,
+    staleBuild: readBuildStamp().note,
     adopted,
     url: `http://${host}:${port}`,
     stop: async () => {
