@@ -167,7 +167,7 @@ because each one is reachable from what exists, not because the category has the
 | T62 | Steer a running session | ~~Withdrawn: not reachable.~~ A headless run reads its prompt from argv and the launcher gives it no stdin; there is no channel to steer it through. See the rescope. | dropped |
 | T63 | Keep the transcript after the worktree is gone | ~~Withdrawn: the premise is false.~~ Transcripts live in `~/.claude/projects/`, outside the worktree; `git worktree remove` does not touch them. Checked against the real database. | dropped |
 | T64 | Dependency graph on the board | The dependency edges are visible as a graph, not only as a blocked badge. | open |
-| T65 | Fairness across boards | Two boards on one machine cannot starve each other of the concurrency budget. | open |
+| T65 | Fairness across boards | Two boards on one machine cannot starve each other of the concurrency budget. | merged |
 | T66 | Replay a card's run as a fixture | A run already in the database becomes a replayable fixture, so a bug found afterwards is reproduced rather than described. | merged |
 
 ## J. Metrics

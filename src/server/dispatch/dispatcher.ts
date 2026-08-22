@@ -28,6 +28,7 @@ import { classifyLaunchFailure, decideRetry, DEFAULT_MAX_ATTEMPTS } from './retr
 import { describeWindow, isOpen, msUntilOpen, type DispatchWindow } from './window.js';
 import { acquireLease, ownerId, releaseLease } from './lease.js';
 import { describeResume, resumableFor } from './resume.js';
+import { machineLimit, mayStart, occupancy } from './fairness.js';
 
 /**
  * Decides which Ready card starts next (doc 05).
@@ -427,6 +428,15 @@ export class Dispatcher {
 
       const next = dispatchableCards(this.database.db, boardId)[0];
       if (next === undefined) break;
+
+      // Asked before each start, like the budget below: the slot this board
+      // just took is the one that makes the next question different (T65).
+      const share = mayStart(occupancy(this.database.sqlite, boardId), machineLimit());
+      if (!share.allowed) {
+        state.holdingFor = share.why;
+        this.#publish(boardId);
+        break;
+      }
 
       // Asked before each start rather than once per pump, for the same reason
       // the surprise gate is: the card that tips the board over its budget is
