@@ -42,8 +42,8 @@ Two facts that must agree, currently agreeing only by luck.
 | T2 | Refuse to serve a stale bundle | ~~Rescoped: reports rather than refuses.~~ Folded into T1. | merged |
 | T3 | Route contract tests | Every route in the API has a test asserting its response shape, so a shape change breaks a test rather than a screen. | open |
 | T4 | Reject unknown fields on card update | `PATCH /api/cards/:cardId` returns 400 for a field it does not know, instead of accepting and dropping it. | merged |
-| T5 | Migration ladder test | Every migration applies to an empty database and to the previous version's database, asserted in CI. | open |
-| T6 | Schema drift check | CI fails when the Drizzle schema and the applied migrations disagree. | open |
+| T5 | Migration ladder test | Every migration applies to an empty database and to the previous version's database, asserted in CI. | merged |
+| T6 | Schema drift check | CI fails when the Drizzle schema and the applied migrations disagree. | merged |
 | T7 | Dispatch idempotency constraint | A card cannot be in flight twice, enforced by the database rather than by call order. | open |
 | T8 | Typed error bodies | One helper produces every 400/404/409 body, with a discriminated type the interface can switch on. | open |
 
