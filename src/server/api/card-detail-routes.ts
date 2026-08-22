@@ -9,6 +9,7 @@ import { describeCost, type RunCost } from '../launcher/cost.js';
 import { diffSummary, UNREADABLE } from '../worktree/diff.js';
 import { forecastMerge, UNKNOWN as FORECAST_UNKNOWN } from '../review/forecast.js';
 import { cardsTouching, claimedButNotInGit, subsystemsForCard } from '../cards/subsystems.js';
+import { findContradictions } from '../cards/contradictions.js';
 import { proposeBlastRadius, NOTHING as NOTHING_TOUCHED } from '../cards/blast-radius.js';
 import { getCard } from './cards.js';
 import { buildMechanicalLedger } from '../ledger/mechanical.js';
@@ -186,6 +187,10 @@ export function registerCardDetailRoutes(app: FastifyInstance, context: AppConte
         // What this card's work touched, and which earlier cards touched the
         // same files (T13). Empty for every card that ran before the map
         // existed - absent evidence, not evidence the card touched nothing.
+        // A card scoped to something a project rule prohibits (T16). Worth a
+        // look, not an error: a rule can be prohibiting a path precisely
+        // because this card is the one allowed to change it.
+        contradictions: findContradictions(context.database.sqlite, card.boardId, card),
         subsystems: subsystemsForCard(context.database.sqlite, card.id),
         // What a card like this one has touched before (T18). Offered only
         // while the card has no history of its own: once it has run, what it

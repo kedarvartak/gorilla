@@ -155,6 +155,7 @@ describe('what a card answers with', () => {
       'blockers',
       'card',
       'claimedNotInGit',
+      'contradictions',
       'diff',
       'guardrailDetail',
       'guardrails',

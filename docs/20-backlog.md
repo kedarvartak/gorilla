@@ -68,8 +68,8 @@ established; both promotion paths are manual.
 | T13 | Subsystem map | Each card records which paths its run actually touched, from git and from the run's own account, kept apart. | merged |
 | T14 | Propose a card guardrail | Accepted ledger entries yield a proposed guardrail the operator accepts or drops; nothing is applied silently. | merged |
 | T15 | Propose a board invariant | A rule appearing on three or more cards is offered as a project rule. | merged |
-| T16 | Contradiction check on a new card | A card whose text conflicts with a standing invariant is flagged before dispatch. | open |
-| T17 | Retirement candidates | An invariant no run has exercised across N cards is surfaced as removable. | open |
+| T16 | Contradiction check on a new card | ~~Narrowed.~~ A card whose *scope* names a path a project rule prohibits is flagged; prose against prose is not detectable here. See the rescope below. | merged |
+| T17 | Retirement candidates | ~~Withdrawn: not measurable.~~ Nothing records whether a rule was consulted, so "no run has exercised it" cannot be established from anything the board holds. See the rescope below. | dropped |
 | T18 | Blast radius from history | A card's likely blast radius is proposed from what similarly-worded cards actually touched. | merged |
 | T19 | Related cards | A card links to earlier cards that touched the same subsystem, so an agent inherits the prior finding. | merged |
 
@@ -180,6 +180,22 @@ because each one is reachable from what exists, not because the category has the
 ---
 
 ## Rescopes
+
+**T16, 22 August 2026.** Written as "a card whose text conflicts with a
+standing invariant". Deciding whether prose contradicts prose is the model's
+job, and doing it badly here would produce a warning wrong often enough to be
+ignored by the second week. What is checkable is a card naming a path a rule
+prohibits, and that is what shipped. The weaker signal - a mention in the body
+rather than in the scope - is reported as a mention, because a card can name a
+file it intends to leave alone.
+
+**T17, 22 August 2026. Withdrawn.** "An invariant no run has exercised" cannot
+be established from anything the board records. Invariants are handed to a
+session as text; nothing observes whether the agent read one, relied on one, or
+was constrained by one. Any implementation would count something else - cards
+elapsed, or paths not touched - and present it as evidence a rule is unused.
+That is a worse outcome than leaving the rule in place, since the operator
+would delete a standing rule on the strength of a measurement of nothing.
 
 **T1 and T2, 22 August 2026.** Both were written as a refusal: the interface
 would decline to run against a mismatched server, and the server would decline
