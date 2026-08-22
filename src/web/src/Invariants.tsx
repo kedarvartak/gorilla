@@ -20,6 +20,21 @@ export interface Invariant {
   readonly createdAt: number;
 }
 
+export interface InvariantProposal {
+  readonly statement: string;
+  readonly cards: readonly { id: string; title: string }[];
+  readonly why: string;
+}
+
+function isProposal(value: unknown): value is InvariantProposal {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as InvariantProposal).statement === 'string' &&
+    Array.isArray((value as InvariantProposal).cards)
+  );
+}
+
 export function Invariants({
   boardId,
   onClose,
@@ -28,6 +43,7 @@ export function Invariants({
   onClose: () => void;
 }): ReactElement {
   const [rules, setRules] = useState<readonly Invariant[] | null>(null);
+  const [proposals, setProposals] = useState<readonly InvariantProposal[]>([]);
   const [statement, setStatement] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -36,6 +52,16 @@ export function Invariants({
       const response = await fetch(`/api/boards/${boardId}/invariants`);
       if (!response.ok) throw new Error(`Could not load the rules: ${String(response.status)}`);
       setRules((await response.json()) as Invariant[]);
+
+      // A shortlist that will not load must not hide the rules that did.
+      const suggested = await fetch(`/api/boards/${boardId}/invariant-proposals`);
+      if (suggested.ok) {
+        const body: unknown = await suggested.json();
+        // Shape-checked rather than trusted. A server older than this bundle
+        // has no such route, and whatever answers instead must not be able to
+        // break the panel that lists the rules.
+        setProposals(Array.isArray(body) ? body.filter(isProposal) : []);
+      }
     } catch (cause) {
       setError((cause as Error).message);
     }
@@ -65,6 +91,22 @@ export function Invariants({
     }
 
     setStatement('');
+    await load();
+  }
+
+  /**
+   * Writing a proposal down is still the operator's act.
+   *
+   * An invariant reaches every future card, so one the board wrote by itself
+   * would constrain work nobody agreed to constrain.
+   */
+  async function accept(statement: string): Promise<void> {
+    setError(null);
+    await fetch(`/api/boards/${boardId}/invariants`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ statement }),
+    });
     await load();
   }
 
@@ -121,6 +163,39 @@ export function Invariants({
             No project rules yet. Every card carries only its own guardrails.
           </p>
         ) : null}
+
+        {proposals.length === 0 ? null : (
+          <div className="mb-4">
+            <h3 className="mb-1.5 font-mono text-[11px] uppercase tracking-wider text-dim">
+              Already true of several cards ({proposals.length})
+            </h3>
+            {/* A rule written onto three cards is one project rule nobody has
+                written down. Left that way it drifts: the fourth card gets a
+                different wording and the fifth gets none at all. */}
+            <ul className="flex flex-col gap-1.5">
+              {proposals.map((proposal) => (
+                <li
+                  key={proposal.statement}
+                  className="rounded border border-dashed border-line bg-panel px-3 py-2"
+                >
+                  <div className="text-text">{proposal.statement}</div>
+                  <div className="font-mono text-[11px] text-dim">
+                    {/* Named, because the claim is falsifiable and the
+                        operator may disagree with it. */}
+                    {proposal.cards.map((card) => card.title).join(', ')}
+                  </div>
+                  <button
+                    type="button"
+                    className="mt-1 rounded border border-line px-2 py-0.5 font-mono text-[11px] text-dim hover:text-text"
+                    onClick={() => void accept(proposal.statement)}
+                  >
+                    make it a project rule
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <ul className="flex flex-col gap-1.5">
           {(rules ?? []).map((rule) => (
