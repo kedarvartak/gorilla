@@ -8,6 +8,7 @@ import { blockersFor, dispatchableCards } from '../cards/eligibility.js';
 import { executionOrder } from '../cards/order.js';
 import { proposeInvariants } from '../cards/invariant-proposals.js';
 import { searchCards } from '../cards/search.js';
+import { describeMetrics, readMetrics } from '../metrics.js';
 import { isValidHour } from '../dispatch/window.js';
 import { describeDuplicates, findDuplicates } from '../cards/duplicates.js';
 import { looksFinished } from '../cards/staleness.js';
@@ -35,6 +36,9 @@ import { fail, present, readPriority } from './shared.js';
  * one mistake this cannot catch, which is why the set sits directly above the
  * handler that reads it.
  */
+/** Long enough for a median to mean something on a board merging a few a week. */
+const DEFAULT_METRICS_DAYS = 30;
+
 const EDITABLE_CARD_FIELDS: ReadonlySet<string> = new Set([
   'title',
   'body',
@@ -350,6 +354,24 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
     '/api/boards/:boardId/search',
     (request) => {
       return searchCards(context.database.sqlite, request.params.boardId, request.query.q ?? '');
+    },
+  );
+
+  /**
+   * Whether the board is getting anywhere (T59, T60).
+   *
+   * Thirty days by default, which is long enough for a median to mean
+   * something on a board that merges a few cards a week.
+   */
+  app.get<{ Params: { boardId: string }; Querystring: { days?: string } }>(
+    '/api/boards/:boardId/metrics',
+    (request) => {
+      const requested = Number(request.query.days);
+      const window = Number.isFinite(requested) && requested > 0 ? requested : DEFAULT_METRICS_DAYS;
+      const since = Date.now() - window * 24 * 60 * 60 * 1_000;
+
+      const metrics = readMetrics(context.database.sqlite, request.params.boardId, since);
+      return { ...metrics, notes: describeMetrics(metrics) };
     },
   );
 
