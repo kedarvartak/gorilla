@@ -122,12 +122,12 @@ export function Activity({
   return (
     <section className="flex min-h-0 flex-col border-t border-line bg-panel-2">
       <header className="flex items-baseline gap-2 border-b border-line px-4 py-1.5">
-        <h3 className="font-mono text-[11px] uppercase tracking-wider text-dim">Activity</h3>
-        <span className={`font-mono text-[11px] ${live ? 'text-ok' : 'text-warn'}`}>
+        <h3 className="eyebrow">Activity</h3>
+        <span className={`text-[11px] ${live ? 'text-ok' : 'text-warn'}`}>
           {live ? 'live' : 'not connected'}
         </span>
         {events.length === 0 ? null : (
-          <span className="font-mono text-[11px] text-dim">{events.length} recent</span>
+          <span className="text-[11px] text-dim">{events.length} recent</span>
         )}
       </header>
 
@@ -135,7 +135,7 @@ export function Activity({
         {events.length === 0 ? (
           // Says which of the two silences this is, because "nothing running"
           // and "not receiving" look identical.
-          <p className="font-mono text-[11px] text-dim">
+          <p className="text-[11px] text-dim">
             {live
               ? 'Nothing has happened since this view opened. Dispatch a card to see it work.'
               : 'Not receiving events. The board may have stopped.'}
@@ -145,7 +145,7 @@ export function Activity({
             {events.map((entry) => (
               <li
                 key={`${entry.runId}:${String(entry.id)}`}
-                className="flex gap-3 font-mono text-[11px] leading-relaxed"
+                className="flex gap-3 text-[11px] leading-relaxed"
               >
                 <span className="shrink-0 text-dim">{clock(entry.receivedAt)}</span>
                 <span className="w-40 shrink-0 truncate text-info" title={titleFor(entry.cardId)}>

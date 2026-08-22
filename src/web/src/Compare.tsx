@@ -58,8 +58,8 @@ export function Compare({
   return (
     <Panel title="Two attempts compared" onClose={onClose}>
       <header className="flex items-baseline gap-3 border-b border-line bg-panel px-4 py-2.5">
-        <h2 className="font-mono text-[13px] uppercase tracking-wider text-accent">Compared</h2>
-        <span className="font-mono text-[11px] text-dim">{body?.note ?? ''}</span>
+        <h2 className="text-[13px] font-semibold tracking-tight text-text">Compared</h2>
+        <span className="text-[11px] text-dim">{body?.note ?? ''}</span>
         <button
           type="button"
           className="ml-auto rounded border border-line px-2 py-0.5 text-dim hover:text-text"
@@ -69,68 +69,71 @@ export function Compare({
         </button>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        {body === null ? (
-          <p className="text-dim">Reading both branches.</p>
-        ) : (
-          <>
-            <div className="grid grid-cols-2 gap-3">
-              {body.candidates.map((candidate) => (
-                <section key={candidate.cardId} className="rounded border border-line bg-panel p-3">
-                  <h3 className="mb-1 text-text">{candidate.title}</h3>
-                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 font-mono text-[11px]">
-                    <dt className="text-dim">verify</dt>
-                    <dd
-                      className={
-                        candidate.verify === 'passed'
-                          ? 'text-ok'
-                          : candidate.verify === null
-                            ? 'text-dim'
-                            : 'text-warn'
-                      }
-                    >
-                      {/* Never blank. A candidate whose verify has not run is
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+        <div className="mx-auto w-full max-w-5xl">
+          {body === null ? (
+            <p className="text-dim">Reading both branches.</p>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                {body.candidates.map((candidate) => (
+                  <section
+                    key={candidate.cardId}
+                    className="rounded border border-line bg-panel p-3"
+                  >
+                    <h3 className="mb-1 text-text">{candidate.title}</h3>
+                    <dl className="grid grid-cols-[auto_1fr] gap-x-3 text-[11px]">
+                      <dt className="text-dim">verify</dt>
+                      <dd
+                        className={
+                          candidate.verify === 'passed'
+                            ? 'text-ok'
+                            : candidate.verify === null
+                              ? 'text-dim'
+                              : 'text-warn'
+                        }
+                      >
+                        {/* Never blank. A candidate whose verify has not run is
                           not a candidate that passed. */}
-                      {candidate.verify ?? 'not run'}
-                    </dd>
+                        {candidate.verify ?? 'not run'}
+                      </dd>
 
-                    <dt className="text-dim">changed</dt>
-                    <dd className="text-text">
-                      {candidate.diff.readable
-                        ? `${String(candidate.diff.files.length)} file(s), +${String(candidate.diff.insertions)} −${String(candidate.diff.deletions)}`
-                        : 'branch unreadable'}
-                    </dd>
+                      <dt className="text-dim">changed</dt>
+                      <dd className="text-text">
+                        {candidate.diff.readable
+                          ? `${String(candidate.diff.files.length)} file(s), +${String(candidate.diff.insertions)} −${String(candidate.diff.deletions)}`
+                          : 'branch unreadable'}
+                      </dd>
 
-                    <dt className="text-dim">tokens</dt>
-                    <dd className="text-text">
-                      {/* Unrecorded, not free. A candidate that looked free
+                      <dt className="text-dim">tokens</dt>
+                      <dd className="text-text">
+                        {/* Unrecorded, not free. A candidate that looked free
                           beside one that cost forty thousand would win an
                           argument it did not earn. */}
-                      {candidate.tokens === null
-                        ? 'not recorded'
-                        : `${String(Math.round(candidate.tokens / 1000))}k`}
-                    </dd>
-                  </dl>
-                </section>
-              ))}
-            </div>
-
-            {body.shared.length === 0 ? null : (
-              <div className="mt-4">
-                <h3 className="mb-1 font-mono text-[11px] uppercase tracking-wider text-dim">
-                  Touched by both
-                </h3>
-                {/* Where two alternatives disagree, which is the first thing
-                    to read and the reason to open this at all. */}
-                <ul className="flex flex-col gap-0.5 font-mono text-[11px] text-dim">
-                  {body.shared.map((path) => (
-                    <li key={path}>{path}</li>
-                  ))}
-                </ul>
+                        {candidate.tokens === null
+                          ? 'not recorded'
+                          : `${String(Math.round(candidate.tokens / 1000))}k`}
+                      </dd>
+                    </dl>
+                  </section>
+                ))}
               </div>
-            )}
-          </>
-        )}
+
+              {body.shared.length === 0 ? null : (
+                <div className="mt-4">
+                  <h3 className="mb-1 eyebrow">Touched by both</h3>
+                  {/* Where two alternatives disagree, which is the first thing
+                    to read and the reason to open this at all. */}
+                  <ul className="flex flex-col gap-0.5 text-[11px] text-dim">
+                    {body.shared.map((path) => (
+                      <li key={path}>{path}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </Panel>
   );

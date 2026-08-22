@@ -55,8 +55,8 @@ export function Plan({
   return (
     <Panel title="The order the board will work in" onClose={onClose}>
       <header className="flex items-baseline gap-3 border-b border-line bg-panel px-4 py-2.5">
-        <h2 className="font-mono text-[13px] uppercase tracking-wider text-accent">The order</h2>
-        <span className="font-mono text-[11px] text-dim">{body?.note ?? ''}</span>
+        <h2 className="text-[13px] font-semibold tracking-tight text-text">The order</h2>
+        <span className="text-[11px] text-dim">{body?.note ?? ''}</span>
         <button
           type="button"
           className="ml-auto rounded border border-line px-2 py-0.5 text-dim hover:text-text"
@@ -66,37 +66,39 @@ export function Plan({
         </button>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        {body === null ? (
-          <p className="text-dim">Reading the board.</p>
-        ) : (
-          <ol className="flex flex-col gap-1.5">
-            {body.cards.map((card) => (
-              <li
-                key={card.cardId}
-                className="flex items-baseline gap-3 rounded border border-line bg-panel px-3 py-2"
-              >
-                <span className="font-mono text-[11px] text-dim">{card.rank}</span>
-                <button
-                  type="button"
-                  className="text-text hover:underline"
-                  onClick={() => onOpen(card.cardId)}
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+        <div className="mx-auto w-full max-w-4xl">
+          {body === null ? (
+            <p className="text-dim">Reading the board.</p>
+          ) : (
+            <ol className="flex flex-col gap-1.5">
+              {body.cards.map((card) => (
+                <li
+                  key={card.cardId}
+                  className="flex items-baseline gap-3 rounded border border-line bg-panel px-3 py-2"
                 >
-                  {card.title}
-                </button>
-                <span className="font-mono text-[11px] text-dim">{card.status}</span>
-                {/* The reason, which is the whole point of this screen. A
+                  <span className="text-[11px] text-dim">{card.rank}</span>
+                  <button
+                    type="button"
+                    className="text-text hover:underline"
+                    onClick={() => onOpen(card.cardId)}
+                  >
+                    {card.title}
+                  </button>
+                  <span className="text-[11px] text-dim">{card.status}</span>
+                  {/* The reason, which is the whole point of this screen. A
                     blocked badge says a card cannot start; this says what it
                     is waiting for, by name. */}
-                {card.waitingFor.length === 0 ? null : (
-                  <span className="ml-auto font-mono text-[11px] text-warn">
-                    waiting for {card.waitingFor.join(', ')}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ol>
-        )}
+                  {card.waitingFor.length === 0 ? null : (
+                    <span className="ml-auto text-[11px] text-warn">
+                      waiting for {card.waitingFor.join(', ')}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
       </div>
     </Panel>
   );
