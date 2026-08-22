@@ -52,6 +52,9 @@ function stubFetch(): void {
       if (url.endsWith('/subagents')) {
         return new Response('[]', { status: 200 });
       }
+      if (url.endsWith('/guardrail-proposals')) {
+        return new Response('[]', { status: 200 });
+      }
       if (url.endsWith('/seen')) {
         return new Response('{}', { status: 200 });
       }

@@ -277,9 +277,30 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  /** Entries worth turning into rules (T14). A shortlist, never applied on its own. */
+  guardrailProposals: (cardId: string) =>
+    request<GuardrailProposal[]>(`/api/cards/${cardId}/guardrail-proposals`),
+
+  /** Turns one accepted entry into a card guardrail. */
+  promoteEntry: (entryId: string, body: { target: string; rule: string }) =>
+    request<{ card: Card; enforcement: 'hard' | 'advisory'; detail: string }>(
+      `/api/ledger/${entryId}/promote`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+
   dispatchable: (boardId: string) =>
     request<{ id: string; title: string }[]>(`/api/boards/${boardId}/dispatchable`),
 };
+
+export interface GuardrailProposal {
+  readonly entryId: string;
+  readonly statement: string;
+  readonly target: 'scope' | 'prohibit' | 'verify';
+  readonly rule: string;
+  /** What the board could actually do with it. Never presented as more. */
+  readonly enforcement: 'hard' | 'advisory';
+  readonly why: string;
+}
 
 /**
  * Subscribes to board changes.

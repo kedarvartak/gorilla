@@ -2,7 +2,13 @@ import { useCallback, useEffect, useRef, useState, type ReactElement } from 'rea
 
 import { Timeline } from './Timeline.js';
 
-import { api, type Card, type GuardrailDetail, type MergeReport } from './api.js';
+import {
+  api,
+  type Card,
+  type GuardrailDetail,
+  type GuardrailProposal,
+  type MergeReport,
+} from './api.js';
 
 /**
  * Card detail (doc 09, screen 2).
@@ -443,6 +449,7 @@ export function CardDetail({
   const [brief, setBrief] = useState<Brief | null>(null);
   const [copied, setCopied] = useState(false);
   const [subagents, setSubagents] = useState<readonly Subagent[]>([]);
+  const [proposals, setProposals] = useState<readonly GuardrailProposal[]>([]);
   const [showEntries, setShowEntries] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [timelineRunId, setTimelineRunId] = useState<string | null>(null);
@@ -683,11 +690,20 @@ export function CardDetail({
 
     async function load(): Promise<void> {
       try {
-        const [detailResponse, briefResponse, subagentResponse] = await Promise.all([
-          fetch(`/api/cards/${cardId}/detail`),
-          fetch(`/api/cards/${cardId}/brief`),
-          fetch(`/api/cards/${cardId}/subagents`),
-        ]);
+        const [detailResponse, briefResponse, subagentResponse, proposalResponse] =
+          await Promise.all([
+            fetch(`/api/cards/${cardId}/detail`),
+            fetch(`/api/cards/${cardId}/brief`),
+            fetch(`/api/cards/${cardId}/subagents`),
+            fetch(`/api/cards/${cardId}/guardrail-proposals`),
+          ]);
+
+        // Same treatment as the subagents below: a shortlist that will not
+        // load is less bad than a card that will not open.
+        if (proposalResponse.ok && !cancelled) {
+          const shortlist: unknown = await proposalResponse.json();
+          if (Array.isArray(shortlist)) setProposals(shortlist as GuardrailProposal[]);
+        }
 
         // Nothing here blocks the card: a subagent view that will not load is
         // less bad than a card that will not open, so the shape is checked
@@ -1143,6 +1159,56 @@ export function CardDetail({
                     ))}
                   </ul>
                 )}
+              </div>
+            )}
+
+            {proposals.length === 0 ? null : (
+              <div className="mt-4 border-t border-line pt-2">
+                <h4 className="mb-1 font-mono text-[11px] uppercase tracking-wider text-dim">
+                  Worth making a rule ({proposals.length})
+                </h4>
+                {/* Proposals, never applied on their own. An entry becoming a
+                    rule without a human reading it would let the ledger
+                    constrain the agent by itself, which doc 12 never allows. */}
+                <ul className="flex flex-col gap-2 font-mono text-[11px]">
+                  {proposals.map((proposal) => (
+                    <li key={proposal.entryId} className="border-l-2 border-line pl-2">
+                      <div className="text-text">{proposal.statement}</div>
+                      <div className="text-dim">
+                        {proposal.target}
+                        {' · '}
+                        {/* Stated before the operator commits, not after. */}
+                        <span className={proposal.enforcement === 'hard' ? 'text-ok' : 'text-warn'}>
+                          {proposal.enforcement}
+                        </span>
+                        {' · '}
+                        {proposal.why}
+                      </div>
+                      <button
+                        type="button"
+                        className="text-info hover:underline"
+                        onClick={() => {
+                          void api
+                            .promoteEntry(proposal.entryId, {
+                              target: proposal.target,
+                              rule: proposal.rule,
+                            })
+                            .then((result) => {
+                              setProposals((current) =>
+                                current.filter((entry) => entry.entryId !== proposal.entryId),
+                              );
+                              setDetail((current) =>
+                                current === null ? current : { ...current, card: result.card },
+                              );
+                            })
+                            .catch((cause: Error) => setError(cause.message));
+                        }}
+                      >
+                        make it a {proposal.target} rule
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
 

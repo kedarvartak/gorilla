@@ -6,6 +6,8 @@ import { boards, cards as cardsTable, columns, ledgerEntries } from '../db/schem
 import { getCard, moveCard, updateCard } from './cards.js';
 import { markPromoted, storedEntryById } from '../ledger/store.js';
 import { promoteToGuardrail, PromotionError } from '../ledger/promote.js';
+import { proposeGuardrails } from '../ledger/propose.js';
+import { storedEntriesFor } from '../ledger/store.js';
 import { type Surprise } from '../ledger/surprises.js';
 import { GATE_REACH, mergeGate, type GateCard } from '../review/gate.js';
 import { describeMergeReport, mergeBranches, mergeTargetFor } from '../review/merge.js';
@@ -196,6 +198,30 @@ export function registerReviewRoutes(app: FastifyInstance, context: AppContext):
    * The step that makes judgement compound. Without it an accepted assumption
    * reaches the next run as context and evaporates; as a guardrail it constrains.
    */
+  /**
+   * The shortlist of entries worth promoting (T14).
+   *
+   * The promotion machinery has existed since G1 with one caller: a human who
+   * happens to remember an entry is there. Nothing has ever been promoted,
+   * because finding the candidates meant reading everything the ledger holds.
+   *
+   * Proposals only. An entry becoming a rule without a human reading it would
+   * let the ledger constrain the agent by itself, which doc 12 never allows.
+   */
+  app.get<{ Params: { cardId: string } }>(
+    '/api/cards/:cardId/guardrail-proposals',
+    (request, reply) => {
+      try {
+        const card = getCard(context.database, request.params.cardId);
+        const entries = storedEntriesFor(context.database, card.id);
+
+        return reply.send(proposeGuardrails(entries, parseGuardrails(card.guardrails)));
+      } catch (error) {
+        return fail(reply, error);
+      }
+    },
+  );
+
   app.post<{
     Params: { entryId: string };
     Body: { target?: unknown; rule?: unknown };
