@@ -1160,6 +1160,28 @@ export function CardDetail({
                               >
                                 reject
                               </button>
+                              {/* Rejecting says the run got something wrong.
+                                  Without this the work that implies lives in
+                                  the operator's head until they forget it. */}
+                              <button
+                                type="button"
+                                className="rounded border border-line px-1.5 font-mono text-[10px] text-dim hover:text-text"
+                                title="Rejects this and raises a card to address it, linked back to here."
+                                onClick={() => {
+                                  const entryId =
+                                    surprise.target.type === 'entry'
+                                      ? surprise.target.entryId
+                                      : null;
+                                  if (entryId === null) return;
+
+                                  judge(surprise.target, 'rejected');
+                                  void api
+                                    .followUp(entryId)
+                                    .catch((cause: Error) => setError(cause.message));
+                                }}
+                              >
+                                reject and raise a card
+                              </button>
                             </div>
                           )}
                         </li>

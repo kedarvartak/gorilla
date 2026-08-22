@@ -1,0 +1,1 @@
+ALTER TABLE `cards` ADD `from_entry_id` text;

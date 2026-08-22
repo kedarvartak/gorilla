@@ -289,6 +289,15 @@ export const cards = sqliteTable(
      * read, and would leave the operator unable to tell whether theirs landed.
      */
     retryNote: text('retry_note'),
+    /**
+     * The ledger entry this card was raised to address (T38).
+     *
+     * Rejecting an entry says the run got something wrong. Until now that
+     * verdict went nowhere: it stayed on the entry, the work it implied lived
+     * in the operator's head, and the next run was told the claim was
+     * overruled without being told what to do instead.
+     */
+    fromEntryId: text('from_entry_id'),
     synthesisModel: text('synthesis_model'),
 
     status: text('status', {

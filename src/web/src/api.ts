@@ -330,6 +330,13 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  /** Turns a rejected entry into the card that addresses it (T38). */
+  followUp: (entryId: string, title?: string) =>
+    request<Card>(`/api/ledger/${entryId}/follow-up`, {
+      method: 'POST',
+      body: JSON.stringify(title === undefined ? {} : { title }),
+    }),
+
   /** Entries worth turning into rules (T14). A shortlist, never applied on its own. */
   guardrailProposals: (cardId: string) =>
     request<GuardrailProposal[]>(`/api/cards/${cardId}/guardrail-proposals`),
