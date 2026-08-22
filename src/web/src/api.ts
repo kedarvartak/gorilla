@@ -295,9 +295,21 @@ export const api = {
       { method: 'POST', body: JSON.stringify(body) },
     ),
 
+  /** Finds a card by its words or by a file it touched (T34). */
+  search: (boardId: string, query: string) =>
+    request<SearchHit[]>(`/api/boards/${boardId}/search?q=${encodeURIComponent(query)}`),
+
   dispatchable: (boardId: string) =>
     request<{ id: string; title: string }[]>(`/api/boards/${boardId}/dispatchable`),
 };
+
+export interface SearchHit {
+  readonly cardId: string;
+  readonly title: string;
+  /** Why it matched, so a surprising hit explains itself. */
+  readonly matched: readonly ('title' | 'body' | 'path')[];
+  readonly path: string | null;
+}
 
 export interface GuardrailProposal {
   readonly entryId: string;

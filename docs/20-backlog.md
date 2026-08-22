@@ -98,7 +98,7 @@ Everything here currently requires a terminal.
 | T31 | Full diff view | The branch's diff is readable in the card, per file. | merged |
 | T32 | Run timeline density | The timeline distinguishes thinking, tool use, and waiting, rather than showing one undifferentiated run. | open |
 | T33 | Error grouping | Repeated identical errors within a run collapse into one entry with a count. | open |
-| T34 | Card search | Cards are searchable by title, body and touched path. | open |
+| T34 | Card search | Cards are searchable by title, body and touched path. | merged |
 
 ## F. Review and merge
 

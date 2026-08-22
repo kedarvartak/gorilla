@@ -22,6 +22,7 @@ import {
   type Card,
   type Column,
   type DispatchState,
+  type SearchHit,
 } from './api.js';
 import { CardDetail } from './CardDetail.js';
 import { Digest } from './Digest.js';
@@ -101,6 +102,8 @@ export function Board(): ReactElement {
   const [error, setError] = useState<string | null>(null);
   /** Set when the served bundle is older than the server serving it (T1, T2). */
   const [staleBuild, setStaleBuild] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [hits, setHits] = useState<readonly SearchHit[] | null>(null);
   const [title, setTitle] = useState('');
   const [newPriority, setNewPriority] = useState<Card['priority']>('normal');
   const [openCardId, setOpenCardId] = useState<string | null>(null);
@@ -322,6 +325,25 @@ export function Board(): ReactElement {
           </select>
         </label>
 
+        <input
+          className="w-52 rounded border border-line bg-panel-2 px-2 py-0.5 text-text placeholder:text-dim"
+          placeholder="find a card, or a file it touched"
+          aria-label="Search cards"
+          value={query}
+          onChange={(changed) => {
+            const next = changed.target.value;
+            setQuery(next);
+            if (next.trim() === '') {
+              setHits(null);
+              return;
+            }
+            void api
+              .search(board.id, next)
+              .then(setHits)
+              .catch((cause: Error) => setError(cause.message));
+          }}
+        />
+
         {/* Today's spend, always shown. The number is worth seeing on its own,
             and it is the only way to pick a budget that is neither pointless
             nor hit within the hour. The note carries its own caveat when some
@@ -447,6 +469,31 @@ export function Board(): ReactElement {
           like the two times this actually happened. */}
       {staleBuild === null ? null : (
         <div className="border-b border-line bg-panel-2 px-4 py-2 text-warn">{staleBuild}</div>
+      )}
+
+      {hits === null ? null : (
+        <div className="border-b border-line bg-panel-2 px-4 py-2 font-mono text-[11px]">
+          {hits.length === 0 ? (
+            <span className="text-dim">Nothing matches “{query}”.</span>
+          ) : (
+            <ul className="flex flex-wrap gap-x-4 gap-y-1">
+              {hits.map((hit) => (
+                <li key={hit.cardId} className="text-dim">
+                  <button
+                    type="button"
+                    className="text-text hover:underline"
+                    onClick={() => setOpenCardId(hit.cardId)}
+                  >
+                    {hit.title}
+                  </button>{' '}
+                  {/* Says why, because a hit that cannot explain itself reads
+                      as a broken search. */}
+                  {hit.path === null ? hit.matched.join(', ') : hit.path}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
 
       {error !== null ? (
