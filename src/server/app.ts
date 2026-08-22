@@ -7,6 +7,7 @@ import { registerIngestRoutes, recordedLatencies } from './ingest/routes.js';
 import { Broadcaster } from './stream/broadcaster.js';
 import { registerStreamRoutes } from './stream/routes.js';
 import { registerWebRoutes } from './web/routes.js';
+import { claudeCodeReviewer, type ReviewRunner } from './review/second-opinion.js';
 import {
   registerApiRoutes,
   registerBindingRoutes,
@@ -40,6 +41,8 @@ export interface AppOptions {
    * because a key happened to be exported. `serve` supplies the real one.
    */
   readonly extractionModel?: ExtractionModel;
+  /** Overridden in tests. The Claude Code CLI otherwise, on the operator's quota. */
+  readonly reviewer?: ReviewRunner;
 }
 
 export interface AppContext {
@@ -50,6 +53,14 @@ export interface AppContext {
   readonly dispatcher: Dispatcher;
   readonly pending: PendingBindings;
   readonly extraction: ExtractionService;
+  /**
+   * The second-opinion reviewer (T36).
+   *
+   * On the context rather than constructed at the route, so a test can supply
+   * one that does not spawn a CLI - the same reason the extraction model is
+   * injected rather than found.
+   */
+  readonly reviewer: ReviewRunner;
 }
 
 /**
@@ -82,6 +93,7 @@ export function buildApp(options: AppOptions): FastifyInstance {
     recorder: options.recorder,
     broadcaster,
     pending,
+    reviewer: options.reviewer ?? claudeCodeReviewer(),
     extraction: new ExtractionService({
       database: options.database,
       model: options.extractionModel,

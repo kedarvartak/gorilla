@@ -118,3 +118,24 @@ export async function fileDiff(
     return null;
   }
 }
+
+/**
+ * The whole branch as one patch.
+ *
+ * For a reader rather than a screen: the second-opinion reviewer needs the
+ * change in one piece, and asking for it file by file would give it the parts
+ * without the shape.
+ */
+export async function branchDiff(
+  repoCwd: string,
+  branch: string | null,
+  base = 'HEAD',
+): Promise<string> {
+  if (branch === null || !existsSync(repoCwd)) return '';
+
+  try {
+    return await simpleGit(repoCwd).raw(['diff', `${base}...${branch}`]);
+  } catch {
+    return '';
+  }
+}

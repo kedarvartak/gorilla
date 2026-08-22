@@ -15,6 +15,7 @@ import type { ExtractionModel } from './ledger/model.js';
 import { describeReconcile, reconcileOpenRuns } from './ingest/lifecycle.js';
 import { describeCardReconcile, reconcileRunningCards } from './cards/reconcile.js';
 import { readBuildStamp } from './web/stamp.js';
+import type { ReviewRunner } from './review/second-opinion.js';
 
 export interface EnsuredBoard {
   readonly id: string;
@@ -64,6 +65,8 @@ export interface StartOptions {
    * environment, so no test can spend money on a key the shell exported.
    */
   readonly extractionModel?: ExtractionModel;
+  /** Overridden in tests, so no test spawns a reviewer or spends anything. */
+  readonly reviewer?: ReviewRunner;
 }
 
 export interface RunningServer {
@@ -118,6 +121,7 @@ export async function startServer(options: StartOptions = {}): Promise<RunningSe
     logger: options.logger ?? true,
     ...(options.recorder === undefined ? {} : { recorder: options.recorder }),
     ...(options.extractionModel === undefined ? {} : { extractionModel: options.extractionModel }),
+    ...(options.reviewer === undefined ? {} : { reviewer: options.reviewer }),
   });
 
   // Worktrees are durable and git already tracks them, so the board asks rather
