@@ -70,7 +70,10 @@ export function executionOrder(db: Db, boardId: string): RankedCard[] {
     .orderBy(asc(cards.position))
     .all();
 
-  const unfinished = rows.filter((card) => !FINISHED.has(card.status));
+  // Archived cards are not work to be done either, for the same reason a done
+  // one is not: a number beside a card nobody is going to run is an
+  // instruction to do something the operator has already put away (T77).
+  const unfinished = rows.filter((card) => !FINISHED.has(card.status) && card.archivedAt === null);
   const unfinishedIds = new Set(unfinished.map((card) => card.id));
 
   const edges = db.select().from(cardDependencies).all();

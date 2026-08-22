@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 
 import { canMoveTo, wouldCycle } from '../cards/eligibility.js';
 import { parseGuardrails, serialiseGuardrails } from '../cards/guardrails.js';
@@ -125,10 +125,13 @@ export function getCard(handle: DatabaseHandle, cardId: string): Card {
 }
 
 export function listCards(handle: DatabaseHandle, boardId: string): Card[] {
+  // Archived cards are off the board by definition (T77). They are not
+  // deleted, so everything that reads history still finds them; this is the
+  // one query that answers "what is on the board".
   return handle.db
     .select()
     .from(cards)
-    .where(eq(cards.boardId, boardId))
+    .where(and(eq(cards.boardId, boardId), isNull(cards.archivedAt)))
     .orderBy(asc(cards.position))
     .all();
 }

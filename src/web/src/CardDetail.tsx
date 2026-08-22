@@ -858,6 +858,21 @@ export function CardDetail({
         >
           {maximised ? 'restore' : 'expand'}
         </button>
+        {/* Put away, not deleted. Deleting takes the runs, the ledger and the
+            judgements with it - the history this product exists to keep. */}
+        <button
+          type="button"
+          className="rounded border border-line px-2 py-0.5 font-mono text-[11px] text-dim hover:text-text"
+          title="Takes this off the board and out of the queue. Its runs, ledger and judgements stay."
+          onClick={() => {
+            void api
+              .archiveCard(cardId, true)
+              .then(onClose)
+              .catch((cause: Error) => setError(cause.message));
+          }}
+        >
+          archive
+        </button>
         <button
           type="button"
           className="rounded border border-line px-2 py-0.5 text-dim hover:text-text"

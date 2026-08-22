@@ -298,6 +298,15 @@ export const cards = sqliteTable(
      * overruled without being told what to do instead.
      */
     fromEntryId: text('from_entry_id'),
+    /**
+     * When the operator put this card away (T77).
+     *
+     * A finished board grows forever, and deleting a card takes its runs, its
+     * ledger and its judgements with it - the history this product exists to
+     * keep. Archiving hides it from the board and the queue and touches
+     * nothing else.
+     */
+    archivedAt: integer('archived_at'),
     synthesisModel: text('synthesis_model'),
 
     status: text('status', {

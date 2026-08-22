@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, and, isNotNull } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../app.js';
 import { createDefaultColumns } from '../cards/defaults.js';
@@ -14,7 +14,15 @@ import { isValidHour } from '../dispatch/window.js';
 import { describeDuplicates, findDuplicates } from '../cards/duplicates.js';
 import { looksFinished } from '../cards/staleness.js';
 import { canonicaliseCwd } from '../ingest/binding.js';
-import { boards, cardDependencies, columns, invariants, runs, type Card } from '../db/schema.js';
+import {
+  boards,
+  cardDependencies,
+  cards as cardsTable,
+  columns,
+  invariants,
+  runs,
+  type Card,
+} from '../db/schema.js';
 import {
   addDependency,
   createCard,
@@ -524,6 +532,55 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
    * status, no worktree, no merge - because those belong to the card that
    * earned them.
    */
+  /**
+   * Putting a card away without losing it (T77).
+   *
+   * A finished board grows forever, and deleting a card takes its runs, its
+   * ledger and its judgements with it - the history this product exists to
+   * keep. Archiving hides it from the board and the queue and touches nothing
+   * else, so a card can come back and its evidence comes back with it.
+   */
+  app.post<{ Params: { cardId: string }; Body: { archived?: unknown } }>(
+    '/api/cards/:cardId/archive',
+    (request, reply) => {
+      try {
+        const card = getCard(context.database, request.params.cardId);
+        const archived = request.body?.archived !== false;
+
+        if (archived && card.status === 'running') {
+          // Hiding a card mid-run would leave an agent working on something
+          // the board no longer shows, which is the state the whole product
+          // exists to prevent.
+          return conflict(reply, 'That card is running. Cancel it first.', 'archived');
+        }
+
+        context.database.db
+          .update(cardsTable)
+          .set({ archivedAt: archived ? Date.now() : null, updatedAt: Date.now() })
+          .where(eq(cardsTable.id, card.id))
+          .run();
+
+        const updated = getCard(context.database, card.id);
+        publish(archived ? 'card-archived' : 'card-unarchived', present(updated));
+
+        return reply.send(present(updated));
+      } catch (error) {
+        return fail(reply, error);
+      }
+    },
+  );
+
+  /** The cards put away, so they can be found again. */
+  app.get<{ Params: { boardId: string } }>('/api/boards/:boardId/archived', (request) => {
+    return context.database.db
+      .select()
+      .from(cardsTable)
+      .where(and(eq(cardsTable.boardId, request.params.boardId), isNotNull(cardsTable.archivedAt)))
+      .orderBy(asc(cardsTable.archivedAt))
+      .all()
+      .map((card) => present(card));
+  });
+
   app.post<{ Params: { cardId: string }; Body: { title?: unknown } }>(
     '/api/cards/:cardId/clone',
     (request, reply) => {

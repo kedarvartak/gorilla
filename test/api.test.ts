@@ -904,3 +904,66 @@ describe('splitting a card that is too large', () => {
     expect(refused.status).toBe(400);
   });
 });
+
+describe('putting a card away', () => {
+  async function seeded(title = 'a card'): Promise<string> {
+    const created = await json<{ id: string }>('POST', `/api/boards/${boardId}/cards`, { title });
+    return created.body.id;
+  }
+
+  it('takes it off the board without deleting it', async () => {
+    const id = await seeded();
+    await json('POST', `/api/cards/${id}/archive`);
+
+    const onBoard = await json<{ id: string }[]>('GET', `/api/boards/${boardId}/cards`);
+    expect(onBoard.body.map((card) => card.id)).not.toContain(id);
+
+    // Not deleted: everything that reads history still finds it.
+    expect((await json('GET', `/api/cards/${id}`)).status).toBe(200);
+  });
+
+  it('lists what has been put away', async () => {
+    const id = await seeded('filed');
+    await json('POST', `/api/cards/${id}/archive`);
+
+    const archived = await json<{ id: string }[]>('GET', `/api/boards/${boardId}/archived`);
+    expect(archived.body.map((card) => card.id)).toEqual([id]);
+  });
+
+  it('brings it back', async () => {
+    const id = await seeded();
+    await json('POST', `/api/cards/${id}/archive`);
+    await json('POST', `/api/cards/${id}/archive`, { archived: false });
+
+    const onBoard = await json<{ id: string }[]>('GET', `/api/boards/${boardId}/cards`);
+    expect(onBoard.body.map((card) => card.id)).toContain(id);
+  });
+
+  it('refuses while the card is running', async () => {
+    const id = await seeded();
+    await json('PATCH', `/api/cards/${id}`, { status: 'running' });
+
+    // Hiding a card mid-run leaves an agent working on something the board no
+    // longer shows, which is the state the product exists to prevent.
+    const refused = await json<{ error: string }>('POST', `/api/cards/${id}/archive`);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toContain('Cancel it first');
+  });
+
+  it('keeps it out of the dispatch queue', async () => {
+    const id = await seeded();
+    await json('PATCH', `/api/cards/${id}`, { goalCondition: '`npm test` exits 0' });
+    await json('POST', `/api/cards/${id}/archive`);
+
+    const dispatchable = await json<{ id: string }[]>('GET', `/api/boards/${boardId}/dispatchable`);
+    expect(dispatchable.body.map((card) => card.id)).not.toContain(id);
+  });
+
+  it('keeps it out of the order', async () => {
+    const id = await seeded();
+    await json('POST', `/api/cards/${id}/archive`);
+
+    const plan = await json<{ cards: { cardId: string }[] }>('GET', `/api/boards/${boardId}/plan`);
+    expect(plan.body.cards.map((card) => card.cardId)).not.toContain(id);
+  });
+});
