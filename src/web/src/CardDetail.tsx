@@ -253,6 +253,14 @@ interface Detail {
   readonly relatedCards?: readonly { cardId: string; title: string; shared: readonly string[] }[];
   /** Paths the run said it changed that git did not see. A question, not a verdict. */
   readonly claimedNotInGit?: readonly string[];
+  /** Whether this would merge cleanly, asked without attempting it (T39). */
+  readonly mergeForecast?: {
+    readonly clean: boolean;
+    readonly conflicts: readonly string[];
+    /** False when the question could not be asked. Never presented as clean. */
+    readonly readable: boolean;
+    readonly note: string;
+  };
   /** What the branch changed, from git (T30). */
   readonly diff?: {
     readonly files: readonly {
@@ -1175,6 +1183,15 @@ export function CardDetail({
                   </ul>
                 )}
               </div>
+            )}
+
+            {detail.mergeForecast === undefined || !detail.mergeForecast.readable ? null : (
+              <p
+                className={`mt-3 ${detail.mergeForecast.clean ? 'text-dim' : 'text-warn'}`}
+                title="Asked with git merge-tree, which touches neither the working tree nor HEAD."
+              >
+                {detail.mergeForecast.note}
+              </p>
             )}
 
             {detail.diff === undefined || !detail.diff.readable ? null : (
