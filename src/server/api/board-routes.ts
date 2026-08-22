@@ -8,6 +8,7 @@ import { blockersFor, dispatchableCards } from '../cards/eligibility.js';
 import { executionOrder } from '../cards/order.js';
 import { proposeInvariants } from '../cards/invariant-proposals.js';
 import { searchCards } from '../cards/search.js';
+import { isValidHour } from '../dispatch/window.js';
 import { describeDuplicates, findDuplicates } from '../cards/duplicates.js';
 import { looksFinished } from '../cards/staleness.js';
 import { canonicaliseCwd } from '../ingest/binding.js';
@@ -41,55 +42,81 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
    * to this board, and changing it would silently orphan every session already
    * running against the old path.
    */
-  app.patch<{ Params: { boardId: string }; Body: { dailyTokenBudget?: unknown; name?: unknown } }>(
-    '/api/boards/:boardId',
-    (request, reply) => {
-      const board = context.database.db
-        .select()
-        .from(boards)
-        .where(eq(boards.id, request.params.boardId))
-        .get();
+  app.patch<{
+    Params: { boardId: string };
+    Body: {
+      dailyTokenBudget?: unknown;
+      name?: unknown;
+      dispatchFromHour?: unknown;
+      dispatchToHour?: unknown;
+    };
+  }>('/api/boards/:boardId', (request, reply) => {
+    const board = context.database.db
+      .select()
+      .from(boards)
+      .where(eq(boards.id, request.params.boardId))
+      .get();
 
-      if (board === undefined) return reply.code(404).send({ error: 'No such board.' });
+    if (board === undefined) return reply.code(404).send({ error: 'No such board.' });
 
-      const budget = request.body?.dailyTokenBudget;
-      // Zero is refused rather than read as "no budget": it would stop the
-      // queue before it started anything, which reads as a broken board.
-      if (
-        budget !== undefined &&
-        budget !== null &&
-        (typeof budget !== 'number' || !Number.isInteger(budget) || budget <= 0)
-      ) {
-        return reply.code(400).send({
-          error: 'A daily budget must be a positive whole number of tokens, or null for none.',
-          field: 'dailyTokenBudget',
-        });
-      }
+    const budget = request.body?.dailyTokenBudget;
+    // Zero is refused rather than read as "no budget": it would stop the
+    // queue before it started anything, which reads as a broken board.
+    if (
+      budget !== undefined &&
+      budget !== null &&
+      (typeof budget !== 'number' || !Number.isInteger(budget) || budget <= 0)
+    ) {
+      return reply.code(400).send({
+        error: 'A daily budget must be a positive whole number of tokens, or null for none.',
+        field: 'dailyTokenBudget',
+      });
+    }
 
-      const name = request.body?.name;
-      if (name !== undefined && (typeof name !== 'string' || name.trim() === '')) {
-        return reply.code(400).send({ error: 'A board needs a name.', field: 'name' });
-      }
+    const from = request.body?.dispatchFromHour;
+    const to = request.body?.dispatchToHour;
 
-      context.database.db
-        .update(boards)
-        .set({
-          ...(budget === undefined ? {} : { dailyTokenBudget: budget }),
-          ...(name === undefined ? {} : { name: name.trim() }),
-        })
-        .where(eq(boards.id, board.id))
-        .run();
+    // Both or neither. One hour on its own describes no window, and storing
+    // it would leave a board whose schedule the operator cannot read back.
+    if ((from === undefined) !== (to === undefined)) {
+      return reply.code(400).send({
+        error: 'A dispatch window needs both hours, or neither.',
+        field: 'dispatchFromHour',
+      });
+    }
 
-      const updated = context.database.db
-        .select()
-        .from(boards)
-        .where(eq(boards.id, board.id))
-        .get();
+    if (from !== undefined && from !== null && !isValidHour(from)) {
+      return reply
+        .code(400)
+        .send({ error: 'An hour must be a whole number from 0 to 23.', field: 'dispatchFromHour' });
+    }
+    if (to !== undefined && to !== null && !isValidHour(to)) {
+      return reply
+        .code(400)
+        .send({ error: 'An hour must be a whole number from 0 to 23.', field: 'dispatchToHour' });
+    }
 
-      publish('board-updated', updated);
-      return reply.send(updated);
-    },
-  );
+    const name = request.body?.name;
+    if (name !== undefined && (typeof name !== 'string' || name.trim() === '')) {
+      return reply.code(400).send({ error: 'A board needs a name.', field: 'name' });
+    }
+
+    context.database.db
+      .update(boards)
+      .set({
+        ...(budget === undefined ? {} : { dailyTokenBudget: budget }),
+        ...(from === undefined ? {} : { dispatchFromHour: from }),
+        ...(to === undefined ? {} : { dispatchToHour: to }),
+        ...(name === undefined ? {} : { name: name.trim() }),
+      })
+      .where(eq(boards.id, board.id))
+      .run();
+
+    const updated = context.database.db.select().from(boards).where(eq(boards.id, board.id)).get();
+
+    publish('board-updated', updated);
+    return reply.send(updated);
+  });
 
   app.post<{ Body: { name?: string; cwd?: string } }>('/api/boards', (request, reply) => {
     const name = (request.body?.name ?? '').trim();

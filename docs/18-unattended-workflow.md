@@ -177,6 +177,29 @@ queue never waits for it, and a notifier that fails, hangs or does not exist
 never unhalts the board or breaks the gate. `gorilla doctor` warns when nothing
 is configured.
 
+## Working only at night
+
+"Define tasks, run them, go to sleep" has an unstated bound: the operator wants
+the night, not the working day. A queue still dispatching at 09:30 competes
+with them for the same checkout, the same test runner and the same rate limit.
+
+A board can carry an hour range. Outside it the queue holds rather than halts.
+A halt is sticky and asks for a person; a hold is a fact about the clock that
+stops being true on its own, and a window needing a manual resume every morning
+would be worse than no window.
+
+A window that wraps midnight is the normal case here rather than an edge case,
+since 22 to 07 is what overnight means. The same hour twice means always open:
+a board configured 9 to 9 that silently never ran again would be
+indistinguishable from a broken queue.
+
+The queue wakes on a timer set for the opening, not by polling the clock. The
+timer is unreferenced, so a board asleep until 22:00 is not a reason for
+`gorilla serve` to refuse to exit.
+
+The window governs the queue, not the operator. Dispatching one card by hand at
+noon still works: someone pressing the button has said what they want.
+
 ## Trying again, but only where the evidence says to
 
 A failure the run stated is not the same as a network having a bad minute, and
