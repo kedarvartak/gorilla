@@ -34,6 +34,13 @@ export interface LaunchOptions {
   readonly guardrails: GuardrailSet;
   /** What the operator said when they sent this card back (T22). */
   readonly operatorNote?: string | null;
+  /**
+   * A session to continue rather than start (T46).
+   *
+   * The worktree survives an interruption; without this the reasoning that
+   * produced it does not.
+   */
+  readonly resumeSessionId?: string | null;
   readonly goalCondition?: string | null;
   readonly prompt?: string | null;
   /** The card's own branch, so the agent knows to commit to it. */
@@ -142,7 +149,7 @@ export function launch(options: LaunchOptions): RunningLaunch {
     permissionMode: options.permissionMode ?? DEFAULT_PERMISSION_MODE,
     contextFilePath: contextPath,
     settingsPath,
-    resumeSessionId: null,
+    resumeSessionId: options.resumeSessionId ?? null,
   };
 
   const child = spawn(options.executable ?? 'claude', buildArgs(spec), {
