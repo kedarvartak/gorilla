@@ -74,10 +74,10 @@ function describe(entry: HookEvent): string {
 }
 
 function tone(entry: HookEvent): string {
-  if (entry.event === 'PostToolUseFailure') return 'text-warn';
-  if (entry.event === 'PreCompact' || entry.event === 'Notification') return 'text-accent';
+  if (entry.event === 'PostToolUseFailure') return 'text-danger';
+  if (entry.event === 'PreCompact' || entry.event === 'Notification') return 'text-brand';
   if (entry.event === 'SessionEnd' || entry.event === 'Stop') return 'text-dim';
-  return 'text-text';
+  return 'text-ink';
 }
 
 function clock(at: number): string {
@@ -120,10 +120,10 @@ export function Activity({
   }, []);
 
   return (
-    <section className="flex min-h-0 flex-col border-t border-line bg-panel-2">
+    <section className="flex min-h-0 flex-col border-t border-line bg-well">
       <header className="flex items-baseline gap-2 border-b border-line px-4 py-1.5">
         <h3 className="eyebrow">Activity</h3>
-        <span className={`text-[11px] ${live ? 'text-ok' : 'text-warn'}`}>
+        <span className={`text-[11px] ${live ? 'text-ok' : 'text-danger'}`}>
           {live ? 'live' : 'not connected'}
         </span>
         {events.length === 0 ? null : (

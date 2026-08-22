@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactElement } from 'react';
+import { X } from '@phosphor-icons/react';
 
 import { Panel } from './Panel.js';
 
@@ -57,15 +58,17 @@ export function Metrics({
 
   return (
     <Panel title="The numbers: throughput, failures and spend" onClose={onClose}>
-      <header className="flex items-baseline gap-3 border-b border-line bg-panel px-4 py-2.5">
-        <h2 className="text-[13px] font-semibold tracking-tight text-text">The numbers</h2>
+      <header className="flex items-baseline gap-3 border-b border-line bg-surface px-4 py-2.5">
+        <h2 className="text-[13px] font-semibold tracking-tight text-ink">The numbers</h2>
         <span className="text-[11px] text-dim">Last thirty days</span>
         <button
           type="button"
-          className="ml-auto rounded border border-line px-2 py-0.5 text-dim hover:text-text"
+          aria-label="Close"
+          className="ml-auto inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-dim transition-colors hover:bg-well hover:text-ink"
           onClick={onClose}
         >
-          close
+          <X size={14} aria-hidden />
+          Close
         </button>
       </header>
 
@@ -95,10 +98,10 @@ export function Metrics({
                           only thing being read, and one dependency for it
                           would be a dependency for one screen. */}
                         <span
-                          className="inline-block h-2 bg-accent/40"
+                          className="inline-block h-2 bg-brand/40"
                           style={{ width: `${String(Math.round((day.tokens / busiest) * 60))}%` }}
                         />
-                        <span className="text-text">{short(day.tokens)}</span>
+                        <span className="text-ink">{short(day.tokens)}</span>
                         <span className="text-dim">
                           {/* Said as unpriced rather than as free. */}
                           {day.costUsd === null ? 'unpriced' : `$${day.costUsd.toFixed(2)}`}
@@ -115,8 +118,7 @@ export function Metrics({
                   <ul className="flex flex-col gap-0.5 text-[11px]">
                     {body.failures.map((failure) => (
                       <li key={failure.reason} className="text-dim">
-                        <span className="text-text">{failure.reason}</span> · {failure.cards}{' '}
-                        card(s)
+                        <span className="text-ink">{failure.reason}</span> · {failure.cards} card(s)
                       </li>
                     ))}
                   </ul>

@@ -1,4 +1,14 @@
-import type { ReactElement } from 'react';
+import type { ComponentType, ReactElement } from 'react';
+
+import {
+  ChartBar,
+  Kanban,
+  ListNumbers,
+  Pulse,
+  Scales,
+  SunHorizon,
+  type IconProps,
+} from '@phosphor-icons/react';
 
 /**
  * The rail (doc 09).
@@ -13,20 +23,38 @@ import type { ReactElement } from 'react';
 
 export type View = 'board' | 'digest' | 'order' | 'numbers' | 'rules';
 
-const VIEWS: readonly { id: View; label: string; hint: string }[] = [
-  { id: 'board', label: 'Board', hint: 'Every card, in its column' },
+const VIEWS: readonly {
+  id: View;
+  label: string;
+  hint: string;
+  Icon: ComponentType<IconProps>;
+}[] = [
+  { id: 'board', label: 'Board', hint: 'Every card, in its column', Icon: Kanban },
   {
     id: 'digest',
     label: 'Digest',
     hint: 'What changed while you were away, and what was already waiting',
+    // A sunrise: that is when this screen is read, and what it reports on.
+    Icon: SunHorizon,
   },
-  { id: 'order', label: 'Order', hint: 'What runs next, and what each card is waiting for' },
+  {
+    id: 'order',
+    label: 'Order',
+    hint: 'What runs next, and what each card is waiting for',
+    Icon: ListNumbers,
+  },
   {
     id: 'numbers',
     label: 'Numbers',
     hint: 'Throughput, what actually breaks, and what each day cost',
+    Icon: ChartBar,
   },
-  { id: 'rules', label: 'Rules', hint: 'Rules handed to every card this board dispatches' },
+  {
+    id: 'rules',
+    label: 'Rules',
+    hint: 'Rules handed to every card this board dispatches',
+    Icon: Scales,
+  },
 ];
 
 export function Sidebar({
@@ -48,9 +76,9 @@ export function Sidebar({
   onToggleActivity: () => void;
 }): ReactElement {
   return (
-    <nav aria-label="Views" className="flex w-52 shrink-0 flex-col border-r border-line bg-panel">
+    <nav aria-label="Views" className="flex w-52 shrink-0 flex-col border-r border-line bg-surface">
       <div className="border-b border-line px-4 py-3.5">
-        <div className="text-[13px] font-semibold tracking-tight text-text">Gorilla</div>
+        <div className="text-[14px] font-semibold tracking-tight text-ink">Gorilla</div>
         <div className="mt-0.5 truncate text-[11px] text-faint" title={boardName}>
           {boardName}
         </div>
@@ -63,13 +91,14 @@ export function Sidebar({
               type="button"
               title={entry.hint}
               aria-current={view === entry.id ? 'page' : undefined}
-              className={`w-full rounded-sm px-2.5 py-1.5 text-left transition-colors ${
+              className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left transition-colors ${
                 view === entry.id
-                  ? 'bg-accent-soft text-text'
-                  : 'text-dim hover:bg-panel-2 hover:text-text'
+                  ? 'bg-brand-tint font-medium text-brand'
+                  : 'text-dim hover:bg-well hover:text-ink'
               }`}
               onClick={() => onSelect(entry.id)}
             >
+              <entry.Icon size={16} aria-hidden />
               {entry.label}
             </button>
           </li>
@@ -81,11 +110,14 @@ export function Sidebar({
             type="button"
             aria-pressed={activityOpen}
             title="A live line per hook event, under the board"
-            className={`w-full rounded-sm px-2.5 py-1.5 text-left transition-colors ${
-              activityOpen ? 'bg-panel-2 text-text' : 'text-dim hover:bg-panel-2 hover:text-text'
+            className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left transition-colors ${
+              activityOpen
+                ? 'bg-well font-medium text-ink'
+                : 'text-dim hover:bg-well hover:text-ink'
             }`}
             onClick={onToggleActivity}
           >
+            <Pulse size={16} aria-hidden />
             Activity
           </button>
         </li>
@@ -98,7 +130,7 @@ export function Sidebar({
           className="flex items-center gap-1.5"
           title={live ? 'Receiving events' : 'Not receiving events'}
         >
-          <span className={`size-1.5 rounded-full ${live ? 'bg-ok' : 'bg-warn'}`} aria-hidden />
+          <span className={`size-1.5 rounded-full ${live ? 'bg-ok' : 'bg-danger'}`} aria-hidden />
           <span className="text-dim">{live ? 'Live' : 'Offline'}</span>
         </div>
         {spent === null ? null : <div className="mt-1 text-faint">{spent}</div>}

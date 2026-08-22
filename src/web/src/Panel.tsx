@@ -47,7 +47,7 @@ export function Panel({
       aria-modal="true"
       aria-label={title}
       tabIndex={-1}
-      className="absolute inset-0 z-10 flex flex-col bg-bg focus:outline-none"
+      className="absolute inset-0 z-10 flex flex-col bg-canvas focus:outline-none"
     >
       {children}
     </div>

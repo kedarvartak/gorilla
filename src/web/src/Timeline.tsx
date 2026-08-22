@@ -88,25 +88,25 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
   const compactions = entries.filter((entry) => entry.event === 'PreCompact').length;
 
   return (
-    <div className="flex h-[60%] flex-col border-t border-line bg-panel">
+    <div className="flex h-[60%] flex-col border-t border-line bg-surface">
       <header className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-line px-4 py-2">
         <h2 className="eyebrow">Timeline</h2>
         <span className="text-dim">
-          showing <b className="text-text">{entries.length}</b> of{' '}
-          <b className="text-text">{total}</b>
+          showing <b className="text-ink">{entries.length}</b> of{' '}
+          <b className="text-ink">{total}</b>
         </span>
         {/* Where the time went, over the events on screen. A list of evenly
             spaced rows says a run happened and nothing about its shape. */}
         {density === null ? null : <span className="text-dim">{density}</span>}
         {/* A denial storm renders as eighty rows that each look like work.
             This is the one line that says they were all the same call. */}
-        {repeats === null ? null : <span className="text-warn">{repeats}</span>}
+        {repeats === null ? null : <span className="text-danger">{repeats}</span>}
 
         {/* The reasoning, which the events do not carry. The board has stored
             this path since Phase 0 and never opened it. */}
         <button
           type="button"
-          className="ml-auto rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-text"
+          className="ml-auto rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-ink"
           onClick={() => {
             if (transcript !== null) {
               setTranscript(null);
@@ -128,13 +128,13 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
           {transcript === null ? 'transcript' : 'events'}
         </button>
         {compactions > 0 ? (
-          <span className="text-warn">
+          <span className="text-danger">
             {compactions} compaction{compactions === 1 ? '' : 's'}
           </span>
         ) : null}
 
         <select
-          className="rounded border border-line bg-panel-2 px-1 py-0.5 text-text"
+          className="rounded border border-line bg-well px-1 py-0.5 text-ink"
           value={eventFilter}
           onChange={(changed) => setEventFilter(changed.target.value)}
         >
@@ -147,7 +147,7 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
         </select>
 
         <select
-          className="rounded border border-line bg-panel-2 px-1 py-0.5 text-text"
+          className="rounded border border-line bg-well px-1 py-0.5 text-ink"
           value={toolFilter}
           onChange={(changed) => setToolFilter(changed.target.value)}
         >
@@ -161,7 +161,7 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
 
         <button
           type="button"
-          className="ml-auto rounded border border-line px-2 py-0.5 text-dim hover:text-text"
+          className="ml-auto rounded border border-line px-2 py-0.5 text-dim hover:text-ink"
           onClick={onClose}
         >
           close
@@ -187,14 +187,14 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
       >
         {entries.map((entry) =>
           entry.event === 'PreCompact' ? (
-            <li key={entry.id} className="my-2 flex items-center gap-2 text-warn">
-              <span className="h-px flex-1 bg-warn/40" />
+            <li key={entry.id} className="my-2 flex items-center gap-2 text-danger">
+              <span className="h-px flex-1 bg-danger/40" />
               {/* The agent's memory of everything above this line is now a
                   summary. Nothing else in the interface says so. */}
               <span className="whitespace-nowrap">
                 context compacted here ({entry.triggerReason ?? 'unknown trigger'})
               </span>
-              <span className="h-px flex-1 bg-warn/40" />
+              <span className="h-px flex-1 bg-danger/40" />
             </li>
           ) : (
             <li
@@ -205,10 +205,10 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
             >
               <span className="w-8 shrink-0 text-right text-dim">{entry.seq}</span>
               <span className="w-16 shrink-0 text-dim">{time(entry.at)}</span>
-              <span className={entry.isCompaction ? 'text-warn' : 'text-accent'}>
+              <span className={entry.isCompaction ? 'text-danger' : 'text-brand'}>
                 {entry.event}
               </span>
-              {entry.toolName === null ? null : <span className="text-text">{entry.toolName}</span>}
+              {entry.toolName === null ? null : <span className="text-ink">{entry.toolName}</span>}
               {entry.agentId === null ? null : (
                 <span className="text-info" title={`Subagent ${entry.agentId}`}>
                   {entry.agentType ?? 'subagent'}
@@ -222,7 +222,7 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
       {hasMore ? (
         <button
           type="button"
-          className="border-t border-line py-1.5 text-dim hover:text-text"
+          className="border-t border-line py-1.5 text-dim hover:text-ink"
           onClick={() => void load(after, false)}
         >
           Load more

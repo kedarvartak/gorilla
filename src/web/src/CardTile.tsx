@@ -2,35 +2,42 @@ import type { ReactElement } from 'react';
 
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { Play, Stop } from '@phosphor-icons/react';
 
 import type { Card } from './api.js';
 
 /**
  * One card at rest (doc 09).
  *
- * A column already says what stage a card is at, so the tile does not repeat
- * it in colour. What the column cannot say is the thing this product is
- * actually about: how long the card has been sitting there while nobody
- * watched. That is the rule along the bottom edge.
+ * Facts about a card are chips. A chip is neutral unless the fact it carries
+ * is one that wants a person - that is the rule the whole board runs on, and
+ * it is why a column of finished work is grey and the one blocked card is not.
  *
- * The unseen mark is the board's primary call to action, so it is on the left
- * edge where a column of cards can be scanned in one movement rather than read
- * one at a time.
+ * A column already says what stage a card is at. What it cannot say is how
+ * long the card has been sitting there while nobody watched, which is the rule
+ * along the bottom edge and the reason this product exists.
  */
 
 const STATUS_LABEL: Record<Card['status'], string> = {
-  idle: 'idle',
-  queued: 'queued',
-  running: 'running',
-  'awaiting-review': 'needs review',
-  blocked: 'blocked',
-  done: 'done',
-  abandoned: 'abandoned',
+  idle: 'Idle',
+  queued: 'Queued',
+  running: 'Running',
+  'awaiting-review': 'Needs review',
+  blocked: 'Blocked',
+  done: 'Done',
+  abandoned: 'Abandoned',
 };
+
+/** Only the states that want a person take colour. */
+function statusTone(status: Card['status']): string {
+  if (status === 'blocked') return 'chip-danger';
+  if (status === 'awaiting-review') return 'chip-attention';
+  if (status === 'running') return 'chip-info';
+  return '';
+}
 
 const DAY = 24 * 60 * 60 * 1000;
 
-/** Cards that are finished are not waiting for anything. */
 function isWaiting(card: Card): boolean {
   return card.status !== 'done' && card.status !== 'abandoned' && card.mergedAt === null;
 }
@@ -70,11 +77,15 @@ export function CardTile({
   const hard = card.guardrailDetail.filter((rail) => rail.enforcement === 'hard').length;
   const advisory = card.guardrailDetail.filter((rail) => rail.enforcement === 'advisory').length;
 
+  // What is left to configure. A finished or abandoned card will not run
+  // again, so which model it would use and what would constrain it are
+  // answers to a question nobody is asking.
+  const configurable = !terminal && card.status !== 'abandoned' && card.mergedAt === null;
+
   const since = Date.now() - card.updatedAt;
   const waiting = isWaiting(card);
-  // Full at a week. Past that the bar stops growing and the number in the
-  // tooltip carries it: a rule that kept extending would say "very old" for
-  // everything old, which is not a distinction worth drawing.
+  // Full at a week. Past that the rule stops growing and the tooltip carries
+  // it: a bar that kept extending would say "very old" for everything old.
   const waited = Math.min(1, since / (7 * DAY));
   const stale = waiting && since > 2 * DAY;
 
@@ -82,10 +93,10 @@ export function CardTile({
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`group relative shrink-0 overflow-hidden rounded-md border bg-panel-2 transition-colors ${
+      className={`group relative shrink-0 overflow-hidden rounded-md border bg-surface transition-colors ${
         isDragging
-          ? 'border-accent/60 opacity-60'
-          : 'border-edge/70 hover:border-edge focus-within:border-edge'
+          ? 'border-brand opacity-70'
+          : 'border-line hover:border-edge focus-within:border-edge'
       }`}
       {...attributes}
       {...listeners}
@@ -110,10 +121,10 @@ export function CardTile({
     >
       <div className="px-3 py-2.5">
         <div className="flex items-start gap-2">
-          {/* A fixed gutter, so titles line up down the column whether or not
-              a card has a number. Inline, they did not. */}
+          {/* A fixed gutter, so titles line up down the column whether or not a
+              card has a number. */}
           <span
-            className={`w-5 shrink-0 pt-px text-right text-[11px] tabular-nums ${
+            className={`w-4 shrink-0 pt-px text-right text-[11px] ${
               card.rankBlocked ? 'text-faint' : 'text-dim'
             }`}
             title={
@@ -127,30 +138,12 @@ export function CardTile({
             {card.rank ?? ''}
           </span>
 
-          {/* Two lines, always. A card that is three lines tall next to one
-              that is one line makes a column that cannot be scanned, and the
-              rest of the title is a hover away. */}
+          {/* Two lines, always. A card three lines tall beside one that is one
+              line makes a column nobody can scan; the rest is a hover away. */}
           <span
-            className="line-clamp-2 min-h-[2.75em] min-w-0 flex-1 leading-snug text-text"
+            className="line-clamp-2 min-h-[2.75em] min-w-0 flex-1 font-medium leading-snug text-ink"
             title={card.title}
           >
-            {/* Priority sits before the title because it changes what runs
-                next, and the operator scans titles. `normal` shows nothing: a
-                chip on every card conveys no ordering at all. */}
-            {card.priority === 'normal' ? null : (
-              <span
-                className={`mr-1.5 align-[1px] text-[10px] font-semibold uppercase tracking-wide ${
-                  card.priority === 'high' ? 'text-warn' : 'text-faint'
-                }`}
-                title={
-                  card.priority === 'high'
-                    ? 'Dispatched before normal and low cards in the same column.'
-                    : 'Dispatched after normal cards in the same column.'
-                }
-              >
-                {card.priority}
-              </span>
-            )}
             {card.title}
           </span>
 
@@ -163,43 +156,48 @@ export function CardTile({
           ) : null}
         </div>
 
-        {/* One line, always. A card whose metadata wraps to three lines in a
-            narrow column is a card whose height depends on the width of the
-            column it happens to be in, and a board of those has no rhythm. */}
-        <div className="mt-1.5 flex items-center gap-2.5 overflow-hidden pl-7 text-[11px] whitespace-nowrap text-faint">
-          {/* "merged" replaces "done" rather than sitting beside it: a card the
+        {/* One line of chips, never two. A card that grows a row because it
+            carries one more fact is a card whose height depends on its
+            configuration, and a column of those cannot be scanned. What does
+            not fit is clipped, and the tooltips carry it. */}
+        <div className="mt-2 flex items-center gap-1 overflow-hidden pl-6">
+          {/* "Merged" replaces "Done" rather than sitting beside it: a card the
               board merged and a card the operator marked finished are different
               outcomes, and showing both words would restate the ambiguity. */}
           {card.mergedAt === null ? (
-            <span className={card.status === 'blocked' ? 'text-warn' : 'text-dim'}>
-              {STATUS_LABEL[card.status]}
-            </span>
+            <span className={`chip ${statusTone(card.status)}`}>{STATUS_LABEL[card.status]}</span>
           ) : (
             <span
-              className="text-ok"
+              className="chip chip-ok"
               title={`Merged into ${card.mergedInto ?? 'the target branch'} from ${
                 card.mergedBranch ?? 'its branch'
               } on ${new Date(card.mergedAt).toLocaleString()}`}
             >
-              merged
+              Merged
             </span>
           )}
 
-          {/* A finished card does not need to be told which model ran it or
-              what constrained it. Those answer "how will this go", and it has
-              already gone. */}
-          {terminal || card.agentModel === null ? null : <span>{card.agentModel}</span>}
-
-          {!terminal && hard + advisory > 0 ? (
+          {/* Priority changes what runs next. `normal` shows nothing: a chip on
+              every card conveys no ordering at all. */}
+          {card.priority === 'normal' ? null : (
             <span
-              className="min-w-0 truncate"
-              title={card.guardrailDetail
-                .map((rail) => `${rail.text} (${rail.enforcement})`)
-                .join('\n')}
+              className={`chip ${card.priority === 'high' ? 'chip-danger' : ''}`}
+              title={
+                card.priority === 'high'
+                  ? 'Dispatched before normal and low cards in the same column.'
+                  : 'Dispatched after normal cards in the same column.'
+              }
             >
-              {/* Split, never a single total: a guardrail believed to be
-                  enforced but which is not is worse than none (R10). */}
-              {hard} hard, {advisory} advisory
+              {card.priority === 'high' ? 'High' : 'Low'}
+            </span>
+          )}
+
+          {card.goalCondition === null ? (
+            <span
+              className="chip chip-danger"
+              title="Cannot be dispatched without a goal condition"
+            >
+              No goal
             </span>
           ) : null}
 
@@ -208,39 +206,52 @@ export function CardTile({
                card is a signal nobody sees: an operator with fifteen cards will
                not open fifteen cards. */
             <span
-              className="text-attention"
+              className="chip chip-attention"
               title="Every file this card names already exists and it has never run. Open it to see why the board thinks so."
             >
-              may be done
+              May be done
             </span>
           )}
 
-          {card.goalCondition === null ? (
-            <span className="text-warn" title="Cannot be dispatched without a goal condition">
-              no goal
+          {/* A finished card does not need to be told which model ran it or what
+              constrained it. Those answer "how will this go", and it has gone. */}
+          {configurable && card.agentModel !== null ? (
+            <span className="chip">{card.agentModel}</span>
+          ) : null}
+
+          {configurable && hard + advisory > 0 ? (
+            <span
+              className="chip"
+              title={card.guardrailDetail
+                .map((rail) => `${rail.text} (${rail.enforcement})`)
+                .join('\n')}
+            >
+              {/* Split, never a single total: a guardrail believed to be
+                  enforced but which is not is worse than none (R10). */}
+              {hard} hard · {advisory} advisory
             </span>
           ) : null}
 
-          {/* Starting and stopping an agent is the primary action on a card, so
-              it lives on the card rather than behind a menu. Stop is always
-              visible; run appears on hover or focus, because a column of idle
-              cards each offering a button is a column of buttons. */}
+          {/* Stopping an agent is always visible. Starting one appears on hover
+              or focus, because a column of idle cards each offering a button is
+              a column of buttons. */}
           {card.status === 'running' ? (
             <button
               type="button"
-              className="ml-auto rounded-sm border border-warn/40 px-1.5 py-px text-warn transition-colors hover:bg-warn/10"
+              className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium text-danger transition-colors hover:bg-danger-tint"
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.stopPropagation();
                 onCancel(card);
               }}
             >
-              stop
+              <Stop size={12} weight="fill" aria-hidden />
+              Stop
             </button>
           ) : runnable ? (
             <button
               type="button"
-              className="ml-auto rounded-sm border border-ok/40 px-1.5 py-px text-ok opacity-0 transition-opacity hover:bg-ok/10 focus-visible:opacity-100 group-hover:opacity-100"
+              className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium text-ok opacity-0 transition-opacity hover:bg-ok-tint focus-visible:opacity-100 group-hover:opacity-100"
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.stopPropagation();
@@ -248,22 +259,22 @@ export function CardTile({
               }}
               title="Dispatch a Claude Code session for this card"
             >
-              run
+              <Play size={12} weight="fill" aria-hidden />
+              Run
             </button>
           ) : null}
         </div>
       </div>
 
       {/* How long this has sat. The column says what stage a card is at; only
-          this says that it has been at that stage since Tuesday, which is the
-          fact an overnight board exists to surface. */}
+          this says it has been at that stage since Tuesday. */}
       {waiting ? (
         <div
-          className="absolute inset-x-0 bottom-0 h-px bg-line"
+          className="absolute inset-x-0 bottom-0 h-0.5 bg-line"
           title={`Last changed ${waitedFor(since)}`}
         >
           <div
-            className={`h-px ${stale ? 'bg-attention/70' : 'bg-edge'}`}
+            className={`h-0.5 ${stale ? 'bg-attention' : 'bg-edge'}`}
             style={{ width: `${String(Math.round(waited * 100))}%` }}
           />
         </div>

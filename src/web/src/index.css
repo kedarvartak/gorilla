@@ -1,53 +1,59 @@
 @import 'tailwindcss';
 
 /**
- * An instrument for work that happened while nobody was watching (doc 09).
+ * Gorilla, in daylight (doc 09).
  *
- * The operator opens this at a moment of low context - it is usually morning,
- * and the question is always "what needs me". Everything here serves that: the
- * palette spends colour only where attention should go, the type scale is
- * tight enough to read a board at a glance, and the numerals are tabular
- * because half this interface is counts, durations and token figures that have
- * to line up to be compared.
+ * This is an instrument for work that happened while nobody was watching. It
+ * is opened in the morning, at low context, and the only question it has to
+ * answer is "what needs me". Every decision here serves that.
  *
- * Deliberately not a terminal. The previous palette was GitHub's, which is a
- * borrowed identity, and monospace was doing the work of a status vocabulary -
- * which is what made a board of ordinary English read as a log dump.
+ * The rule the whole board is built on: colour is spent only on what needs a
+ * person. A finished card, an idle card, a model name, a guardrail count are
+ * all neutral. What is blocked, unread, or waiting on a judgement is not. A
+ * board where twenty things are coloured tells you nothing; a board where one
+ * thing is coloured tells you where to look.
+ *
+ * No glows, no gradients, no shadows beyond a single hairline lift. On a light
+ * ground those read as decoration, and this is an instrument.
  */
 @theme {
-  /* Surfaces: ink, then two steps up. Cool, close together, so a raised
-     element reads as raised without a border doing all the work. */
-  --color-bg: #0a0c10;
-  --color-panel: #12151b;
-  --color-panel-2: #191d25;
-  --color-panel-3: #20252f;
+  /* Paper with a faint blue cast - the light of a screen in the morning,
+     not of parchment. */
+  --color-canvas: #f6f7f9;
+  --color-surface: #ffffff;
+  --color-well: #edeff3;
+  --color-line: #e1e5eb;
+  --color-edge: #c9d0da;
 
-  /* Two weights of rule. The hairline separates, the edge outlines. */
-  --color-line: #222732;
-  --color-edge: #2c3340;
+  --color-ink: #10141c;
+  --color-dim: #59616f;
+  --color-faint: #878e9b;
 
-  --color-text: #e7eaf0;
-  --color-dim: #98a1b0;
-  --color-faint: #6a7382;
+  /* The product's own colour. The active view, focus, and nothing else. */
+  --color-brand: #3f4db8;
+  --color-brand-tint: #eceefb;
 
-  /* The product's own colour. Focus, the active view, nothing else - so that
-     seeing it always means "this is where you are". */
-  --color-accent: #6e7bf2;
-  --color-accent-soft: #1c2040;
+  /* State. Each pairs a text colour with the tint its chip sits on, both
+     chosen to pass contrast on white rather than to look bright. */
+  --color-ok: #0b7a55;
+  --color-ok-tint: #e4f4ee;
+  --color-attention: #9a5b08;
+  --color-attention-tint: #fbf0dc;
+  --color-danger: #a82520;
+  --color-danger-tint: #fbe9e8;
+  --color-info: #1d5fb5;
+  --color-info-tint: #e7f0fc;
 
-  /* State. Four, and each one earns its place: something wants you, something
-     went wrong, something worked, something is merely informative. */
-  --color-attention: #e0a33e;
-  --color-warn: #e2564e;
-  --color-ok: #4caf7d;
-  --color-info: #5b9cf8;
-
+  /* IBM Plex, because it was drawn as an engineering typeface and because its
+     sans and mono share a skeleton. This interface sets branch names, session
+     ids and file paths inline with ordinary prose constantly, and a pairing
+     that did not match would make every card read as two documents. */
   --font-sans:
-    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    'IBM Plex Sans Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --radius-sm: 5px;
-  --radius-md: 7px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
   --radius-lg: 10px;
 }
 
@@ -59,79 +65,95 @@ body,
 
 body {
   margin: 0;
-  background: var(--color-bg);
-  color: var(--color-text);
+  background: var(--color-canvas);
+  color: var(--color-ink);
   font-family: var(--font-sans);
   font-size: 13px;
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  /* The detail that makes a dense board readable: every count, duration and
-     token figure in a column lines up, so two numbers can be compared by
-     length instead of by reading them. */
+  /* Half this interface is counts, durations and token figures. Tabular
+     numerals let two be compared by length instead of by reading them. */
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.005em;
 }
 
-/* Small uppercase labels are structure, not text. Tracked out so they read as
-   a different kind of thing from the content beneath them. */
+/**
+ * A chip is a fact about a card, not a button.
+ *
+ * Neutral by default. A chip only takes colour when the fact it carries is one
+ * that wants a person, which is the rule the whole board runs on.
+ */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+  background: var(--color-well);
+  color: var(--color-dim);
+}
+
+.chip-ok {
+  background: var(--color-ok-tint);
+  color: var(--color-ok);
+}
+.chip-attention {
+  background: var(--color-attention-tint);
+  color: var(--color-attention);
+}
+.chip-danger {
+  background: var(--color-danger-tint);
+  color: var(--color-danger);
+}
+.chip-info {
+  background: var(--color-info-tint);
+  color: var(--color-info);
+}
+
+/* Structure, not text. Tracked out so a label reads as a different kind of
+   thing from the content beneath it. */
 .eyebrow {
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--color-faint);
 }
 
-/* Identifiers only - session ids, branches, paths, commands. Status words are
-   English and are set in the body face like everything else. */
+/* Identifiers only: branches, session ids, paths, command output. Status words
+   are English and are set in the body face like everything else. */
 .ident {
   font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: -0.01em;
 }
 
-/* Keyboard focus must be obvious: the board is fully operable without a mouse. */
 :focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-brand);
   outline-offset: 2px;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar {
-  width: 9px;
-  height: 9px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-line);
+  background: var(--color-edge);
   border-radius: 999px;
-  border: 2px solid transparent;
+  border: 3px solid transparent;
   background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-edge);
+  background: var(--color-faint);
   background-clip: content-box;
-}
-
-/* A card arriving, and a panel opening. Short enough not to be noticed, long
-   enough that nothing jumps. */
-@keyframes rise {
-  from {
-    opacity: 0;
-    transform: translateY(3px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-.rise {
-  animation: rise 140ms ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactElement } from 'react';
+import { X } from '@phosphor-icons/react';
 
 import { api } from './api.js';
 import { Panel } from './Panel.js';
@@ -57,15 +58,17 @@ export function Compare({
 
   return (
     <Panel title="Two attempts compared" onClose={onClose}>
-      <header className="flex items-baseline gap-3 border-b border-line bg-panel px-4 py-2.5">
-        <h2 className="text-[13px] font-semibold tracking-tight text-text">Compared</h2>
+      <header className="flex items-baseline gap-3 border-b border-line bg-surface px-4 py-2.5">
+        <h2 className="text-[13px] font-semibold tracking-tight text-ink">Compared</h2>
         <span className="text-[11px] text-dim">{body?.note ?? ''}</span>
         <button
           type="button"
-          className="ml-auto rounded border border-line px-2 py-0.5 text-dim hover:text-text"
+          aria-label="Close"
+          className="ml-auto inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-dim transition-colors hover:bg-well hover:text-ink"
           onClick={onClose}
         >
-          close
+          <X size={14} aria-hidden />
+          Close
         </button>
       </header>
 
@@ -79,9 +82,9 @@ export function Compare({
                 {body.candidates.map((candidate) => (
                   <section
                     key={candidate.cardId}
-                    className="rounded border border-line bg-panel p-3"
+                    className="rounded border border-line bg-surface p-3"
                   >
-                    <h3 className="mb-1 text-text">{candidate.title}</h3>
+                    <h3 className="mb-1 text-ink">{candidate.title}</h3>
                     <dl className="grid grid-cols-[auto_1fr] gap-x-3 text-[11px]">
                       <dt className="text-dim">verify</dt>
                       <dd
@@ -90,7 +93,7 @@ export function Compare({
                             ? 'text-ok'
                             : candidate.verify === null
                               ? 'text-dim'
-                              : 'text-warn'
+                              : 'text-danger'
                         }
                       >
                         {/* Never blank. A candidate whose verify has not run is
@@ -99,14 +102,14 @@ export function Compare({
                       </dd>
 
                       <dt className="text-dim">changed</dt>
-                      <dd className="text-text">
+                      <dd className="text-ink">
                         {candidate.diff.readable
                           ? `${String(candidate.diff.files.length)} file(s), +${String(candidate.diff.insertions)} −${String(candidate.diff.deletions)}`
                           : 'branch unreadable'}
                       </dd>
 
                       <dt className="text-dim">tokens</dt>
-                      <dd className="text-text">
+                      <dd className="text-ink">
                         {/* Unrecorded, not free. A candidate that looked free
                           beside one that cost forty thousand would win an
                           argument it did not earn. */}

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState, type ReactElement } from 'rea
 
 import { Timeline } from './Timeline.js';
 
+import { Archive, ArrowsInSimple, ArrowsOutSimple, Copy, X } from '@phosphor-icons/react';
+
 import {
   api,
   type Card,
@@ -13,10 +15,9 @@ import {
 /**
  * Card detail (doc 09, screen 2).
  *
- * Three panes: specification, the brief, and live state. The centre pane is the
- * answer to "what happened while I was away", so it leads with what is new and
- * offers the raw entries only on request - a wall of entries is the volume
- * problem this product exists to remove (doc 03).
+ * One focused pane at a time: specification, the brief, or review history.
+ * The brief opens first because it answers "what happened while I was away";
+ * the other views stay one click away instead of competing for attention.
  *
  * The specification rail must show each guardrail's enforcement kind. An
  * interface that presents an advisory rule as though it were enforced sends
@@ -329,7 +330,7 @@ function endedNote(run: RunDetail): { text: string; tone: string } {
   if (run.endReason === 'interrupted') {
     return {
       text: `cut off after ${took} - the board never saw it end, so this time is an estimate`,
-      tone: 'text-warn',
+      tone: 'text-danger',
     };
   }
 
@@ -338,8 +339,8 @@ function endedNote(run: RunDetail): { text: string; tone: string } {
 
 const KIND_COLOUR: Record<string, string> = {
   change: 'text-info',
-  risk: 'text-warn',
-  question: 'text-accent',
+  risk: 'text-danger',
+  question: 'text-brand',
   verdict: 'text-ok',
 };
 
@@ -394,8 +395,8 @@ function TextField({
   return (
     <>
       <textarea
-        className={`w-full resize-y rounded border bg-panel-2 px-1 py-0.5 text-[11px] text-text placeholder:text-dim ${
-          invalid ? 'border-warn/60' : 'border-line'
+        className={`w-full resize-y rounded border bg-well px-1 py-0.5 text-[11px] text-ink placeholder:text-dim ${
+          invalid ? 'border-danger/60' : 'border-line'
         }`}
         rows={1}
         value={draft}
@@ -419,7 +420,7 @@ function TextField({
         }}
       />
       {invalid && invalidNote !== undefined && !editing ? (
-        <div className="text-[10px] text-warn">{invalidNote}</div>
+        <div className="text-[10px] text-danger">{invalidNote}</div>
       ) : null}
     </>
   );
@@ -449,7 +450,7 @@ function FieldSelect({
       </dt>
       <dd>
         <select
-          className="w-full rounded border border-line bg-panel-2 px-1 py-0.5 text-text"
+          className="w-full rounded border border-line bg-well px-1 py-0.5 text-ink"
           value={value ?? ''}
           aria-label={label}
           onChange={(changed) => onPick(changed.target.value === '' ? null : changed.target.value)}
@@ -472,11 +473,24 @@ function FieldSelect({
   );
 }
 
-function Rail({ title, children }: { title: string; children: ReactElement | ReactElement[] }) {
+function Rail({
+  title,
+  children,
+  className = '',
+}: {
+  title: string;
+  children: ReactElement | ReactElement[];
+  className?: string;
+}) {
   return (
-    <section className="min-w-0 flex-1 overflow-y-auto border-line px-4 py-3">
-      <h3 className="mb-2 eyebrow">{title}</h3>
-      {children}
+    <section className={`min-w-0 overflow-y-auto px-6 py-5 ${className}`}>
+      {/* Keep a readable measure on wide monitors. The unused space is
+          intentional: it separates this decision surface from the busy board
+          still visible above it. */}
+      <div className="mx-auto w-full max-w-5xl">
+        <h3 className="mb-5 eyebrow">{title}</h3>
+        {children}
+      </div>
     </section>
   );
 }
@@ -504,6 +518,10 @@ export function CardDetail({
   const [reviewNote, setReviewNote] = useState<string | null>(null);
   const [siblings, setSiblings] = useState<readonly Card[]>([]);
   const [showEntries, setShowEntries] = useState(false);
+  // Keep the dense material mutually exclusive. The board stays visible above
+  // this pane, so opening detail should clarify a decision, not replace one
+  // wall of cards with three smaller walls of text.
+  const [activePane, setActivePane] = useState<'brief' | 'specification' | 'review'>('brief');
   const [error, setError] = useState<string | null>(null);
   const [timelineRunId, setTimelineRunId] = useState<string | null>(null);
   const [fraction, setFraction] = useState(storedFraction);
@@ -794,7 +812,7 @@ export function CardDetail({
 
   if (error !== null) {
     return (
-      <div className="border-t border-line bg-panel px-4 py-3 text-warn">
+      <div className="border-t border-line bg-surface px-4 py-3 text-danger">
         {error}{' '}
         <button type="button" className="underline" onClick={onClose}>
           close
@@ -804,7 +822,7 @@ export function CardDetail({
   }
 
   if (detail === null) {
-    return <div className="border-t border-line bg-panel px-4 py-3 text-dim">Loading…</div>;
+    return <div className="border-t border-line bg-surface px-4 py-3 text-dim">Loading…</div>;
   }
 
   const entries = detail.runs.flatMap((run) => run.ledger.entries);
@@ -812,7 +830,7 @@ export function CardDetail({
 
   return (
     <div
-      className="flex flex-col border-t border-line bg-panel"
+      className="flex flex-col border-t border-line bg-surface"
       style={{ height: `${(fraction * 100).toFixed(2)}%` }}
     >
       {/* The resize handle. `separator` with an orientation and a value is what
@@ -829,14 +847,14 @@ export function CardDetail({
         onKeyDown={nudge}
         title="Drag, or focus and use the arrow keys, to resize"
         className={`group -mt-1 h-2 shrink-0 cursor-ns-resize ${
-          dragging ? 'bg-accent/60' : 'bg-transparent hover:bg-accent/30'
-        } focus:bg-accent/50 focus:outline-none`}
+          dragging ? 'bg-brand/60' : 'bg-transparent hover:bg-brand/30'
+        } focus:bg-brand/50 focus:outline-none`}
       >
-        <div className="mx-auto mt-0.5 h-0.5 w-10 rounded bg-line group-hover:bg-accent/60" />
+        <div className="mx-auto mt-0.5 h-0.5 w-10 rounded bg-line group-hover:bg-brand/60" />
       </div>
 
-      <header className="flex items-baseline gap-3 border-b border-line px-4 py-2">
-        <h2 className="text-text">{detail.card.title}</h2>
+      <header className="flex items-baseline gap-3 border-b border-line px-5 py-3">
+        <h2 className="text-ink">{detail.card.title}</h2>
         <span className="text-[11px] text-dim">{detail.card.status}</span>
         {/* Only on a card that stopped. Offering it on a running card would
             invite two runs in one worktree, and the server refuses that
@@ -844,7 +862,7 @@ export function CardDetail({
         {detail.card.status !== 'blocked' && detail.card.status !== 'abandoned' ? null : (
           <button
             type="button"
-            className="ml-auto rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-text"
+            className="ml-auto rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-ink"
             title="Sends the card back to the queue, keeping its worktree, with what you say about it."
             onClick={() => setRetrying(true)}
           >
@@ -855,27 +873,33 @@ export function CardDetail({
             there is no template store to keep - just this. */}
         <button
           type="button"
-          className={`${detail.card.status === 'blocked' || detail.card.status === 'abandoned' ? '' : 'ml-auto '}rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-text`}
+          className={`${detail.card.status === 'blocked' || detail.card.status === 'abandoned' ? '' : 'ml-auto '}inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-dim transition-colors hover:bg-well hover:text-ink`}
           title="A new card with this one's body, guardrails, goal and model. Nothing that happened to this card comes with it."
           onClick={() => {
             void api.cloneCard(cardId).catch((cause: Error) => setError(cause.message));
           }}
         >
-          clone
+          <Copy size={13} aria-hidden />
+          Clone
         </button>
         <button
           type="button"
-          className="rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-text"
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-dim transition-colors hover:bg-well hover:text-ink"
           onClick={toggleMaximised}
           title={maximised ? 'Restore the previous height' : 'Stretch the pane over the board'}
         >
-          {maximised ? 'restore' : 'expand'}
+          {maximised ? (
+            <ArrowsInSimple size={13} aria-hidden />
+          ) : (
+            <ArrowsOutSimple size={13} aria-hidden />
+          )}
+          {maximised ? 'Restore' : 'Expand'}
         </button>
         {/* Put away, not deleted. Deleting takes the runs, the ledger and the
             judgements with it - the history this product exists to keep. */}
         <button
           type="button"
-          className="rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-text"
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-dim transition-colors hover:bg-well hover:text-ink"
           title="Takes this off the board and out of the queue. Its runs, ledger and judgements stay."
           onClick={() => {
             void api
@@ -884,21 +908,56 @@ export function CardDetail({
               .catch((cause: Error) => setError(cause.message));
           }}
         >
-          archive
+          <Archive size={13} aria-hidden />
+          Archive
         </button>
         <button
           type="button"
-          className="rounded border border-line px-2 py-0.5 text-dim hover:text-text"
+          aria-label="Close"
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-dim transition-colors hover:bg-well hover:text-ink"
           onClick={onClose}
         >
-          close
+          <X size={13} aria-hidden />
+          Close
         </button>
       </header>
 
+      <nav
+        className="flex shrink-0 items-center gap-2 border-b border-line bg-well px-5 py-2"
+        aria-label="Card detail sections"
+      >
+        {(
+          [
+            ['brief', brief === null ? 'Brief' : `Brief · ${brief.unseenCount} new`],
+            ['specification', 'Specification'],
+            [
+              'review',
+              detail.runs.length === 0
+                ? 'Review'
+                : `Review · ${detail.runs.length} run${detail.runs.length === 1 ? '' : 's'}`,
+            ],
+          ] as const
+        ).map(([pane, label]) => (
+          <button
+            key={pane}
+            type="button"
+            className={`rounded px-2 py-1 text-[11px] transition-colors ${
+              activePane === pane
+                ? 'bg-brand-tint text-ink'
+                : 'text-dim hover:bg-well hover:text-ink'
+            }`}
+            aria-current={activePane === pane ? 'page' : undefined}
+            onClick={() => setActivePane(pane)}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+
       {!retrying ? null : (
-        <div className="flex items-baseline gap-2 border-b border-line bg-panel-2 px-4 py-2">
+        <div className="flex items-baseline gap-2 border-b border-line bg-well px-4 py-2">
           <input
-            className="flex-1 rounded border border-line bg-panel px-2 py-1 text-text placeholder:text-dim"
+            className="flex-1 rounded border border-line bg-surface px-2 py-1 text-ink placeholder:text-dim"
             placeholder="What went wrong, or what to do differently. Optional."
             aria-label="Retry note"
             value={retryNote}
@@ -906,7 +965,7 @@ export function CardDetail({
           />
           <button
             type="button"
-            className="rounded border border-line px-2 py-1 text-[11px] text-text hover:border-dim"
+            className="rounded border border-line px-2 py-1 text-[11px] text-ink hover:border-dim"
             onClick={() => {
               void api
                 .retryCard(detail.card.boardId, cardId, retryNote.trim() === '' ? null : retryNote)
@@ -921,7 +980,7 @@ export function CardDetail({
           </button>
           <button
             type="button"
-            className="rounded border border-line px-2 py-1 text-[11px] text-dim hover:text-text"
+            className="rounded border border-line px-2 py-1 text-[11px] text-dim hover:text-ink"
             onClick={() => setRetrying(false)}
           >
             cancel
@@ -929,16 +988,19 @@ export function CardDetail({
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1 divide-x divide-line">
-        <Rail title="Specification">
+      <div className="min-h-0 flex-1">
+        <Rail
+          title="Specification"
+          className={activePane === 'specification' ? 'h-full' : 'hidden'}
+        >
           <>
             {detail.card.body === '' ? (
               <p className="mb-3 text-dim">No description.</p>
             ) : (
-              <p className="mb-3 whitespace-pre-wrap text-text">{detail.card.body}</p>
+              <p className="mb-3 whitespace-pre-wrap text-ink">{detail.card.body}</p>
             )}
 
-            <dl className="mb-3 grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1 text-[11px]">
+            <dl className="mb-5 grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 text-[11px]">
               <FieldSelect
                 label="priority"
                 value={detail.card.priority === 'normal' ? null : detail.card.priority}
@@ -1061,7 +1123,7 @@ export function CardDetail({
             {detail.guardrailDetail.length === 0 ? (
               <p className="text-dim">None.</p>
             ) : (
-              <ul className="flex flex-col gap-1">
+              <ul className="flex flex-col gap-2">
                 {detail.guardrailDetail.map((rail) => (
                   <li key={`${rail.kind}:${rail.text}`} className="leading-snug">
                     <span
@@ -1072,7 +1134,7 @@ export function CardDetail({
                     >
                       {rail.enforcement}
                     </span>
-                    <span className="text-text">{rail.text}</span>
+                    <span className="text-ink">{rail.text}</span>
                   </li>
                 ))}
               </ul>
@@ -1083,10 +1145,10 @@ export function CardDetail({
                  what to look at; archiving a card it believed was finished would
                  eventually archive one that was not, and an operator burned that
                  way stops trusting the surface. */
-              <div className="mb-3 rounded border border-accent/50 bg-accent/5 px-2 py-1.5">
+              <div className="mb-3 rounded border border-brand/50 bg-brand/5 px-2 py-1.5">
                 <h4 className="mb-1 eyebrow text-attention">This card may already be done</h4>
                 {detail.staleness.findings.map((finding) => (
-                  <p key={finding.signal} className="mb-1 leading-snug text-text">
+                  <p key={finding.signal} className="mb-1 leading-snug text-ink">
                     {finding.detail}
                     {finding.evidence.length === 0 ? null : (
                       <span className="ml-1 text-[10px] text-dim">
@@ -1102,7 +1164,7 @@ export function CardDetail({
             )}
 
             {detail.blockers.length > 0 ? (
-              <p className="mt-3 text-warn">
+              <p className="mt-3 text-danger">
                 Blocked by: {detail.blockers.map((blocker) => blocker.title).join(', ')}
               </p>
             ) : (
@@ -1117,12 +1179,13 @@ export function CardDetail({
               ? 'Brief'
               : `Brief · ${brief.nothingNew ? 'nothing new' : `${brief.unseenCount} new`}`
           }
+          className={activePane === 'brief' ? 'h-full' : 'hidden'}
         >
           <>
             {/* Verify output only when it did not pass. When it passed, the
                 brief's one line is enough and a green box is just noise. */}
             {detail.verify === null || detail.verify.status === 'passed' ? null : (
-              <div className="mb-3 rounded border border-warn/40 bg-warn/10 px-2 py-1.5 text-warn">
+              <div className="mb-3 rounded border border-danger/40 bg-danger/10 px-2 py-1.5 text-danger">
                 {/* The board ran this. It does not depend on the agent
                     reporting honestly, which is the whole point (R10). */}
                 <div className="text-[11px]">{detail.verifyNote}</div>
@@ -1139,13 +1202,13 @@ export function CardDetail({
               <div className="mb-3 flex items-center gap-2">
                 <button
                   type="button"
-                  className="rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-text"
+                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-dim transition-colors hover:bg-well hover:text-ink"
                   onClick={() => void copyMarkdown()}
                 >
                   {copied ? 'copied' : 'copy markdown'}
                 </button>
                 <a
-                  className="rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-text"
+                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-dim transition-colors hover:bg-well hover:text-ink"
                   href={`/api/cards/${cardId}/brief.md`}
                   download
                 >
@@ -1159,19 +1222,19 @@ export function CardDetail({
             ) : (
               <>
                 {brief.extraction.note === null ? null : (
-                  <p className="mb-3 rounded border border-warn/40 bg-warn/10 px-2 py-1.5 text-[11px] text-warn">
+                  <p className="mb-3 rounded border border-danger/40 bg-danger/10 px-2 py-1.5 text-[11px] text-danger">
                     {brief.extraction.note}
                   </p>
                 )}
 
                 {mergeRefusal === null && !mergeBlocked ? null : (
-                  <div className="mb-3 rounded border border-warn/50 bg-warn/10 px-2 py-1.5">
-                    <h4 className="mb-1 eyebrow text-warn">
+                  <div className="mb-3 rounded border border-danger/50 bg-danger/10 px-2 py-1.5">
+                    <h4 className="mb-1 eyebrow text-danger">
                       {mergeRefusal === null
                         ? `Merge is blocked: ${String(outstanding)} to read`
                         : 'The merge was refused'}
                     </h4>
-                    <p className="mb-1 leading-snug text-text">
+                    <p className="mb-1 leading-snug text-ink">
                       {mergeRefusal?.summary ??
                         'These have not been read yet. Accept or reject each and the merge becomes available.'}
                     </p>
@@ -1189,7 +1252,7 @@ export function CardDetail({
                     <ul className="flex flex-col gap-2">
                       {brief.surprises.map((surprise) => (
                         <li key={surprise.id} className="leading-snug">
-                          <div className="text-text">{surprise.headline}</div>
+                          <div className="text-ink">{surprise.headline}</div>
                           <div className="text-[10px] text-dim">{surprise.why}</div>
                           {surprise.target.type === 'path' ? (
                             <div className="text-[10px] text-dim">
@@ -1206,7 +1269,7 @@ export function CardDetail({
                               </button>
                               <button
                                 type="button"
-                                className="rounded border border-warn/50 px-1.5 text-[10px] text-warn hover:bg-warn/10"
+                                className="rounded border border-danger/50 px-1.5 text-[10px] text-danger hover:bg-danger/10"
                                 title="Kept on the card, but no longer stated as fact in the brief."
                                 onClick={() => judge(surprise.target, 'rejected')}
                               >
@@ -1217,7 +1280,7 @@ export function CardDetail({
                                   the operator's head until they forget it. */}
                               <button
                                 type="button"
-                                className="rounded border border-line px-1.5 text-[10px] text-dim hover:text-text"
+                                className="rounded border border-line px-1.5 text-[10px] text-dim hover:text-ink"
                                 title="Rejects this and raises a card to address it, linked back to here."
                                 onClick={() => {
                                   const entryId =
@@ -1243,7 +1306,10 @@ export function CardDetail({
                 )}
 
                 {brief.sections.map((section) => (
-                  <div key={section.title} className="mb-3">
+                  <div
+                    key={section.title}
+                    className="mb-6 border-b border-line/70 pb-5 last:mb-0 last:border-0 last:pb-0"
+                  >
                     <h4 className="mb-1 eyebrow">{section.title}</h4>
                     {section.lines.map((line, index) => (
                       <p
@@ -1252,10 +1318,10 @@ export function CardDetail({
                           section.empty
                             ? 'text-dim'
                             : line.startsWith('REVERSED:')
-                              ? 'text-warn'
+                              ? 'text-danger'
                               : line.startsWith('Needs you:')
-                                ? 'text-accent'
-                                : 'text-text'
+                                ? 'text-brand'
+                                : 'text-ink'
                         }`}
                       >
                         {line}
@@ -1290,7 +1356,7 @@ export function CardDetail({
                         >
                           {entry.kind}
                         </span>
-                        <span className="text-text">{entry.statement}</span>
+                        <span className="text-ink">{entry.statement}</span>
                         {entry.detail === undefined ? null : (
                           <div className="mt-0.5 text-[11px] text-dim">{entry.detail}</div>
                         )}
@@ -1313,7 +1379,7 @@ export function CardDetail({
                 <label className="text-[11px] text-dim">
                   compare with{' '}
                   <select
-                    className="rounded border border-line bg-panel-2 px-1 py-0.5 text-text"
+                    className="rounded border border-line bg-well px-1 py-0.5 text-ink"
                     value=""
                     onFocus={() => {
                       if (siblings.length > 0) return;
@@ -1343,7 +1409,7 @@ export function CardDetail({
                     spends a model call is one an operator presses twice. */}
                 <button
                   type="button"
-                  className="rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-text disabled:opacity-50"
+                  className="rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-ink disabled:opacity-50"
                   disabled={reviewing}
                   title="Asks a session that did not write this branch to read it. One model call on your Claude Code quota. Anything it raises has to be judged before this merges."
                   onClick={() => {
@@ -1378,13 +1444,13 @@ export function CardDetail({
                           check.state === 'settled'
                             ? 'text-ok'
                             : check.state === 'needs-you'
-                              ? 'text-warn'
+                              ? 'text-danger'
                               : 'text-dim'
                         }
                       >
                         {check.state === 'settled' ? '·' : check.state === 'needs-you' ? '!' : '?'}
                       </span>{' '}
-                      <span className="text-text">{check.name}</span> {check.detail}
+                      <span className="text-ink">{check.name}</span> {check.detail}
                     </li>
                   ))}
                 </ul>
@@ -1393,7 +1459,7 @@ export function CardDetail({
 
             {detail.mergeForecast === undefined || !detail.mergeForecast.readable ? null : (
               <p
-                className={`mt-3 ${detail.mergeForecast.clean ? 'text-dim' : 'text-warn'}`}
+                className={`mt-3 ${detail.mergeForecast.clean ? 'text-dim' : 'text-danger'}`}
                 title="Asked with git merge-tree, which touches neither the working tree nor HEAD."
               >
                 {detail.mergeForecast.note}
@@ -1414,7 +1480,7 @@ export function CardDetail({
                     <li key={file.path}>
                       <button
                         type="button"
-                        className="text-left text-dim hover:text-text"
+                        className="text-left text-dim hover:text-ink"
                         onClick={() => {
                           void api
                             .cardDiff(cardId, file.path)
@@ -1422,7 +1488,7 @@ export function CardDetail({
                             .catch((cause: Error) => setError(cause.message));
                         }}
                       >
-                        <span className="text-text">{file.path}</span>{' '}
+                        <span className="text-ink">{file.path}</span>{' '}
                         {/* Git reports no line counts for a binary file.
                             Printing zeroes would read as 'changed nothing'. */}
                         {file.binary ? (
@@ -1430,7 +1496,7 @@ export function CardDetail({
                         ) : (
                           <>
                             <span className="text-ok">+{file.insertions}</span>{' '}
-                            <span className="text-warn">−{file.deletions}</span>
+                            <span className="text-danger">−{file.deletions}</span>
                           </>
                         )}
                       </button>
@@ -1441,16 +1507,16 @@ export function CardDetail({
                 {openDiff === null ? null : (
                   <div className="mt-2 border-t border-line pt-2">
                     <div className="mb-1 flex items-baseline gap-2">
-                      <span className="font-mono text-[11px] text-text">{openDiff.path}</span>
+                      <span className="font-mono text-[11px] text-ink">{openDiff.path}</span>
                       <button
                         type="button"
-                        className="text-[11px] text-dim hover:text-text"
+                        className="text-[11px] text-dim hover:text-ink"
                         onClick={() => setOpenDiff(null)}
                       >
                         close
                       </button>
                     </div>
-                    <pre className="max-h-96 overflow-auto whitespace-pre bg-panel-2 p-2 font-mono text-[11px] text-dim">
+                    <pre className="max-h-96 overflow-auto whitespace-pre bg-well p-2 font-mono text-[11px] text-dim">
                       {openDiff.text}
                     </pre>
                   </div>
@@ -1467,12 +1533,14 @@ export function CardDetail({
                 <ul className="flex flex-col gap-2 text-[11px]">
                   {proposals.map((proposal) => (
                     <li key={proposal.entryId} className="border-l-2 border-line pl-2">
-                      <div className="text-text">{proposal.statement}</div>
+                      <div className="text-ink">{proposal.statement}</div>
                       <div className="text-dim">
                         {proposal.target}
                         {' · '}
                         {/* Stated before the operator commits, not after. */}
-                        <span className={proposal.enforcement === 'hard' ? 'text-ok' : 'text-warn'}>
+                        <span
+                          className={proposal.enforcement === 'hard' ? 'text-ok' : 'text-danger'}
+                        >
                           {proposal.enforcement}
                         </span>
                         {' · '}
@@ -1508,7 +1576,7 @@ export function CardDetail({
 
             {(detail.contradictions ?? []).length === 0 ? null : (
               <div className="mt-4 border-t border-line pt-2">
-                <h4 className="mb-1 eyebrow text-warn">Runs into a project rule</h4>
+                <h4 className="mb-1 eyebrow text-danger">Runs into a project rule</h4>
                 <ul className="flex flex-col gap-1 text-[11px]">
                   {(detail.contradictions ?? []).map((entry) => (
                     <li key={`${entry.invariant}-${entry.conflict}`} className="text-dim">
@@ -1516,8 +1584,8 @@ export function CardDetail({
                           mention in the body is weaker - a card can name a file
                           it intends to leave alone - so which it is gets said. */}
                       {entry.where === 'scope' ? 'scoped to' : 'mentions'}{' '}
-                      <span className="text-text">{entry.conflict}</span>, against “
-                      {entry.invariant}”
+                      <span className="text-ink">{entry.conflict}</span>, against “{entry.invariant}
+                      ”
                     </li>
                   ))}
                 </ul>
@@ -1534,7 +1602,7 @@ export function CardDetail({
                 <ul className="flex flex-col gap-0.5 text-[11px]">
                   {(detail.blastRadius?.paths ?? []).slice(0, 8).map((entry) => (
                     <li key={entry.path} className="text-dim">
-                      <span className="text-text">{entry.path}</span> · {entry.cards} card(s)
+                      <span className="text-ink">{entry.path}</span> · {entry.cards} card(s)
                     </li>
                   ))}
                 </ul>
@@ -1551,7 +1619,7 @@ export function CardDetail({
                 <ul className="flex flex-col gap-0.5 text-[11px]">
                   {(detail.subsystems ?? []).map((entry) => (
                     <li key={entry.subsystem} className="text-dim">
-                      <span className="text-text">{entry.subsystem}</span> · {entry.paths} file(s)
+                      <span className="text-ink">{entry.subsystem}</span> · {entry.paths} file(s)
                     </li>
                   ))}
                 </ul>
@@ -1576,7 +1644,7 @@ export function CardDetail({
                 <ul className="flex flex-col gap-0.5 text-[11px]">
                   {(detail.relatedCards ?? []).map((related) => (
                     <li key={related.cardId} className="text-dim">
-                      <span className="text-text">{related.title}</span> · {related.shared.length}{' '}
+                      <span className="text-ink">{related.title}</span> · {related.shared.length}{' '}
                       shared file(s)
                     </li>
                   ))}
@@ -1599,7 +1667,10 @@ export function CardDetail({
           </>
         </Rail>
 
-        <Rail title={runsTitle(detail.runs)}>
+        <Rail
+          title={runsTitle(detail.runs)}
+          className={activePane === 'review' ? 'h-full' : 'hidden'}
+        >
           <>
             {detail.runs.length === 0 ? (
               <p className="text-dim">
@@ -1612,7 +1683,7 @@ export function CardDetail({
                   const ended = endedNote(run);
                   return (
                     <li key={run.runId} className="border-l-2 border-line pl-2">
-                      <div className="text-text">
+                      <div className="text-ink">
                         {run.sessionId.slice(0, 8)}
                         <span className="ml-1.5 text-dim">
                           {run.mode}
@@ -1651,10 +1722,10 @@ export function CardDetail({
                 {/* Shown as work in its own right. A subagent's context is
                     discarded when it stops, so these files would otherwise
                     appear in the blast radius with nothing accounting for them. */}
-                <ul className="flex flex-col gap-2 text-[11px]">
+                <ul className="flex flex-col gap-3 text-[11px]">
                   {subagents.map((agent) => (
                     <li key={agent.agentId} className="border-l-2 border-info/40 pl-2">
-                      <div className="text-text">
+                      <div className="text-ink">
                         {agent.agentType ?? 'subagent'}
                         <span className="ml-1.5 text-dim">
                           {agent.toolCalls} tool call(s)
@@ -1698,10 +1769,10 @@ export function CardDetail({
                 </p>
               ) : (
                 <div className="mb-2 text-[11px]">
-                  <div className="text-text">{detail.workspace.branch}</div>
+                  <div className="text-ink">{detail.workspace.branch}</div>
                   <div className="text-dim">{detail.workspace.worktree}</div>
                   {detail.workspace.git === null ? null : (
-                    <div className={detail.workspace.git.dirty > 0 ? 'text-warn' : 'text-dim'}>
+                    <div className={detail.workspace.git.dirty > 0 ? 'text-danger' : 'text-dim'}>
                       {detail.workspace.git.ahead} commit(s) ahead
                       {detail.workspace.git.dirty > 0
                         ? `, ${detail.workspace.git.dirty} uncommitted change(s) - these would not be merged`
@@ -1718,7 +1789,7 @@ export function CardDetail({
                      doing the work rather than reporting that it is needed. */
                   <button
                     type="button"
-                    className="rounded border border-accent/60 px-2 py-0.5 text-[11px] text-accent hover:bg-accent/10 disabled:opacity-40"
+                    className="rounded border border-brand/60 px-2 py-0.5 text-[11px] text-brand hover:bg-brand/10 disabled:opacity-40"
                     disabled={merging}
                     title={
                       'Resolves the conflict, commits the merge, and runs the verify command. ' +
@@ -1758,7 +1829,7 @@ export function CardDetail({
 
                 <button
                   type="button"
-                  className="rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-text"
+                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-dim transition-colors hover:bg-well hover:text-ink"
                   title="Marks the card finished without merging anything. Use when the work landed another way, or was not needed."
                   onClick={() => patch({ status: 'done' })}
                 >
@@ -1768,7 +1839,7 @@ export function CardDetail({
                 {detail.card.status === 'idle' ? null : (
                   <button
                     type="button"
-                    className="rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-text"
+                    className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-dim transition-colors hover:bg-well hover:text-ink"
                     title="Back to idle, which is the only status the queue will dispatch."
                     onClick={() => patch({ status: 'idle' })}
                   >
@@ -1780,7 +1851,7 @@ export function CardDetail({
               {mergeReport === null ? null : (
                 <pre
                   className={`mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-[10px] ${
-                    mergeReport.clean ? 'text-ok' : 'text-warn'
+                    mergeReport.clean ? 'text-ok' : 'text-danger'
                   }`}
                 >
                   {mergeReport.summary.join('\n')}
