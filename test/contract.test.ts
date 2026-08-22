@@ -129,6 +129,7 @@ describe('what a board answers with', () => {
       'neverRan',
       'notes',
       'since',
+      'spendByDay',
       'throughput',
     ]);
   });

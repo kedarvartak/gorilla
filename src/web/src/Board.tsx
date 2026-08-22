@@ -26,6 +26,7 @@ import {
 } from './api.js';
 import { CardDetail } from './CardDetail.js';
 import { Plan } from './Plan.js';
+import { Metrics } from './Metrics.js';
 import { Digest } from './Digest.js';
 import { Invariants } from './Invariants.js';
 import { Activity } from './Activity.js';
@@ -111,6 +112,7 @@ export function Board(): ReactElement {
   const [digestOpen, setDigestOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
+  const [numbersOpen, setNumbersOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
   const [runnable, setRunnable] = useState<ReadonlySet<string>>(new Set());
 
@@ -408,6 +410,15 @@ export function Board(): ReactElement {
         <button
           type="button"
           className="rounded border border-line bg-panel-2 px-2 py-1 text-text hover:border-dim"
+          title="Throughput, what actually breaks, and what each day cost."
+          onClick={() => setNumbersOpen(true)}
+        >
+          numbers
+        </button>
+
+        <button
+          type="button"
+          className="rounded border border-line bg-panel-2 px-2 py-1 text-text hover:border-dim"
           title="Rules handed to every card this board dispatches."
           onClick={() => setRulesOpen(true)}
         >
@@ -548,6 +559,8 @@ export function Board(): ReactElement {
           onClose={() => setDigestOpen(false)}
         />
       )}
+
+      {!numbersOpen ? null : <Metrics boardId={board.id} onClose={() => setNumbersOpen(false)} />}
 
       {!planOpen ? null : (
         <Plan
