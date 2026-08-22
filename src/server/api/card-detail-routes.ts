@@ -169,10 +169,14 @@ export function registerCardDetailRoutes(app: FastifyInstance, context: AppConte
           ? UNREADABLE
           : await diffSummary(board.cwd, workspace.branch);
 
+      // Asked once and used twice. It shells out to git, and the second call
+      // answered the same question the first had (T72).
+      const mergeTarget = board === undefined ? null : await mergeTargetFor(board.cwd);
+
       const mergeForecast =
         board === undefined || workspace === undefined
           ? FORECAST_UNKNOWN
-          : await forecastMerge(board.cwd, await mergeTargetFor(board.cwd), workspace.branch);
+          : await forecastMerge(board.cwd, mergeTarget, workspace.branch);
 
       const claimedNotInGit = claimedButNotInGit(context.database.sqlite, card.id);
 
@@ -200,7 +204,7 @@ export function registerCardDetailRoutes(app: FastifyInstance, context: AppConte
                 worktree: workspace.path,
                 git: await manager?.statusOf(card.id),
               },
-        mergeTarget: board === undefined ? null : await mergeTargetFor(board.cwd),
+        mergeTarget,
         // Whether it would go in cleanly, asked before the operator commits
         // to finding out the expensive way (T39). Costs nothing: merge-tree
         // touches neither the working tree, the index, nor HEAD.

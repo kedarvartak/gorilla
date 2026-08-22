@@ -363,8 +363,8 @@ with one theoretical caller is machinery that does not exist.
 
 | Id | Task | Done when | Status |
 | --- | --- | --- | --- |
-| T72 | Stop asking git the same question twice per request | `mergeTargetFor` runs twice in one card-detail request. Measured at 60-84ms per open with fourteen merged cards, so this is tidiness rather than a fix - and it is written down as tidiness rather than sold as performance. | open |
-| T73 | A budget for the card-detail request | The route runs seven git subprocesses plus one per merged card. It is fast enough on a small repository and nobody has measured a large one. Either bound it or record the number. | open |
+| T72 | Stop asking git the same question twice per request | `mergeTargetFor` now runs once. Tidiness, as recorded: it did not move the measurement. | merged |
+| T73 | A budget for the card-detail request | Bounded by a test at 2s with fourteen merged cards, so an eighth git call is a decision somebody makes rather than one that happens. A large repository is still unmeasured. | merged |
 
 ## O. What the board still cannot tell you
 
