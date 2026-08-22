@@ -1117,6 +1117,18 @@ export class Dispatcher {
     return result;
   }
 
+  /**
+   * Runs the card's verify on demand (T57).
+   *
+   * The same path the settle uses, deliberately: an operator asking "does it
+   * pass now" and the board asking "did it pass" must not be able to answer
+   * differently, and two implementations of "run the verify" would eventually
+   * do exactly that.
+   */
+  async verifyNow(boardId: string, cardId: string): Promise<VerifyResult | null> {
+    return this.#verify(boardId, cardId);
+  }
+
   /** The most recent verify result for a card, for the interface and the ledger. */
   verifyResultFor(cardId: string): VerifyResult | undefined {
     return this.#lastVerify.get(cardId);

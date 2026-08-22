@@ -7,6 +7,7 @@ import { replayCommand } from './commands/replay.js';
 import { reportCommand } from './commands/report.js';
 import { serveCommand } from './commands/serve.js';
 import { statusCommand } from './commands/status.js';
+import { dispatchCommand, verifyCommand } from './commands/card.js';
 
 /**
  * Single place commands are wired in. Importing this module has the side
@@ -27,4 +28,6 @@ export function registerBuiltinCommands(): void {
   registerCommand(reportCommand);
   registerCommand(serveCommand);
   registerCommand(statusCommand);
+  registerCommand(dispatchCommand);
+  registerCommand(verifyCommand);
 }

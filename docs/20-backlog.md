@@ -54,7 +54,7 @@ Work that buys nothing on its own and makes the next ten items cheaper.
 | Id | Task | Done when | Status |
 | --- | --- | --- | --- |
 | T9 | Split the route module | `routes.ts` becomes one module per resource, behaviour identical, existing tests unchanged. | merged |
-| T10 | Extract a card service layer | Route handlers call named operations rather than composing queries inline, so the same operation is reachable from the CLI. | open |
+| T10 | Extract a card service layer | ~~Withdrawn: the stated reason does not hold.~~ See the rescope below. | dropped |
 | T11 | Single event-payload parser | ~~Mostly built: `src/server/json.ts` already was it.~~ One caller bypassed it and now does not. | merged |
 | T12 | Shared fetch client for the interface | Every component request goes through one typed client. No component calls `fetch` any more. | merged |
 
@@ -142,8 +142,8 @@ The point of the product: work that continues correctly while nobody is watching
 | --- | --- | --- | --- |
 | T54 | `gorilla export` | The whole board state renders to one reviewable markdown file. | open |
 | T55 | `gorilla status` | Queue state, in-flight runs and halt state, without opening the interface. | merged |
-| T56 | `gorilla dispatch` | A card is dispatched from the command line, reusing the service layer rather than the HTTP route. | open |
-| T57 | `gorilla verify` | The verify command runs against a card's branch from the terminal, reporting as the board would. | open |
+| T56 | `gorilla dispatch` | ~~Rescoped: it is an HTTP client, and has to be.~~ A card is dispatched from the command line by asking the running board. | merged |
+| T57 | `gorilla verify` | The verify command runs against a card's worktree from the terminal, through the board, reporting as the board would. | merged |
 | T58 | Machine-readable output | `status` takes `--json`. The rest of the commands do not yet. | open |
 
 ## L. Found while building
@@ -180,6 +180,20 @@ because each one is reachable from what exists, not because the category has the
 ---
 
 ## Rescopes
+
+**T10, T56 and T57, 22 August 2026.** T10 existed to make card operations
+"reachable from the CLI", and building the CLI showed that they must not be.
+Dispatch belongs to the process that owns the worktrees and supervises the
+launcher: a second process starting a run would spawn an agent that dies when
+the command exits, and would race the server for the same checkout - which the
+card lease from T7 would refuse, correctly, leaving the operator with a command
+that cannot work. So `gorilla dispatch` and `gorilla verify` are clients of the
+running board, and say so when nothing is listening.
+
+That removes T10's reason for existing. A service layer might still be worth
+having for testability, but not for the reason written down, and an entry kept
+alive by a rationale that turned out to be wrong is how a backlog accumulates
+work nobody can justify.
 
 **T16, 22 August 2026.** Written as "a card whose text conflicts with a
 standing invariant". Deciding whether prose contradicts prose is the model's
