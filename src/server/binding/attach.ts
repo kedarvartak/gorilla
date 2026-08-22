@@ -5,6 +5,7 @@ import { and, asc, eq, isNull } from 'drizzle-orm';
 import { CardError, getCard } from '../api/cards.js';
 import type { DatabaseHandle } from '../db/client.js';
 import { boards, cards, columns, events, runs, type Card } from '../db/schema.js';
+import { owningBoardCwd } from '../ingest/binding.js';
 
 /**
  * Attached-mode binding (doc 05, doc 07 section 3).
@@ -199,6 +200,12 @@ export function boardForCwd(
   handle: DatabaseHandle,
   cwd: string,
 ): { id: string; name: string } | null {
-  const board = handle.db.select().from(boards).where(eq(boards.cwd, cwd)).get();
+  // Resolved through the worktree convention, so a session running in a card's
+  // checkout finds the project's board rather than nothing (T67).
+  const board = handle.db
+    .select()
+    .from(boards)
+    .where(eq(boards.cwd, owningBoardCwd(cwd)))
+    .get();
   return board === undefined ? null : { id: board.id, name: board.name };
 }
