@@ -121,6 +121,12 @@ export interface DispatcherEvents {
   /** Fired when a run continues an interrupted session rather than starting one (T46). */
   readonly onResumed?: (boardId: string, cardId: string, why: string) => void;
   /**
+   * Fired once when the queue empties after having worked (T75).
+   *
+   * Once, not on every pump: a board polled while idle would notify all night.
+   */
+  readonly onDrained?: (boardId: string, summary: { completed: number; blocked: number }) => void;
+  /**
    * Fired when a card stops for good, whichever way it stopped (T45).
    *
    * Separate from `onRunFinished`, which reports a process exiting. A run that
@@ -449,7 +455,45 @@ export class Dispatcher {
     }
 
     this.#pumping.delete(boardId);
+    this.#announceIfDrained(boardId);
     return started;
+  }
+
+  /**
+   * Says the queue is empty, once (T75).
+   *
+   * Only after it has actually done something. A board that has never
+   * dispatched anything is not a finished batch, and announcing one at
+   * midnight because automatic mode was switched on over an empty column
+   * would teach the operator to mute the notifier.
+   *
+   * The flag clears the moment anything starts again, so a second batch is
+   * announced like the first.
+   */
+  #announceIfDrained(boardId: string): void {
+    const state = this.#stateFor(boardId);
+
+    if (state.running.size > 0) {
+      this.#announced.delete(boardId);
+      return;
+    }
+
+    if (state.mode !== 'automatic') return;
+    if (state.completed.size === 0) return;
+    if (this.#announced.has(boardId)) return;
+    if (dispatchableCards(this.database.db, boardId).length > 0) return;
+
+    this.#announced.add(boardId);
+
+    const blocked = this.database.sqlite
+      .prepare("SELECT COUNT(*) AS n FROM cards WHERE board_id = ? AND status = 'blocked'")
+      .get(boardId) as { n: number };
+
+    try {
+      this.events.onDrained?.(boardId, { completed: state.completed.size, blocked: blocked.n });
+    } catch {
+      /* telling someone is not worth breaking the queue for */
+    }
   }
 
   /** The board's dispatch window, or null when it may work at any hour. */
@@ -811,6 +855,9 @@ export class Dispatcher {
 
   /** Identifies this process in the lease table (T7). */
   readonly #owner = ownerId();
+
+  /** Boards already told their queue is empty, so they are told once (T75). */
+  readonly #announced = new Set<string>();
 
   #recordCost(result: LaunchResult): void {
     if (result.sessionId === null) return;

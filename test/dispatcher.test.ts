@@ -1286,3 +1286,65 @@ describe('one dispatcher at a time, per card', () => {
     expect(leaseFor(handle.sqlite, id)).toBeNull();
   });
 });
+
+describe('being told the queue is empty', () => {
+  let drained: { completed: number; blocked: number }[];
+
+  beforeEach(() => {
+    drained = [];
+    dispatcher = new Dispatcher(handle, pending, {
+      onHalted: (_boardId, halt) => halts.push(halt),
+      onDrained: (_boardId, summary) => drained.push(summary),
+    });
+    dispatcher.isolate = false;
+  });
+
+  it('says so once the last card finishes', async () => {
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    card('the only one');
+
+    dispatcher.setPolicy(BOARD, 'unattended');
+    dispatcher.setMode(BOARD, 'automatic');
+
+    await vi.waitFor(() => expect(drained).toHaveLength(1), { timeout: 10_000 });
+    expect(drained[0]?.completed).toBe(1);
+  });
+
+  it('says it once, not on every pump', async () => {
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    card('the only one');
+    dispatcher.setPolicy(BOARD, 'unattended');
+    dispatcher.setMode(BOARD, 'automatic');
+    await vi.waitFor(() => expect(drained).toHaveLength(1), { timeout: 10_000 });
+
+    // A board polled while idle would otherwise notify all night.
+    await dispatcher.pump(BOARD);
+    await dispatcher.pump(BOARD);
+
+    expect(drained).toHaveLength(1);
+  });
+
+  it('says nothing about a board that never did anything', async () => {
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+
+    // Automatic mode switched on over an empty column is not a finished batch,
+    // and announcing one at midnight teaches the operator to mute the notifier.
+    dispatcher.setMode(BOARD, 'automatic');
+    await dispatcher.pump(BOARD);
+
+    expect(drained).toEqual([]);
+  });
+
+  it('counts what was left blocked', async () => {
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    const stuck = card('blocked one');
+    card('finishes');
+    updateCard(handle, stuck, { status: 'blocked' });
+
+    dispatcher.setPolicy(BOARD, 'unattended');
+    dispatcher.setMode(BOARD, 'automatic');
+
+    await vi.waitFor(() => expect(drained).toHaveLength(1), { timeout: 10_000 });
+    expect(drained[0]?.blocked).toBe(1);
+  });
+});

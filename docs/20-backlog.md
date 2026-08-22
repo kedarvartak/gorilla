@@ -371,7 +371,7 @@ with one theoretical caller is machinery that does not exist.
 | Id | Task | Done when | Status |
 | --- | --- | --- | --- |
 | T74 | What the board has spent over time | Cost is recorded per run and reported for today. A week of it is the number that decides whether this is affordable. | open |
-| T75 | Say when the batch finished, not only when it halted | `GORILLA_NOTIFY` fires on a halt. An operator waking to a finished queue gets nothing, and cannot tell it from a queue that never started. | open |
+| T75 | Say when the batch finished, not only when it halted | The same command fires once when the queue empties, with `GORILLA_EVENT` saying which of the two happened. | merged |
 | T76 | Carry the new signals into the digest | The digest predates cost, contradictions, readiness and the plan. The morning view is the one place they would be read. | open |
 | T77 | Archive a card without deleting it | A finished board grows forever. Deleting loses the history the ledger exists to keep. | open |
 

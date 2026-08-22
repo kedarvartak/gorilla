@@ -4,8 +4,11 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  describeDrained,
   describeHalt,
+  drainedEnvironment,
   haltEnvironment,
+  notifyDrained,
   notifyHalt,
   NOTIFY_ENV,
 } from '../src/server/notify/notify.js';
@@ -127,5 +130,57 @@ describe('what the command is told', () => {
 
   it('names the environment variable the board reads', () => {
     expect(NOTIFY_ENV).toBe('GORILLA_NOTIFY');
+  });
+});
+
+describe('being told the queue is empty', () => {
+  it('carries the counts and a one-line message', () => {
+    const environment = drainedEnvironment({
+      boardName: 'kanban',
+      completed: 7,
+      blocked: 2,
+      at: 1_700_000_000_000,
+    });
+
+    expect(environment['GORILLA_DRAINED_COMPLETED']).toBe('7');
+    expect(environment['GORILLA_DRAINED_BLOCKED']).toBe('2');
+    expect(environment['GORILLA_MESSAGE']).toContain('7 card(s) finished');
+  });
+
+  it('says which of the two events it was', () => {
+    // A command that only cares about failures should be able to look at one
+    // variable rather than infer from which others are present.
+    expect(
+      drainedEnvironment({ boardName: 'b', completed: 1, blocked: 0, at: 1 })['GORILLA_EVENT'],
+    ).toBe('drained');
+    expect(haltEnvironment(HALT, 'b')['GORILLA_EVENT']).toBe('halt');
+  });
+
+  it('does not mention blocked cards when there are none', () => {
+    expect(describeDrained({ boardName: 'b', completed: 3, blocked: 0, at: 1 })).not.toContain(
+      'blocked',
+    );
+  });
+
+  it('does nothing when no command is configured', () => {
+    expect(
+      notifyDrained({
+        drained: { boardName: 'b', completed: 1, blocked: 0, at: 1 },
+        command: undefined,
+      }),
+    ).toBe(false);
+  });
+
+  it('keeps a board name out of the command line', () => {
+    // Same discipline as the halt: a board name is free text, and a shell that
+    // sees it is a shell that can be made to do something else.
+    const environment = drainedEnvironment({
+      boardName: '"; rm -rf / #',
+      completed: 1,
+      blocked: 0,
+      at: 1,
+    });
+
+    expect(environment['GORILLA_BOARD']).toBe('"; rm -rf / #');
   });
 });
