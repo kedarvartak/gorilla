@@ -131,3 +131,44 @@ describe('telling the agent it has a branch', () => {
     expect(context).not.toContain('Your branch');
   });
 });
+
+describe('what the operator said when they sent it back', () => {
+  it('is placed above what the last run established', () => {
+    const context = renderCardContext({
+      title: 'A card',
+      body: 'Do the thing.',
+      guardrails: EMPTY_GUARDRAILS,
+      operatorNote: 'Use the existing helper rather than writing a new one.',
+      acceptedEntries: ['A new helper was needed.'],
+    });
+
+    // A person overruling the last run should not have to be weighed against
+    // a claim that run made about itself.
+    expect(context.indexOf('sent this card back')).toBeLessThan(
+      context.indexOf('Established on this card'),
+    );
+    expect(context).toContain('outranks');
+  });
+
+  it('says nothing when there is no note', () => {
+    const context = renderCardContext({
+      title: 'A card',
+      body: '',
+      guardrails: EMPTY_GUARDRAILS,
+      operatorNote: null,
+    });
+
+    expect(context).not.toContain('sent this card back');
+  });
+
+  it('says nothing for a note that is only whitespace', () => {
+    const context = renderCardContext({
+      title: 'A card',
+      body: '',
+      guardrails: EMPTY_GUARDRAILS,
+      operatorNote: '   ',
+    });
+
+    expect(context).not.toContain('sent this card back');
+  });
+});

@@ -232,6 +232,13 @@ export const api = {
   dispatchCard: (boardId: string, cardId: string) =>
     request<DispatchState>(`/api/boards/${boardId}/cards/${cardId}/dispatch`, { method: 'POST' }),
 
+  /** Sends a blocked card back to the queue, keeping its worktree (T21, T22). */
+  retryCard: (boardId: string, cardId: string, note: string | null) =>
+    request<DispatchState>(`/api/boards/${boardId}/cards/${cardId}/retry`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    }),
+
   cancelCard: (boardId: string, cardId: string) =>
     request<{ cancelled: boolean }>(`/api/boards/${boardId}/cards/${cardId}/cancel`, {
       method: 'POST',

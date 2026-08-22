@@ -32,6 +32,8 @@ export interface LaunchOptions {
   readonly title: string;
   readonly body: string;
   readonly guardrails: GuardrailSet;
+  /** What the operator said when they sent this card back (T22). */
+  readonly operatorNote?: string | null;
   readonly goalCondition?: string | null;
   readonly prompt?: string | null;
   /** The card's own branch, so the agent knows to commit to it. */
@@ -110,6 +112,7 @@ function writeLaunchFiles(options: LaunchOptions): {
         ? {}
         : { rejectedEntries: options.rejectedEntries }),
       ...(options.previousRuns === undefined ? {} : { previousRuns: options.previousRuns }),
+      ...(options.operatorNote === undefined ? {} : { operatorNote: options.operatorNote }),
     }),
     'utf8',
   );

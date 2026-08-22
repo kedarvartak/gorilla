@@ -1078,3 +1078,79 @@ describe('retrying a transient failure', () => {
     await running?.result;
   });
 });
+
+describe('sending a card back', () => {
+  const REFUSED = [
+    `echo '{"type":"system","subtype":"init","session_id":"sess-1"}'`,
+    `echo 'Task could not be completed.' >&2`,
+    `exit 1`,
+  ].join('\n');
+
+  it('puts a blocked card back in the queue', async () => {
+    dispatcher.useExecutable(fakeClaude(REFUSED));
+    const id = card('failed once');
+    await dispatcher.dispatch(BOARD, id)?.result;
+    await vi.waitFor(() => expect(getCard(handle, id).status).toBe('blocked'));
+
+    expect(dispatcher.retry(BOARD, id, null)).toBe(true);
+    expect(getCard(handle, id).status).toBe('idle');
+  });
+
+  it('carries what the operator said into the next run', async () => {
+    const id = card('needs a correction');
+    dispatcher.retry(BOARD, id, '  Use the existing helper rather than a new one.  ');
+
+    // Trimmed and stored, to be handed over once.
+    expect(getCard(handle, id).retryNote).toBe('Use the existing helper rather than a new one.');
+  });
+
+  it('delivers the note once and then forgets it', async () => {
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    const id = card('gets a note');
+    dispatcher.retry(BOARD, id, 'Try the other approach.');
+
+    await dispatcher.dispatch(BOARD, id)?.result;
+
+    // A note that arrived on every subsequent run would teach the agent to
+    // skim the block it most needs to read.
+    await vi.waitFor(() => expect(getCard(handle, id).retryNote).toBeNull());
+  });
+
+  it('resets the automatic retry budget', async () => {
+    dispatcher.useExecutable(fakeClaude(REFUSED));
+    const id = card('used its attempts');
+    await dispatcher.dispatch(BOARD, id)?.result;
+    await vi.waitFor(() => expect(getCard(handle, id).attempts).toBe(1));
+
+    // The budget is about a fault repeating itself unattended. An operator
+    // deciding to try again is a new judgement, and a card at the limit could
+    // otherwise never be retried at all.
+    dispatcher.retry(BOARD, id, null);
+    expect(getCard(handle, id).attempts).toBe(0);
+  });
+
+  it('clears the halt that stopped it', async () => {
+    dispatcher.useExecutable(fakeClaude(REFUSED));
+    const id = card('halted the queue');
+    dispatcher.setPolicy(BOARD, 'review');
+    await dispatcher.dispatch(BOARD, id)?.result;
+    await vi.waitFor(() => expect(dispatcher.state(BOARD).halted?.cardId).toBe(id));
+
+    // Otherwise the retry silently does nothing under automatic mode.
+    dispatcher.retry(BOARD, id, null);
+    expect(dispatcher.state(BOARD).halted).toBeNull();
+  });
+
+  it('refuses while the card is still running', async () => {
+    dispatcher.useExecutable(fakeClaude(`echo '{"type":"system","session_id":"s"}'\nsleep 30`));
+    const id = card('still going');
+    const running = dispatcher.dispatch(BOARD, id);
+
+    // Two runs in one worktree overwrite each other, and the damage is not
+    // discovered until merge time.
+    expect(dispatcher.retry(BOARD, id, null)).toBe(false);
+
+    dispatcher.cancel(BOARD, id);
+    await running?.result;
+  });
+});

@@ -80,7 +80,7 @@ Everything here currently requires a terminal.
 | Id | Task | Done when | Status |
 | --- | --- | --- | --- |
 | T20 | Cancel a running card from the board | ~~Withdrawn: built.~~ The route, `api.cancelCard`, the board button and the `abandoned` status all exist. | built |
-| T21 | Retry in place | A failed card retries against its existing worktree instead of re-dispatching from scratch. | open |
+| T21 | Retry in place | A failed card retries against its existing worktree instead of re-dispatching from scratch. | merged |
 | T22 | Requeue with a correction | Retry carries an operator note into the next run's context. | open |
 | T23 | Pause and resume the queue | ~~Withdrawn: built.~~ Manual mode holds the queue, `resume` restarts it, and the halt state carries the reason. | built |
 | T24 | Reorder the dispatch queue | ~~Withdrawn: redundant.~~ `executionOrder` already derives order from priority and position, both of which the board edits. | dropped |
