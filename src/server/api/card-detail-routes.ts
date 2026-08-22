@@ -6,6 +6,7 @@ import { blockersFor } from '../cards/eligibility.js';
 import { assessStaleness, mergedPaths } from '../cards/staleness.js';
 import { boards, cards as cardsTable, runs } from '../db/schema.js';
 import { describeCost, type RunCost } from '../launcher/cost.js';
+import { cardsTouching, claimedButNotInGit, subsystemsForCard } from '../cards/subsystems.js';
 import { getCard } from './cards.js';
 import { buildMechanicalLedger } from '../ledger/mechanical.js';
 import { checkReality, describeReality } from '../ledger/reality.js';
@@ -165,6 +166,15 @@ export function registerCardDetailRoutes(app: FastifyInstance, context: AppConte
         verify: verify ?? null,
         verifyNote: verify === undefined ? null : describeVerify(verify),
         blockers: blockersFor(context.database.db, card.id),
+        // What this card's work touched, and which earlier cards touched the
+        // same files (T13). Empty for every card that ran before the map
+        // existed - absent evidence, not evidence the card touched nothing.
+        subsystems: subsystemsForCard(context.database.sqlite, card.id),
+        relatedCards: cardsTouching(context.database.sqlite, card.boardId, card.id),
+        // Surfaced as a question rather than an accusation: work reverted
+        // before the commit and files written outside the worktree both land
+        // here, and neither is a run lying.
+        claimedNotInGit: claimedButNotInGit(context.database.sqlite, card.id),
         staleness,
         runs: ledgers,
         reality,

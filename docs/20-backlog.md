@@ -65,13 +65,13 @@ established; both promotion paths are manual.
 
 | Id | Task | Done when | Status |
 | --- | --- | --- | --- |
-| T13 | Subsystem map | Each card records which paths its run actually touched, derived from tool events. | open |
+| T13 | Subsystem map | Each card records which paths its run actually touched, from git and from the run's own account, kept apart. | merged |
 | T14 | Propose a card guardrail | Accepted ledger entries yield a proposed guardrail the operator accepts or drops; nothing is applied silently. | open |
 | T15 | Propose a board invariant | A rule appearing on three or more cards is offered as a project rule. | open |
 | T16 | Contradiction check on a new card | A card whose text conflicts with a standing invariant is flagged before dispatch. | open |
 | T17 | Retirement candidates | An invariant no run has exercised across N cards is surfaced as removable. | open |
 | T18 | Blast radius from history | A card's likely blast radius is proposed from the subsystem map of prior cards touching the same paths. | open |
-| T19 | Related cards | A card links to earlier cards that touched the same subsystem, so an agent inherits the prior finding. | open |
+| T19 | Related cards | A card links to earlier cards that touched the same subsystem, so an agent inherits the prior finding. | merged |
 
 ## D. Operating the loop
 
