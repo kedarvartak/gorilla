@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../app.js';
 import { parseObject } from '../json.js';
+import { densityOf, describeDensity, totalsOf } from '../timeline/density.js';
 
 /**
  * Run timeline (P9).
@@ -54,10 +55,19 @@ export function registerTimelineRoutes(app: FastifyInstance, context: AppContext
         .get(runId) as { n: number }
     ).n;
 
+    // Computed over the page rather than the whole run: the gaps between the
+    // events on screen are the ones the operator is looking at. The totals
+    // below say so, rather than implying they cover the run (T32).
+    const density = densityOf(
+      rows.map((row) => ({ event: row.event_name, receivedAt: row.received_at })),
+    );
+    const totals = totalsOf(density);
+
     return reply.send({
       runId,
       total,
-      entries: rows.map((row) => {
+      density: { ...totals, note: describeDensity(totals), overPage: true },
+      entries: rows.map((row, index) => {
         // Through the shared parser, not `JSON.parse` with a cast (T11). A
         // payload that is valid JSON but not an object - the events table only
         // rejects the unparseable - would otherwise be indexed as one, and the
@@ -78,6 +88,10 @@ export function registerTimelineRoutes(app: FastifyInstance, context: AppContext
           // Compaction is the discontinuity the whole screen is anchored on.
           isCompaction: row.event_name === 'PreCompact' || row.event_name === 'PostCompact',
           isTurnBoundary: row.event_name === 'Stop' || row.event_name === 'UserPromptSubmit',
+          // What the interval before this event was spent on. A list of evenly
+          // spaced events says a run happened and nothing about its shape.
+          sinceMs: density[index]?.sinceMs ?? 0,
+          interval: density[index]?.interval ?? 'start',
         };
       }),
       nextAfter: rows[rows.length - 1]?.seq ?? after,
