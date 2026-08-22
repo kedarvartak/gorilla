@@ -164,3 +164,24 @@ describe('facets', () => {
     expect(body.tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(['Edit', 'Bash']));
   });
 });
+
+describe('a payload that is valid JSON but not an object', () => {
+  it('does not put the timeline into reading properties off a string', async () => {
+    await emit('SessionStart');
+
+    // The events table's generated columns reject unparseable JSON, not JSON
+    // that parses to something other than an object. A bare string gets in,
+    // and reading `payload['agent_type']` off one used to be a cast away.
+    database.sqlite
+      .prepare(
+        'INSERT INTO events (run_id, session_id, seq, event_name, received_at, payload) VALUES (?,?,?,?,?,?)',
+      )
+      .run(runId, 'sess-timeline', 9_999, 'Stop', Date.now(), '"just a string"');
+
+    const response = await app.inject({ method: 'GET', url: `/api/runs/${runId}/timeline` });
+
+    expect(response.statusCode).toBe(200);
+    const entries = response.json<Timeline>().entries;
+    expect(entries.at(-1)?.agentType).toBeNull();
+  });
+});

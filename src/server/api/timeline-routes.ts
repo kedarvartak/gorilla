@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../app.js';
+import { parseObject } from '../json.js';
 
 /**
  * Run timeline (P9).
@@ -57,7 +58,11 @@ export function registerTimelineRoutes(app: FastifyInstance, context: AppContext
       runId,
       total,
       entries: rows.map((row) => {
-        const payload = JSON.parse(row.payload) as Record<string, unknown>;
+        // Through the shared parser, not `JSON.parse` with a cast (T11). A
+        // payload that is valid JSON but not an object - the events table only
+        // rejects the unparseable - would otherwise be indexed as one, and the
+        // reads below would be reading properties off a string.
+        const payload = parseObject(row.payload);
         return {
           id: row.id,
           seq: row.seq,
