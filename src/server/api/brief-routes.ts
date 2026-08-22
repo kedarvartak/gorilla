@@ -5,7 +5,10 @@ import type { AppContext } from '../app.js';
 import { boards, ledgerEntries, runs } from '../db/schema.js';
 import { getCard, listCards } from './cards.js';
 import { badRequest, conflict, notFound } from './errors.js';
+import type { Database as DatabaseType } from 'better-sqlite3';
+
 import { createCard } from './cards.js';
+import { findContradictions } from '../cards/contradictions.js';
 import { buildMechanicalLedger } from '../ledger/mechanical.js';
 import { checkReality } from '../ledger/reality.js';
 import { buildBrief, renderBrief, type Brief } from '../brief/brief.js';
@@ -79,6 +82,28 @@ function extractionStateFor(context: AppContext, runIds: readonly string[]): Ext
       : null;
 
   return { configured, tokensSpent, lastOutcome, note };
+}
+
+/**
+ * Tokens a card's runs recorded, or null when none did (T76).
+ *
+ * Null rather than zero, like everywhere else this figure appears: a card
+ * whose runs reported no usage and a card that cost nothing are different, and
+ * the digest is read at speed by somebody deciding what to look at first.
+ */
+function spentOn(sqlite: DatabaseType, cardId: string): number | null {
+  const row = sqlite
+    .prepare(
+      `SELECT SUM(
+         COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)
+         + COALESCE(cache_read_tokens, 0) + COALESCE(cache_creation_tokens, 0)
+       ) AS tokens,
+       SUM(CASE WHEN cost_source IS NOT NULL THEN 1 ELSE 0 END) AS recorded
+       FROM runs WHERE card_id = ?`,
+    )
+    .get(cardId) as { tokens: number | null; recorded: number | null };
+
+  return (row.recorded ?? 0) === 0 ? null : (row.tokens ?? 0);
 }
 
 export function registerBriefRoutes(app: FastifyInstance, context: AppContext): void {
@@ -520,6 +545,17 @@ export function registerBriefRoutes(app: FastifyInstance, context: AppContext): 
               unseen: brief.unseenCount,
               headline: brief.headline,
               verify: context.dispatcher.verifyResultFor(card.id)?.status ?? null,
+              // What it cost, from the database rather than from git (T76).
+              // The digest is a list, and anything needing a subprocess per
+              // card turns the morning view into a wait.
+              spent: spentOn(context.database.sqlite, card.id),
+              // Project rules this card's scope runs into. Cheap: it reads two
+              // tables and no files.
+              contradictions: findContradictions(
+                context.database.sqlite,
+                request.params.boardId,
+                card,
+              ).length,
               ...recency,
               waitedFor: recency.waitingForMs === null ? null : describeWait(recency.waitingForMs),
             };

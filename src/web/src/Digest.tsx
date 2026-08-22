@@ -35,6 +35,10 @@ export interface DigestEntry {
   readonly recency: 'moved' | 'waiting' | 'never-ran';
   /** How long it has been sitting, for the cards that are merely sitting. */
   readonly waitedFor: string | null;
+  /** Tokens its runs recorded. Null when none did, which is not zero (T76). */
+  readonly spent?: number | null;
+  /** Project rules this card's scope runs into. */
+  readonly contradictions?: number;
 }
 
 export interface DigestBody {
@@ -112,6 +116,19 @@ function Section({
                       // stopped last night.
                       <span className="font-mono text-[11px] text-dim">
                         untouched for {entry.waitedFor}
+                      </span>
+                    )}
+                    {/* What it cost, when anything recorded it. Absent rather
+                        than zero: a card whose runs reported no usage and one
+                        that cost nothing are different facts (T76). */}
+                    {entry.spent === null || entry.spent === undefined ? null : (
+                      <span className="font-mono text-[11px] text-dim">
+                        {Math.round(entry.spent / 1000)}k tokens
+                      </span>
+                    )}
+                    {(entry.contradictions ?? 0) === 0 ? null : (
+                      <span className="font-mono text-[11px] text-warn">
+                        runs into a project rule
                       </span>
                     )}
                     {reason === null ? null : (

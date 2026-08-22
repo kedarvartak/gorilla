@@ -157,7 +157,13 @@ describe('GET /api/boards/:boardId/digest', () => {
 
   const digest = async (): Promise<{
     since: number;
-    entries: { cardId: string; recency: string; waitedFor: string | null }[];
+    entries: {
+      cardId: string;
+      recency: string;
+      waitedFor: string | null;
+      spent: number | null;
+      contradictions: number;
+    }[];
   }> => (await app.inject({ method: 'GET', url: `/api/boards/${boardId}/digest` })).json();
 
   it('marks a card that moved last night as news', async () => {
@@ -211,5 +217,36 @@ describe('GET /api/boards/:boardId/digest', () => {
     expect((await digest()).entries.find((entry) => entry.cardId === never)?.recency).toBe(
       'never-ran',
     );
+  });
+
+  describe('the signals added after it was written', () => {
+    it('says what a card cost, when anything recorded it', async () => {
+      const cardId = await cardActiveAt('spent something', Date.now() - 3_600_000);
+
+      database.db
+        .insert(runs)
+        .values({
+          id: randomUUID(),
+          boardId,
+          cardId,
+          sessionId: randomUUID(),
+          cwd: dir,
+          startedAt: Date.now(),
+          inputTokens: 4_000,
+          costSource: 'result',
+        })
+        .run();
+
+      expect((await digest()).entries.find((entry) => entry.cardId === cardId)?.spent).toBe(4_000);
+    });
+
+    it('says nothing rather than zero when no run recorded usage', async () => {
+      const cardId = await cardActiveAt('unrecorded', Date.now() - 3_600_000);
+
+      // A card whose runs reported no usage and one that cost nothing are
+      // different facts, and this screen is read at speed by somebody deciding
+      // what to look at first.
+      expect((await digest()).entries.find((entry) => entry.cardId === cardId)?.spent).toBeNull();
+    });
   });
 });
