@@ -55,7 +55,7 @@ Work that buys nothing on its own and makes the next ten items cheaper.
 | --- | --- | --- | --- |
 | T9 | Split the route module | `routes.ts` becomes one module per resource, behaviour identical, existing tests unchanged. | merged |
 | T10 | Extract a card service layer | Route handlers call named operations rather than composing queries inline, so the same operation is reachable from the CLI. | open |
-| T11 | Single event-payload parser | One place decodes a hook payload and reports what it could not read, replacing the per-caller casts. | open |
+| T11 | Single event-payload parser | ~~Mostly built: `src/server/json.ts` already was it.~~ One caller bypassed it and now does not. | merged |
 | T12 | Shared fetch client for the interface | Every component request goes through one typed client. No component calls `fetch` any more. | merged |
 
 ## C. The project model
