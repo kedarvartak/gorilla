@@ -10,6 +10,9 @@ import { diffSummary, UNREADABLE } from '../worktree/diff.js';
 import { forecastMerge, UNKNOWN as FORECAST_UNKNOWN } from '../review/forecast.js';
 import { cardsTouching, claimedButNotInGit, subsystemsForCard } from '../cards/subsystems.js';
 import { findContradictions } from '../cards/contradictions.js';
+import { assessReadiness } from '../review/readiness.js';
+import { outstandingSurprises } from '../ledger/outstanding.js';
+import { storedEntriesFor } from '../ledger/store.js';
 import { proposeBlastRadius, NOTHING as NOTHING_TOUCHED } from '../cards/blast-radius.js';
 import { getCard } from './cards.js';
 import { buildMechanicalLedger } from '../ledger/mechanical.js';
@@ -152,8 +155,41 @@ export function registerCardDetailRoutes(app: FastifyInstance, context: AppConte
       const manager = board === undefined ? null : context.dispatcher.worktreesFor(board.cwd);
       const workspace = manager?.workspaceFor(card.id);
 
+      // Assembled from what this route already gathered, not fetched again
+      // (T37). A second read of the same facts is a second thing to keep in
+      // step with the first.
+      const outstanding = await outstandingSurprises({
+        database: context.database,
+        cardId: card.id,
+        ...(workspace === undefined ? {} : { cwd: workspace.path }),
+      });
+
+      const diff =
+        board === undefined || workspace === undefined
+          ? UNREADABLE
+          : await diffSummary(board.cwd, workspace.branch);
+
+      const mergeForecast =
+        board === undefined || workspace === undefined
+          ? FORECAST_UNKNOWN
+          : await forecastMerge(board.cwd, await mergeTargetFor(board.cwd), workspace.branch);
+
+      const claimedNotInGit = claimedButNotInGit(context.database.sqlite, card.id);
+
       return reply.send({
         card: present(card),
+        readiness: assessReadiness({
+          verify: verify ?? null,
+          verifyCommand: guardrails.verify ?? null,
+          outstanding: outstanding.length,
+          establishedCount: storedEntriesFor(context.database, card.id).filter(
+            (entry) => entry.operatorStatus === 'accepted',
+          ).length,
+          diff,
+          mergeForecast,
+          blockers: blockersFor(context.database.db, card.id),
+          claimedNotInGit,
+        }),
         guardrails,
         guardrailDetail: describeGuardrails(guardrails),
         workspace:
@@ -168,17 +204,11 @@ export function registerCardDetailRoutes(app: FastifyInstance, context: AppConte
         // Whether it would go in cleanly, asked before the operator commits
         // to finding out the expensive way (T39). Costs nothing: merge-tree
         // touches neither the working tree, the index, nor HEAD.
-        mergeForecast:
-          board === undefined || workspace === undefined
-            ? FORECAST_UNKNOWN
-            : await forecastMerge(board.cwd, await mergeTargetFor(board.cwd), workspace.branch),
+        mergeForecast,
         // What the branch actually changed (T30). Reviewing a card used to
         // mean leaving the board for a terminal, which is where the operator
         // loses the context the board exists to hold.
-        diff:
-          board === undefined || workspace === undefined
-            ? UNREADABLE
-            : await diffSummary(board.cwd, workspace.branch),
+        diff,
         verifyCommand: guardrails.verify ?? null,
         // What the board checked, rather than what the agent claimed.
         verify: verify ?? null,
@@ -203,7 +233,7 @@ export function registerCardDetailRoutes(app: FastifyInstance, context: AppConte
         // Surfaced as a question rather than an accusation: work reverted
         // before the commit and files written outside the worktree both land
         // here, and neither is a run lying.
-        claimedNotInGit: claimedButNotInGit(context.database.sqlite, card.id),
+        claimedNotInGit,
         staleness,
         runs: ledgers,
         reality,

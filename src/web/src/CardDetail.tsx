@@ -261,6 +261,16 @@ interface Detail {
     readonly readable: boolean;
     readonly note: string;
   };
+  /** What the operator is about to accept, assembled from what the card holds (T37). */
+  readonly readiness?: {
+    readonly checks: readonly {
+      name: string;
+      state: 'settled' | 'needs-you' | 'unknown';
+      detail: string;
+    }[];
+    /** True when nothing on the list needs them. Not a recommendation to merge. */
+    readonly settled: boolean;
+  };
   /** Project rules this card's scope runs into (T16). Worth a look, not an error. */
   readonly contradictions?: readonly {
     invariant: string;
@@ -1267,6 +1277,35 @@ export function CardDetail({
                     ))}
                   </ul>
                 )}
+              </div>
+            )}
+
+            {(detail.readiness?.checks ?? []).length === 0 ? null : (
+              <div className="mb-3">
+                <h4 className="mb-1 font-mono text-[11px] uppercase tracking-wider text-dim">
+                  Before you merge
+                </h4>
+                <ul className="flex flex-col gap-0.5 font-mono text-[11px]">
+                  {(detail.readiness?.checks ?? []).map((check) => (
+                    <li key={check.name} className="text-dim">
+                      {/* Three states, not two. A check the board could not run
+                          and a check that passed are the two things this list
+                          exists to keep apart. */}
+                      <span
+                        className={
+                          check.state === 'settled'
+                            ? 'text-ok'
+                            : check.state === 'needs-you'
+                              ? 'text-warn'
+                              : 'text-dim'
+                        }
+                      >
+                        {check.state === 'settled' ? '·' : check.state === 'needs-you' ? '!' : '?'}
+                      </span>{' '}
+                      <span className="text-text">{check.name}</span> {check.detail}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
 
