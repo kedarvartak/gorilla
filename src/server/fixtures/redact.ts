@@ -63,13 +63,50 @@ const PRESERVED_KEYS = new Set([
   'task_name',
 ]);
 
+/**
+ * Keys whose value is a credential whatever else it is.
+ *
+ * The content list above is an allowlist of things that are *long*. A secret
+ * is short, so it was not on it - and a key called `ANTHROPIC_API_KEY` is
+ * neither content nor preserved, which meant its value passed through a
+ * redacted fixture verbatim. Found by a test written for T66, which makes
+ * fixtures far easier to produce and so raises what that costs.
+ */
+const SECRET_KEYS = /(^|[_-])(api_?key|token|secret|password|passwd|credential|auth|authorization)([_-]|$)/i;
+
+/**
+ * Shapes that are a credential wherever they appear.
+ *
+ * Matched on the value, because a secret pasted into a command line or printed
+ * by a tool is not under a helpfully named key. Deliberately specific prefixes
+ * rather than an entropy guess: redacting anything that looks random would eat
+ * commit hashes, uuids and base64 file content, and a fixture with its
+ * identifiers destroyed does not replay.
+ */
+const SECRET_VALUES: readonly RegExp[] = [
+  /sk-[A-Za-z0-9_-]{16,}/g,
+  /ghp_[A-Za-z0-9]{20,}/g,
+  /github_pat_[A-Za-z0-9_]{20,}/g,
+  /xox[baprs]-[A-Za-z0-9-]{10,}/g,
+  /AKIA[0-9A-Z]{16}/g,
+  /\bBearer\s+[A-Za-z0-9._-]{20,}/gi,
+];
+
 function redactString(value: string): string {
   return `[redacted ${value.length} chars]`;
 }
 
-function redactValue(value: unknown, keyIsContent: boolean): unknown {
+/** Replaces credential-shaped runs inside an otherwise ordinary string. */
+function scrub(value: string): string {
+  let scrubbed = value;
+  for (const pattern of SECRET_VALUES) scrubbed = scrubbed.replace(pattern, '[redacted secret]');
+  return scrubbed;
+}
+
+function redactValue(value: unknown, keyIsContent: boolean, keyIsSecret = false): unknown {
   if (typeof value === 'string') {
-    return keyIsContent ? redactString(value) : value;
+    if (keyIsSecret) return redactString(value);
+    return keyIsContent ? redactString(value) : scrub(value);
   }
   if (Array.isArray(value)) {
     return value.map((item) => redactValue(item, keyIsContent));
@@ -88,7 +125,7 @@ function redactObject(source: Record<string, unknown>): Record<string, unknown> 
       output[key] = value;
       continue;
     }
-    output[key] = redactValue(value, CONTENT_KEYS.has(key));
+    output[key] = redactValue(value, CONTENT_KEYS.has(key), SECRET_KEYS.test(key));
   }
 
   return output;
