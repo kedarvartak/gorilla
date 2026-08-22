@@ -751,3 +751,69 @@ describe('the shape of a refusal', () => {
     expect(refused.body.field).toBe('tokenCeiling');
   });
 });
+
+describe('a new card shaped like one that worked', () => {
+  async function seeded(): Promise<string> {
+    const card = await json<{ id: string }>('POST', `/api/boards/${boardId}/cards`, {
+      title: 'the one that worked',
+    });
+
+    await json('PATCH', `/api/cards/${card.body.id}`, {
+      body: 'How it was done.',
+      goalCondition: '`npm test` exits 0',
+      guardrails: { verify: 'npm test', prohibit: ['src/db/schema.ts'] },
+      agentModel: 'claude-opus-5',
+      priority: 'high',
+    });
+
+    return card.body.id;
+  }
+
+  it('copies what shapes the work', async () => {
+    const source = await seeded();
+
+    const clone = await json<{
+      body: string;
+      goalCondition: string;
+      guardrails: { verify: string; prohibit: string[] };
+      agentModel: string;
+      priority: string;
+    }>('POST', `/api/cards/${source}/clone`);
+
+    expect(clone.status).toBe(201);
+    expect(clone.body.body).toBe('How it was done.');
+    expect(clone.body.guardrails.verify).toBe('npm test');
+    expect(clone.body.guardrails.prohibit).toEqual(['src/db/schema.ts']);
+    expect(clone.body.agentModel).toBe('claude-opus-5');
+    expect(clone.body.priority).toBe('high');
+  });
+
+  it('copies nothing that happened', async () => {
+    const source = await seeded();
+    await json('PATCH', `/api/cards/${source}`, { status: 'done' });
+
+    const clone = await json<{ status: string; id: string }>('POST', `/api/cards/${source}/clone`);
+
+    // Runs, status and a merge belong to the card that earned them.
+    expect(clone.body.status).toBe('idle');
+    expect(clone.body.id).not.toBe(source);
+  });
+
+  it('names itself after the card it came from', async () => {
+    const source = await seeded();
+
+    const clone = await json<{ title: string }>('POST', `/api/cards/${source}/clone`);
+
+    expect(clone.body.title).toBe('Copy of the one that worked');
+  });
+
+  it('takes a title when one is given', async () => {
+    const source = await seeded();
+
+    const clone = await json<{ title: string }>('POST', `/api/cards/${source}/clone`, {
+      title: 'The next one',
+    });
+
+    expect(clone.body.title).toBe('The next one');
+  });
+});

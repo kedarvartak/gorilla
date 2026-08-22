@@ -822,9 +822,21 @@ export function CardDetail({
             retry
           </button>
         )}
+        {/* The best template on a board is the card that worked last week, so
+            there is no template store to keep - just this. */}
         <button
           type="button"
           className={`${detail.card.status === 'blocked' || detail.card.status === 'abandoned' ? '' : 'ml-auto '}rounded border border-line px-2 py-0.5 font-mono text-[11px] text-dim hover:text-text`}
+          title="A new card with this one's body, guardrails, goal and model. Nothing that happened to this card comes with it."
+          onClick={() => {
+            void api.cloneCard(cardId).catch((cause: Error) => setError(cause.message));
+          }}
+        >
+          clone
+        </button>
+        <button
+          type="button"
+          className="rounded border border-line px-2 py-0.5 font-mono text-[11px] text-dim hover:text-text"
           onClick={toggleMaximised}
           title={maximised ? 'Restore the previous height' : 'Stretch the pane over the board'}
         >
