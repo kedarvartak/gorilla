@@ -82,10 +82,10 @@ export function CardTile({
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`group relative shrink-0 overflow-hidden rounded-md border bg-panel transition-colors ${
+      className={`group relative shrink-0 overflow-hidden rounded-md border bg-panel-2 transition-colors ${
         isDragging
           ? 'border-accent/60 opacity-60'
-          : 'border-line hover:border-edge focus-within:border-edge'
+          : 'border-edge/70 hover:border-edge focus-within:border-edge'
       }`}
       {...attributes}
       {...listeners}
@@ -127,7 +127,13 @@ export function CardTile({
             {card.rank ?? ''}
           </span>
 
-          <span className="min-w-0 flex-1 leading-snug text-text">
+          {/* Two lines, always. A card that is three lines tall next to one
+              that is one line makes a column that cannot be scanned, and the
+              rest of the title is a hover away. */}
+          <span
+            className="line-clamp-2 min-h-[2.75em] min-w-0 flex-1 leading-snug text-text"
+            title={card.title}
+          >
             {/* Priority sits before the title because it changes what runs
                 next, and the operator scans titles. `normal` shows nothing: a
                 chip on every card conveys no ordering at all. */}

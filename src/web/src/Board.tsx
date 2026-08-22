@@ -64,11 +64,11 @@ function ColumnView({
 }): ReactElement {
   const { setNodeRef, isOver } = useDroppable({ id: `column:${column.id}` });
 
-  // Fixed widths, packed left, except the last one. Letting every column
-  // stretch meant three empty ones claimed eleven hundred pixels of nothing;
-  // letting none of them stretch left a gap of dead board to the right of the
-  // final column, which reads as a mistake rather than as space.
-  const width = column.isTerminal ? 'min-w-56 flex-1' : 'w-64 shrink-0';
+  // Every column the same share of the width. Fixed widths left a strip of
+  // dead board to the right of the last column; a wider last column made its
+  // cards a different size from every other card, which is worse - a board is
+  // read by scanning, and scanning wants one card shape.
+  const width = 'min-w-0 flex-1 basis-0';
 
   return (
     <section className={`flex min-h-0 flex-col ${width}`} aria-label={column.name}>
@@ -98,8 +98,12 @@ function ColumnView({
       <SortableContext items={cards.map((card) => card.id)} strategy={verticalListSortingStrategy}>
         <ul
           ref={setNodeRef}
-          className={`flex min-h-32 min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-lg border border-dashed p-2 transition-colors ${
-            isOver ? 'border-accent/50 bg-accent-soft/40' : 'border-transparent'
+          // A lane with a body. Left as bare background, an empty column is
+          // indistinguishable from the void beside the board, and the whole
+          // middle of a working board reads as nothing rather than as three
+          // columns with nothing in them.
+          className={`flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-lg border p-2 transition-colors ${
+            isOver ? 'border-accent/60 bg-accent-soft' : 'border-line/70 bg-panel/60'
           }`}
         >
           {cards.length === 0 ? (
