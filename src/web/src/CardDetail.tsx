@@ -261,6 +261,12 @@ interface Detail {
     readonly readable: boolean;
     readonly note: string;
   };
+  /** Project rules this card's scope runs into (T16). Worth a look, not an error. */
+  readonly contradictions?: readonly {
+    invariant: string;
+    conflict: string;
+    where: 'scope' | 'body';
+  }[];
   /** What cards like this one have touched before (T18). A guess, said as one. */
   readonly blastRadius?: {
     readonly paths: readonly { path: string; cards: number }[];
@@ -1355,6 +1361,26 @@ export function CardDetail({
                       >
                         make it a {proposal.target} rule
                       </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {(detail.contradictions ?? []).length === 0 ? null : (
+              <div className="mt-4 border-t border-line pt-2">
+                <h4 className="mb-1 font-mono text-[11px] uppercase tracking-wider text-warn">
+                  Runs into a project rule
+                </h4>
+                <ul className="flex flex-col gap-1 font-mono text-[11px]">
+                  {(detail.contradictions ?? []).map((entry) => (
+                    <li key={`${entry.invariant}-${entry.conflict}`} className="text-dim">
+                      {/* Scope is a claim about where the work will happen. A
+                          mention in the body is weaker - a card can name a file
+                          it intends to leave alone - so which it is gets said. */}
+                      {entry.where === 'scope' ? 'scoped to' : 'mentions'}{' '}
+                      <span className="text-text">{entry.conflict}</span>, against “
+                      {entry.invariant}”
                     </li>
                   ))}
                 </ul>
