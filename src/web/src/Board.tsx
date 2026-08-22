@@ -27,6 +27,7 @@ import {
 import { CardDetail } from './CardDetail.js';
 import { Plan } from './Plan.js';
 import { Metrics } from './Metrics.js';
+import { Compare } from './Compare.js';
 import { Digest } from './Digest.js';
 import { Invariants } from './Invariants.js';
 import { Activity } from './Activity.js';
@@ -113,6 +114,7 @@ export function Board(): ReactElement {
   const [rulesOpen, setRulesOpen] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
   const [numbersOpen, setNumbersOpen] = useState(false);
+  const [comparing, setComparing] = useState<readonly string[] | null>(null);
   const [activityOpen, setActivityOpen] = useState(false);
   const [runnable, setRunnable] = useState<ReadonlySet<string>>(new Set());
 
@@ -560,6 +562,10 @@ export function Board(): ReactElement {
         />
       )}
 
+      {comparing === null ? null : (
+        <Compare boardId={board.id} cardIds={comparing} onClose={() => setComparing(null)} />
+      )}
+
       {!numbersOpen ? null : <Metrics boardId={board.id} onClose={() => setNumbersOpen(false)} />}
 
       {!planOpen ? null : (
@@ -591,6 +597,7 @@ export function Board(): ReactElement {
       {openCardId === null ? null : (
         <CardDetail
           cardId={openCardId}
+          onCompare={(otherCardId) => setComparing([openCardId, otherCardId])}
           onClose={() => {
             setOpenCardId(null);
             void load();

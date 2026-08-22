@@ -356,7 +356,7 @@ with one theoretical caller is machinery that does not exist.
 | Id | Task | Done when | Status |
 | --- | --- | --- | --- |
 | T69 | Ask for a second opinion from the card | The reviewer route has a button, with what it will cost said before it is pressed. | merged |
-| T70 | Compare two cards from the board | The comparison route has a screen; today it can only be reached with curl. | open |
+| T70 | Compare two cards from the board | The comparison has a screen, reached from the card that would be cloned. | merged |
 | T71 | Read the run's transcript, not only its events | The timeline toggles to the conversation, read from the path the board has stored since Phase 0. | merged |
 
 ## N. Measured, not guessed
