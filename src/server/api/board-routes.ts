@@ -500,6 +500,51 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
     },
   );
 
+  /**
+   * A new card shaped like one that already worked (T49).
+   *
+   * The backlog asked for templates: a named, curated thing carrying
+   * guardrails and a verify command. A separate store of card-shaped objects
+   * is a second thing to maintain, and it goes stale in exactly the way the
+   * cards do not - because nobody runs a template, so nothing ever proves it
+   * still makes sense.
+   *
+   * The best template on any board is the card that worked last week. So this
+   * copies one: its body, its guardrails, its goal and its model choices. What
+   * it deliberately does not copy is anything that happened - no runs, no
+   * status, no worktree, no merge - because those belong to the card that
+   * earned them.
+   */
+  app.post<{ Params: { cardId: string }; Body: { title?: unknown } }>(
+    '/api/cards/:cardId/clone',
+    (request, reply) => {
+      try {
+        const source = getCard(context.database, request.params.cardId);
+        const title =
+          typeof request.body?.title === 'string' && request.body.title.trim() !== ''
+            ? request.body.title.trim()
+            : `Copy of ${source.title}`;
+
+        const card = createCard(context.database, {
+          boardId: source.boardId,
+          title,
+          body: source.body,
+          guardrails: parseGuardrails(source.guardrails),
+          goalCondition: source.goalCondition,
+          agentModel: source.agentModel,
+          agentEffort: source.agentEffort,
+          synthesisModel: source.synthesisModel,
+          priority: source.priority,
+        });
+
+        publish('card-created', present(card));
+        return reply.code(201).send(present(card));
+      } catch (error) {
+        return fail(reply, error);
+      }
+    },
+  );
+
   app.post<{ Params: { cardId: string }; Body: { columnId?: string; index?: number } }>(
     '/api/cards/:cardId/move',
     (request, reply) => {

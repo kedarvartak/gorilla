@@ -130,7 +130,7 @@ The point of the product: work that continues correctly while nobody is watching
 
 | Id | Task | Done when | Status |
 | --- | --- | --- | --- |
-| T49 | Card templates | A card can be created from a named template carrying its guardrails and verify command. | open |
+| T49 | Card templates | ~~Rescoped: cards are the templates.~~ A card can be cloned - body, guardrails, goal, models - without anything that happened to it. | merged |
 | T50 | Import GitHub issues as cards | Issues become cards with their origin recorded, without polling anything on a timer by default. | open |
 | T51 | Bulk card creation from a file | A markdown list becomes cards in one operation, with a dry run. | merged |
 | T52 | Card splitting | A card too large to dispatch can be split into dependent cards, preserving its context. | open |
@@ -180,6 +180,14 @@ because each one is reachable from what exists, not because the category has the
 ---
 
 ## Rescopes
+
+**T49, 22 August 2026.** Written as a named template store carrying guardrails
+and a verify command. A separate store of card-shaped objects is a second thing
+to maintain, and it goes stale in a way the cards do not: nobody runs a
+template, so nothing ever proves one still makes sense. The best template on
+any board is the card that worked last week, so a card can be cloned instead -
+its body, guardrails, goal and model choices, and deliberately nothing that
+happened to it.
 
 **T46, 22 August 2026.** Written as "a run's progress is recorded at intervals".
 Building it would have meant a second checkpoint store alongside the one Claude

@@ -330,6 +330,13 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  /** A new card shaped like this one, without anything that happened to it (T49). */
+  cloneCard: (cardId: string, title?: string) =>
+    request<Card>(`/api/cards/${cardId}/clone`, {
+      method: 'POST',
+      body: JSON.stringify(title === undefined ? {} : { title }),
+    }),
+
   /** Turns a rejected entry into the card that addresses it (T38). */
   followUp: (entryId: string, title?: string) =>
     request<Card>(`/api/ledger/${entryId}/follow-up`, {
