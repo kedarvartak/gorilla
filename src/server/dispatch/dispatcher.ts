@@ -26,6 +26,7 @@ import { accumulateCost, CostMeter } from '../launcher/cost.js';
 import { describeSpend, overBudget, spentSince, startOfDay } from './budget.js';
 import { classifyLaunchFailure, decideRetry, DEFAULT_MAX_ATTEMPTS } from './retry.js';
 import { describeWindow, isOpen, msUntilOpen, type DispatchWindow } from './window.js';
+import { acquireLease, ownerId, releaseLease } from './lease.js';
 
 /**
  * Decides which Ready card starts next (doc 05).
@@ -528,6 +529,24 @@ export class Dispatcher {
     const board = this.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
     if (board === undefined) return null;
 
+    // Before the worktree, not after. Creating the checkout and then finding
+    // the card was already claimed is how two agents end up in one directory
+    // (T7). The database decides, so a second server on the same board loses
+    // the race rather than joining it.
+    if (!acquireLease(this.database.sqlite, cardId, this.#owner, Date.now())) return null;
+
+    const launched = await this.#dispatchIsolatedHoldingLease(boardId, cardId);
+    if (launched === null) releaseLease(this.database.sqlite, cardId);
+    return launched;
+  }
+
+  async #dispatchIsolatedHoldingLease(
+    boardId: string,
+    cardId: string,
+  ): Promise<RunningLaunch | null> {
+    const board = this.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
+    if (board === undefined) return null;
+
     if (this.isolate && this.workspaceFor === undefined) {
       const card = getCard(this.database, cardId);
       const base = this.#baseRefFor(board.cwd, cardId);
@@ -552,7 +571,7 @@ export class Dispatcher {
       }
     }
 
-    return this.dispatch(boardId, cardId);
+    return this.#dispatchHoldingLease(boardId, cardId);
   }
 
   /**
@@ -593,9 +612,21 @@ export class Dispatcher {
   }
 
   dispatch(boardId: string, cardId: string): RunningLaunch | null {
+    if (!acquireLease(this.database.sqlite, cardId, this.#owner, Date.now())) return null;
+
+    const launched = this.#dispatchHoldingLease(boardId, cardId);
+    // Released on every path that did not start a run. A lease held by nothing
+    // makes a card permanently undispatchable, which is worse than the double
+    // dispatch it exists to prevent.
+    if (launched === null) releaseLease(this.database.sqlite, cardId);
+    return launched;
+  }
+
+  #dispatchHoldingLease(boardId: string, cardId: string): RunningLaunch | null {
     const state = this.#stateFor(boardId);
     const card = getCard(this.database, cardId);
 
+    // Kept as a fast path in front of the lease, which is the authority.
     if (state.running.has(cardId)) return null;
 
     const board = this.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
@@ -754,6 +785,9 @@ export class Dispatcher {
   /** Timers waking a board when its dispatch window opens (T41). */
   readonly #wakeups = new Map<string, NodeJS.Timeout>();
 
+  /** Identifies this process in the lease table (T7). */
+  readonly #owner = ownerId();
+
   #recordCost(result: LaunchResult): void {
     if (result.sessionId === null) return;
 
@@ -904,6 +938,7 @@ export class Dispatcher {
 
     const state = this.#stateFor(boardId);
     state.running.delete(cardId);
+    releaseLease(this.database.sqlite, cardId);
 
     const board = this.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
     if (board !== undefined) {

@@ -18,6 +18,7 @@ import { Dispatcher, type HaltState } from '../src/server/dispatch/dispatcher.js
 import { PendingBindings } from '../src/server/binding/pending.js';
 import { boards, columns, ledgerEntries, runs } from '../src/server/db/schema.js';
 import { setOperatorStatus } from '../src/server/ledger/store.js';
+import { leaseFor } from '../src/server/dispatch/lease.js';
 
 let dir: string;
 let handle: DatabaseHandle;
@@ -1238,5 +1239,50 @@ describe('the dispatch window', () => {
 
     await dispatcher.dispatch(BOARD, id)?.result;
     await vi.waitFor(() => expect(getCard(handle, id).status).toBe('awaiting-review'));
+  });
+});
+
+describe('one dispatcher at a time, per card', () => {
+  it('refuses a second dispatch while the first runs', async () => {
+    dispatcher.useExecutable(fakeClaude(`echo '{"type":"system","session_id":"s"}'\nsleep 30`));
+    const id = card('claimed');
+
+    const first = dispatcher.dispatch(BOARD, id);
+    // The database decides, so a second server on this board would lose the
+    // same race rather than joining it (T7).
+    expect(dispatcher.dispatch(BOARD, id)).toBeNull();
+
+    dispatcher.cancel(BOARD, id);
+    await first?.result;
+  });
+
+  it('releases the claim when the run settles', async () => {
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    const id = card('finishes');
+
+    await dispatcher.dispatch(BOARD, id)?.result;
+    await vi.waitFor(() => expect(getCard(handle, id).status).toBe('awaiting-review'));
+
+    expect(leaseFor(handle.sqlite, id)).toBeNull();
+  });
+
+  it('releases the claim when the dispatch is refused', () => {
+    // A card with no goal is refused after the lease is taken. A lease held by
+    // nothing makes a card permanently undispatchable, which is worse than the
+    // double dispatch it exists to prevent.
+    const id = card('no goal', { goal: null });
+
+    expect(dispatcher.dispatch(BOARD, id)).toBeNull();
+    expect(leaseFor(handle.sqlite, id)).toBeNull();
+  });
+
+  it('releases the claim when the card fails', async () => {
+    dispatcher.useExecutable(fakeClaude(FAILS));
+    const id = card('fails');
+
+    await dispatcher.dispatch(BOARD, id)?.result;
+    await vi.waitFor(() => expect(getCard(handle, id).status).toBe('blocked'));
+
+    expect(leaseFor(handle.sqlite, id)).toBeNull();
   });
 });
