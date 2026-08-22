@@ -272,6 +272,14 @@ export const cards = sqliteTable(
      * would be retried forever by a supervisor that keeps restarting it.
      */
     attempts: integer('attempts').notNull().default(0),
+    /**
+     * What the operator said when they sent this card back (T22).
+     *
+     * Delivered to the next run and then cleared. A note that arrived on every
+     * subsequent run would teach the agent to skim the block it most needs to
+     * read, and would leave the operator unable to tell whether theirs landed.
+     */
+    retryNote: text('retry_note'),
     synthesisModel: text('synthesis_model'),
 
     status: text('status', {

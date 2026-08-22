@@ -181,6 +181,35 @@ export function registerDispatchRoutes(app: FastifyInstance, context: AppContext
     },
   );
 
+  /**
+   * Sends a blocked card back to the queue, with what the operator says about
+   * it (T21, T22).
+   *
+   * Distinct from dispatching it again: the worktree is kept, so the next run
+   * continues in the checkout the last one left rather than starting over.
+   */
+  app.post<{ Params: { boardId: string; cardId: string }; Body: { note?: unknown } }>(
+    '/api/boards/:boardId/cards/:cardId/retry',
+    (request, reply) => {
+      const note = request.body?.note;
+      if (note !== undefined && note !== null && typeof note !== 'string') {
+        return reply.code(400).send({ error: 'A retry note must be text.', field: 'note' });
+      }
+
+      const retried = context.dispatcher.retry(
+        request.params.boardId,
+        request.params.cardId,
+        note ?? null,
+      );
+
+      // Refused rather than queued while it runs. Two runs in one worktree
+      // overwrite each other, and the damage surfaces at merge time.
+      return retried
+        ? reply.code(202).send(context.dispatcher.state(request.params.boardId))
+        : reply.code(409).send({ error: 'That card is still running.' });
+    },
+  );
+
   app.post<{ Params: { boardId: string; cardId: string } }>(
     '/api/boards/:boardId/cards/:cardId/cancel',
     (request, reply) => {

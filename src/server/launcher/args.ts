@@ -127,6 +127,14 @@ export interface CardContextInput {
   readonly rejectedEntries?: readonly string[];
   /** What previous runs on this card established. */
   readonly previousRuns?: readonly string[];
+  /**
+   * What the operator said when they sent the card back (T22).
+   *
+   * Placed above everything the model established, because it is the operator
+   * overruling the last run and the agent must not have to weigh it against a
+   * claim the run made about itself.
+   */
+  readonly operatorNote?: string | null;
 }
 
 /**
@@ -180,6 +188,25 @@ export function renderCardContext(input: CardContextInput): string {
       lines.push(`- ${guardrail.text} (${guardrail.enforcement})`);
     }
     lines.push('');
+  }
+
+  if (
+    input.operatorNote !== undefined &&
+    input.operatorNote !== null &&
+    input.operatorNote.trim() !== ''
+  ) {
+    // Before the ledger sections deliberately. This is a person overruling the
+    // last run, and an agent should not have to weigh it against a claim that
+    // run made about itself.
+    lines.push(
+      '## The operator sent this card back',
+      '',
+      input.operatorNote.trim(),
+      '',
+      'This is an instruction from the person who owns this work. It outranks',
+      'anything a previous run on this card concluded.',
+      '',
+    );
   }
 
   if (input.acceptedEntries !== undefined && input.acceptedEntries.length > 0) {

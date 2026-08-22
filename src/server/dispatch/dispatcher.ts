@@ -595,6 +595,10 @@ export class Dispatcher {
           .where(eq(invariants.boardId, boardId))
           .all()
           .map((row) => row.statement),
+        // Cleared below, once handed over: a note that arrived on every
+        // subsequent run would teach the agent to skim the block it most needs
+        // to read.
+        operatorNote: card.retryNote,
         agentModel: card.agentModel,
         agentEffort: card.agentEffort,
         permissionMode: card.permissionMode,
@@ -625,6 +629,10 @@ export class Dispatcher {
         },
       }),
     );
+
+    if (card.retryNote !== null) {
+      this.database.db.update(cards).set({ retryNote: null }).where(eq(cards.id, cardId)).run();
+    }
 
     state.running.set(cardId, running);
     this.#publish(boardId);
@@ -692,6 +700,41 @@ export class Dispatcher {
       })
       .where(eq(runs.sessionId, result.sessionId))
       .run();
+  }
+
+  /**
+   * Sends a blocked card back to the queue, with what the operator said (T21, T22).
+   *
+   * The worktree is kept. That is the difference between this and dispatching
+   * the card again: the next run continues in the checkout the last one left,
+   * which is usually most of the work, rather than starting from nothing.
+   *
+   * Attempts are reset. The automatic retry budget is about a fault repeating
+   * itself unattended; an operator deciding to try again is a new judgement,
+   * and a card stuck at the limit could otherwise never be retried at all.
+   */
+  retry(boardId: string, cardId: string, note: string | null): boolean {
+    const state = this.#stateFor(boardId);
+    // Refused rather than queued. Two runs in one worktree overwrite each
+    // other, and the damage is not discovered until merge time.
+    if (state.running.has(cardId)) return false;
+
+    this.database.db
+      .update(cards)
+      .set({ attempts: 0, retryNote: note === null || note.trim() === '' ? null : note.trim() })
+      .where(eq(cards.id, cardId))
+      .run();
+
+    updateCard(this.database, cardId, { status: 'idle' });
+
+    // A card sent back is a reason for the queue to try again, so the halt
+    // that stopped it is cleared. Leaving it would mean the operator's retry
+    // silently did nothing under automatic mode.
+    if (state.halted?.cardId === cardId) state.halted = null;
+
+    this.#publish(boardId);
+    void this.pump(boardId).catch(() => undefined);
+    return true;
   }
 
   /**

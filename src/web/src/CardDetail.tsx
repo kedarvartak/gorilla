@@ -473,6 +473,8 @@ export function CardDetail({
   const [proposals, setProposals] = useState<readonly GuardrailProposal[]>([]);
   /** The file whose diff is open, and its text. One at a time (T31). */
   const [openDiff, setOpenDiff] = useState<{ path: string; text: string } | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [retryNote, setRetryNote] = useState('');
   const [showEntries, setShowEntries] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [timelineRunId, setTimelineRunId] = useState<string | null>(null);
@@ -805,9 +807,22 @@ export function CardDetail({
       <header className="flex items-baseline gap-3 border-b border-line px-4 py-2">
         <h2 className="text-text">{detail.card.title}</h2>
         <span className="font-mono text-[11px] text-dim">{detail.card.status}</span>
+        {/* Only on a card that stopped. Offering it on a running card would
+            invite two runs in one worktree, and the server refuses that
+            anyway - a button that returns 409 is worse than no button. */}
+        {detail.card.status !== 'blocked' && detail.card.status !== 'abandoned' ? null : (
+          <button
+            type="button"
+            className="ml-auto rounded border border-line px-2 py-0.5 font-mono text-[11px] text-dim hover:text-text"
+            title="Sends the card back to the queue, keeping its worktree, with what you say about it."
+            onClick={() => setRetrying(true)}
+          >
+            retry
+          </button>
+        )}
         <button
           type="button"
-          className="ml-auto rounded border border-line px-2 py-0.5 font-mono text-[11px] text-dim hover:text-text"
+          className={`${detail.card.status === 'blocked' || detail.card.status === 'abandoned' ? '' : 'ml-auto '}rounded border border-line px-2 py-0.5 font-mono text-[11px] text-dim hover:text-text`}
           onClick={toggleMaximised}
           title={maximised ? 'Restore the previous height' : 'Stretch the pane over the board'}
         >
@@ -821,6 +836,40 @@ export function CardDetail({
           close
         </button>
       </header>
+
+      {!retrying ? null : (
+        <div className="flex items-baseline gap-2 border-b border-line bg-panel-2 px-4 py-2">
+          <input
+            className="flex-1 rounded border border-line bg-panel px-2 py-1 text-text placeholder:text-dim"
+            placeholder="What went wrong, or what to do differently. Optional."
+            aria-label="Retry note"
+            value={retryNote}
+            onChange={(changed) => setRetryNote(changed.target.value)}
+          />
+          <button
+            type="button"
+            className="rounded border border-line px-2 py-1 font-mono text-[11px] text-text hover:border-dim"
+            onClick={() => {
+              void api
+                .retryCard(detail.card.boardId, cardId, retryNote.trim() === '' ? null : retryNote)
+                .then(() => {
+                  setRetrying(false);
+                  setRetryNote('');
+                })
+                .catch((cause: Error) => setError(cause.message));
+            }}
+          >
+            send it back
+          </button>
+          <button
+            type="button"
+            className="rounded border border-line px-2 py-1 font-mono text-[11px] text-dim hover:text-text"
+            onClick={() => setRetrying(false)}
+          >
+            cancel
+          </button>
+        </div>
+      )}
 
       <div className="flex min-h-0 flex-1 divide-x divide-line">
         <Rail title="Specification">
