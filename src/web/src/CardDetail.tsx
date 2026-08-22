@@ -484,9 +484,12 @@ function Rail({ title, children }: { title: string; children: ReactElement | Rea
 export function CardDetail({
   cardId,
   onClose,
+  onCompare,
 }: {
   cardId: string;
   onClose: () => void;
+  /** Opens this card beside another. Absent when the board cannot show one. */
+  onCompare?: (otherCardId: string) => void;
 }): ReactElement {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [brief, setBrief] = useState<Brief | null>(null);
@@ -499,6 +502,7 @@ export function CardDetail({
   const [retryNote, setRetryNote] = useState('');
   const [reviewing, setReviewing] = useState(false);
   const [reviewNote, setReviewNote] = useState<string | null>(null);
+  const [siblings, setSiblings] = useState<readonly Card[]>([]);
   const [showEntries, setShowEntries] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [timelineRunId, setTimelineRunId] = useState<string | null>(null);
@@ -1279,6 +1283,37 @@ export function CardDetail({
                     ))}
                   </ul>
                 )}
+              </div>
+            )}
+
+            {detail.workspace === null || onCompare === undefined ? null : (
+              <div className="mb-3">
+                {/* Most useful straight after cloning, which is why it sits on
+                    the card rather than behind a selection on the board. */}
+                <label className="font-mono text-[11px] text-dim">
+                  compare with{' '}
+                  <select
+                    className="rounded border border-line bg-panel-2 px-1 py-0.5 text-text"
+                    value=""
+                    onFocus={() => {
+                      if (siblings.length > 0) return;
+                      void api
+                        .cards(detail.card.boardId)
+                        .then((cards) => setSiblings(cards.filter((card) => card.id !== cardId)))
+                        .catch((cause: Error) => setError(cause.message));
+                    }}
+                    onChange={(changed) => {
+                      if (changed.target.value !== '') onCompare(changed.target.value);
+                    }}
+                  >
+                    <option value="">another card</option>
+                    {siblings.map((sibling) => (
+                      <option key={sibling.id} value={sibling.id}>
+                        {sibling.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
             )}
 
