@@ -25,6 +25,7 @@ import {
   removeDependency,
   updateCard,
 } from './cards.js';
+import { badRequest, conflict, notFound } from './errors.js';
 import { fail, present, readPriority } from './shared.js';
 
 /**
@@ -84,7 +85,7 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
       .where(eq(boards.id, request.params.boardId))
       .get();
 
-    if (board === undefined) return reply.code(404).send({ error: 'No such board.' });
+    if (board === undefined) return notFound(reply, 'No such board.');
 
     const budget = request.body?.dailyTokenBudget;
     // Zero is refused rather than read as "no budget": it would stop the
@@ -94,10 +95,11 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
       budget !== null &&
       (typeof budget !== 'number' || !Number.isInteger(budget) || budget <= 0)
     ) {
-      return reply.code(400).send({
-        error: 'A daily budget must be a positive whole number of tokens, or null for none.',
-        field: 'dailyTokenBudget',
-      });
+      return badRequest(
+        reply,
+        'A daily budget must be a positive whole number of tokens, or null for none.',
+        'dailyTokenBudget',
+      );
     }
 
     const from = request.body?.dispatchFromHour;
@@ -106,26 +108,23 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
     // Both or neither. One hour on its own describes no window, and storing
     // it would leave a board whose schedule the operator cannot read back.
     if ((from === undefined) !== (to === undefined)) {
-      return reply.code(400).send({
-        error: 'A dispatch window needs both hours, or neither.',
-        field: 'dispatchFromHour',
-      });
+      return badRequest(
+        reply,
+        'A dispatch window needs both hours, or neither.',
+        'dispatchFromHour',
+      );
     }
 
     if (from !== undefined && from !== null && !isValidHour(from)) {
-      return reply
-        .code(400)
-        .send({ error: 'An hour must be a whole number from 0 to 23.', field: 'dispatchFromHour' });
+      return badRequest(reply, 'An hour must be a whole number from 0 to 23.', 'dispatchFromHour');
     }
     if (to !== undefined && to !== null && !isValidHour(to)) {
-      return reply
-        .code(400)
-        .send({ error: 'An hour must be a whole number from 0 to 23.', field: 'dispatchToHour' });
+      return badRequest(reply, 'An hour must be a whole number from 0 to 23.', 'dispatchToHour');
     }
 
     const name = request.body?.name;
     if (name !== undefined && (typeof name !== 'string' || name.trim() === '')) {
-      return reply.code(400).send({ error: 'A board needs a name.', field: 'name' });
+      return badRequest(reply, 'A board needs a name.', 'name');
     }
 
     context.database.db
@@ -150,7 +149,7 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
     const cwd = (request.body?.cwd ?? '').trim();
 
     if (cwd === '') {
-      return reply.code(400).send({ error: 'A board needs a working directory.', field: 'cwd' });
+      return badRequest(reply, 'A board needs a working directory.', 'cwd');
     }
 
     const canonical = canonicaliseCwd(cwd);
@@ -163,9 +162,7 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
     if (existing !== undefined) {
       // One board per directory: events route by cwd, so two boards on one
       // directory would make attribution ambiguous.
-      return reply
-        .code(409)
-        .send({ error: 'A board already exists for that directory.', field: 'cwd' });
+      return conflict(reply, 'A board already exists for that directory.', 'cwd');
     }
 
     const id = randomUUID();
@@ -272,9 +269,7 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
         typeof request.body?.statement === 'string' ? request.body.statement.trim() : '';
 
       if (statement === '') {
-        return reply
-          .code(400)
-          .send({ error: 'An invariant needs something to say.', field: 'statement' });
+        return badRequest(reply, 'An invariant needs something to say.', 'statement');
       }
 
       const existing = context.database.db
@@ -286,9 +281,7 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
       if (existing.some((rule) => rule.statement === statement)) {
         // Two copies of one rule is the drift this exists to prevent, arriving
         // by a shorter route.
-        return reply
-          .code(409)
-          .send({ error: 'That invariant is already on this board.', field: 'statement' });
+        return conflict(reply, 'That invariant is already on this board.', 'statement');
       }
 
       const id = randomUUID();
@@ -464,10 +457,11 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
         // it - which is indistinguishable from the edit not having saved.
         const unknown = Object.keys(body).filter((key) => !EDITABLE_CARD_FIELDS.has(key));
         if (unknown.length > 0) {
-          return reply.code(400).send({
-            error: `A card has no field called ${unknown.join(', ')}. Editable fields: ${[...EDITABLE_CARD_FIELDS].sort().join(', ')}.`,
-            field: unknown[0],
-          });
+          return badRequest(
+            reply,
+            `A card has no field called ${unknown.join(', ')}. Editable fields: ${[...EDITABLE_CARD_FIELDS].sort().join(', ')}.`,
+            unknown[0],
+          );
         }
         const card = updateCard(context.database, request.params.cardId, {
           ...(typeof body['title'] === 'string' ? { title: body['title'] } : {}),
@@ -512,9 +506,7 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
       try {
         const columnId = request.body?.columnId;
         if (typeof columnId !== 'string') {
-          return reply
-            .code(400)
-            .send({ error: 'A move needs a target column.', field: 'columnId' });
+          return badRequest(reply, 'A move needs a target column.', 'columnId');
         }
 
         const card = moveCard(
@@ -547,7 +539,7 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
       try {
         const dependsOn = request.body?.dependsOn;
         if (typeof dependsOn !== 'string') {
-          return reply.code(400).send({ error: 'Name the card depended on.', field: 'dependsOn' });
+          return badRequest(reply, 'Name the card depended on.', 'dependsOn');
         }
 
         addDependency(context.database, request.params.cardId, dependsOn);

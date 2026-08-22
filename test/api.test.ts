@@ -712,3 +712,42 @@ describe('updating a card with a field it does not have', () => {
     expect(updated.status).toBe(200);
   });
 });
+
+describe('the shape of a refusal', () => {
+  it('says what kind it was, not only what happened', async () => {
+    const refused = await json<{ code: string; error: string }>(
+      'POST',
+      `/api/boards/${boardId}/cards`,
+      { title: '' },
+    );
+
+    // Prose is written for a person, gets reworded, and a client that branches
+    // on it breaks silently when somebody improves a sentence (T8).
+    expect(refused.status).toBe(400);
+    expect(refused.body.code).toBe('invalid-field');
+  });
+
+  it('uses the same shape for a thrown refusal as for a decided one', async () => {
+    // One path starts in a handler, the other as a thrown CardError. Nothing
+    // downstream should have to know which.
+    const missing = await json<{ code: string }>('GET', '/api/cards/no-such-card/detail');
+
+    expect(missing.status).toBe(404);
+    expect(missing.body.code).toBe('not-found');
+  });
+
+  it('still names the field, so the message can go where the operator is looking', async () => {
+    const card = await json<{ id: string }>('POST', `/api/boards/${boardId}/cards`, {
+      title: 'a card',
+    });
+
+    const refused = await json<{ code: string; field: string }>(
+      'PATCH',
+      `/api/cards/${card.body.id}`,
+      { tokenCeiling: 0 },
+    );
+
+    expect(refused.body.code).toBe('invalid-field');
+    expect(refused.body.field).toBe('tokenCeiling');
+  });
+});
