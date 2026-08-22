@@ -49,8 +49,10 @@ dispatcher - though its exit gate has not been run as a single unbroken cycle.
 ## What is not built
 
 - **The project model, in full.** Doc 12's cross-card context. Board-level invariants
-  now exist and reach every dispatched card, marked as project rules rather than card
-  rules; the subsystem map does not.
+  reach every dispatched card, marked as project rules rather than card rules, and the
+  subsystem map now records which paths each card touched - from git and from the run's
+  own account, kept apart - and surfaces the earlier cards that worked on the same
+  files. What is not there is anything that reads the map and proposes a rule from it.
 - **Extraction of invariants from the ledger.** An accepted entry can be promoted to a
   card guardrail by hand, and a project rule can be written by hand. Nothing proposes
   either from what the runs actually established.

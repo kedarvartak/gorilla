@@ -11,6 +11,9 @@ import { describeVerify, runVerify, type VerifyResult } from '../verify/run.js';
 import { outstandingSurprises } from '../ledger/outstanding.js';
 import { storedEntriesFor } from '../ledger/store.js';
 import { assessStall, DEFAULT_STALL, progressOf, type StallThresholds } from './stall.js';
+import { recordCardPaths } from '../cards/subsystems.js';
+import { mergedPaths } from '../cards/staleness.js';
+import { buildMechanicalLedger } from '../ledger/mechanical.js';
 import { WorktreeManager } from '../worktree/manager.js';
 import { commitWorkspace } from '../worktree/commit.js';
 import {
@@ -868,6 +871,12 @@ export class Dispatcher {
     await this.#commitWork(boardId, cardId, card.title);
     if (this.#stopped) return;
 
+    // After the commit, so git has something to report. Before verify, so a
+    // card whose tests fail still records what it touched - that is exactly
+    // the card someone will want the blast radius of.
+    await this.#recordPaths(boardId, cardId);
+    if (this.#stopped) return;
+
     // The board runs the card's verify command itself. Until now `verify` was
     // displayed as a hard guardrail and never executed, which is the failure
     // R10 exists to prevent (doc 18, U1).
@@ -1014,6 +1023,48 @@ export class Dispatcher {
    * can. This only ensures that "the card finished" and "the work is on the
    * branch" cannot come apart.
    */
+  /**
+   * Records which paths the card's work touched (T13).
+   *
+   * Both sources, kept apart: git is what the branch holds, the mechanical
+   * ledger is the run's own account. Merging them would lose the only
+   * comparison in the system that can catch a run claiming work it did not do.
+   *
+   * Failures here are swallowed. A missing subsystem map costs a later card
+   * some context; a settle that throws leaves a card stuck in running.
+   */
+  async #recordPaths(boardId: string, cardId: string): Promise<void> {
+    try {
+      const board = this.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
+      if (board === undefined) return;
+
+      const now = Date.now();
+      const workspace = this.#worktreesFor(board.cwd).workspaceFor(cardId);
+      if (workspace !== undefined) {
+        recordCardPaths(
+          this.database.sqlite,
+          cardId,
+          await mergedPaths(board.cwd, workspace.branch),
+          'git',
+          now,
+        );
+      }
+
+      const claimed = this.database.db
+        .select({ id: runs.id })
+        .from(runs)
+        .where(eq(runs.cardId, cardId))
+        .all()
+        .flatMap(
+          (run) => buildMechanicalLedger({ sqlite: this.database.sqlite, runId: run.id }).changed,
+        );
+
+      recordCardPaths(this.database.sqlite, cardId, claimed, 'claimed', now);
+    } catch {
+      /* a missing map is a later card with less context, not a stuck card */
+    }
+  }
+
   async #commitWork(boardId: string, cardId: string, cardTitle: string): Promise<void> {
     const board = this.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
     if (board === undefined) return;

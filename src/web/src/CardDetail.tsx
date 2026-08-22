@@ -234,6 +234,19 @@ interface Detail {
   readonly verifyNote: string | null;
   readonly guardrailDetail: readonly GuardrailDetail[];
   readonly blockers: readonly { cardId: string; title: string; status: string }[];
+  /**
+   * What this card's work touched, grouped (T13). Empty before it has run.
+   *
+   * Optional because a server older than this build does not send it, and a
+   * board that renders nothing is better than one that throws. T1's handshake
+   * is the real fix; until it lands, every field added here has to survive
+   * being absent.
+   */
+  readonly subsystems?: readonly { subsystem: string; paths: number }[];
+  /** Earlier cards that touched the same files, most overlap first. */
+  readonly relatedCards?: readonly { cardId: string; title: string; shared: readonly string[] }[];
+  /** Paths the run said it changed that git did not see. A question, not a verdict. */
+  readonly claimedNotInGit?: readonly string[];
   readonly runs: readonly RunDetail[];
   readonly realityNotes: readonly string[];
   /** The isolated branch this card's work sits on, or null if it never ran. */
@@ -1130,6 +1143,49 @@ export function CardDetail({
                     ))}
                   </ul>
                 )}
+              </div>
+            )}
+
+            {(detail.subsystems ?? []).length === 0 ? null : (
+              <div className="mt-4 border-t border-line pt-2">
+                <h4 className="mb-1 font-mono text-[11px] uppercase tracking-wider text-dim">
+                  Touched
+                </h4>
+                <ul className="flex flex-col gap-0.5 font-mono text-[11px]">
+                  {(detail.subsystems ?? []).map((entry) => (
+                    <li key={entry.subsystem} className="text-dim">
+                      <span className="text-text">{entry.subsystem}</span> · {entry.paths} file(s)
+                    </li>
+                  ))}
+                </ul>
+
+                {(detail.claimedNotInGit ?? []).length === 0 ? null : (
+                  <p className="mt-1 text-dim">
+                    {/* Phrased as a question. Work reverted before the commit
+                        and files written outside the worktree both land here,
+                        and neither is a run lying. */}
+                    {(detail.claimedNotInGit ?? []).length} path(s) the run mentioned are not in the
+                    branch: {(detail.claimedNotInGit ?? []).join(', ')}.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {(detail.relatedCards ?? []).length === 0 ? null : (
+              <div className="mt-4 border-t border-line pt-2">
+                <h4 className="mb-1 font-mono text-[11px] uppercase tracking-wider text-dim">
+                  Also worked here
+                </h4>
+                {/* The point of the map: whatever an earlier card learned about
+                    these files was learned the expensive way. */}
+                <ul className="flex flex-col gap-0.5 font-mono text-[11px]">
+                  {(detail.relatedCards ?? []).map((related) => (
+                    <li key={related.cardId} className="text-dim">
+                      <span className="text-text">{related.title}</span> · {related.shared.length}{' '}
+                      shared file(s)
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
 

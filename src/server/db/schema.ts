@@ -457,3 +457,33 @@ export const extractionCursors = sqliteTable('extraction_cursors', {
 export type LedgerEntryRow = typeof ledgerEntries.$inferSelect;
 export type NewLedgerEntryRow = typeof ledgerEntries.$inferInsert;
 export type ExtractionCursor = typeof extractionCursors.$inferSelect;
+
+/**
+ * Which paths a card's work actually touched (T13).
+ *
+ * Doc 12's project model needs to know that two cards worked on the same
+ * thing. Nothing recorded that, so every cross-card question - what is the
+ * blast radius here, which earlier card already learned this - had no data
+ * behind it and stayed unbuilt.
+ *
+ * Recorded per source rather than merged into one set. Git is independent of
+ * the agent and can contradict it; the tool events are the agent's own account
+ * of what it edited. Collapsing them would lose the only comparison in the
+ * system that can catch a run claiming work it did not do (doc 08).
+ */
+export const cardPaths = sqliteTable(
+  'card_paths',
+  {
+    cardId: text('card_id')
+      .notNull()
+      .references(() => cards.id, { onDelete: 'cascade' }),
+    path: text('path').notNull(),
+    /** 'git' is what the branch holds. 'claimed' is what the run said it did. */
+    source: text('source', { enum: ['git', 'claimed'] }).notNull(),
+    recordedAt: integer('recorded_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('card_paths_unique').on(table.cardId, table.path, table.source),
+    index('card_paths_path').on(table.path),
+  ],
+);
