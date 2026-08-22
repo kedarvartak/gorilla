@@ -117,7 +117,7 @@ The point of the product: work that continues correctly while nobody is watching
 
 | Id | Task | Done when | Status |
 | --- | --- | --- | --- |
-| T41 | Scheduled dispatch window | A board can be told to work only between given hours. | open |
+| T41 | Scheduled dispatch window | A board can be told to work only between given hours. | merged |
 | T42 | Automatic retry policy | A run that fails for a transient reason retries under a stated policy; one that fails for a stated reason does not. | merged |
 | T43 | Escalation ladder | Repeated failure on one card stops that card rather than the queue, and marks it for the operator. | merged |
 | T44 | Health check endpoint | One endpoint reports queue depth, in-flight runs, halt state and last event time. | merged |

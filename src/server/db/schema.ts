@@ -29,6 +29,15 @@ export const boards = sqliteTable(
      * budget is a day in the operator's timezone rather than in UTC.
      */
     dailyTokenBudget: integer('daily_token_budget'),
+    /**
+     * The hours this board may start work in, local time (T41).
+     *
+     * Both null means always. Stored as hours rather than as a cron string
+     * because the only question anyone has asked of it is "overnight or not",
+     * and a cron field invites a schedule nobody can predict the behaviour of.
+     */
+    dispatchFromHour: integer('dispatch_from_hour'),
+    dispatchToHour: integer('dispatch_to_hour'),
   },
   (table) => [uniqueIndex('boards_cwd_unique').on(table.cwd)],
 );

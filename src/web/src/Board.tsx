@@ -474,6 +474,14 @@ export function Board(): ReactElement {
         <div className="border-b border-line bg-panel-2 px-4 py-2 text-warn">{staleBuild}</div>
       )}
 
+      {/* A hold is not an error and not a halt: the clock will clear it. Said
+          in its own line so it does not read as something to fix. */}
+      {dispatch === null || dispatch.holdingFor === null ? null : (
+        <div className="border-b border-line bg-panel-2 px-4 py-2 text-dim">
+          {dispatch.holdingFor}
+        </div>
+      )}
+
       {hits === null ? null : (
         <div className="border-b border-line bg-panel-2 px-4 py-2 font-mono text-[11px]">
           {hits.length === 0 ? (

@@ -1154,3 +1154,89 @@ describe('sending a card back', () => {
     await running?.result;
   });
 });
+
+describe('the dispatch window', () => {
+  function window(fromHour: number | null, toHour: number | null): void {
+    handle.db
+      .update(boards)
+      .set({ dispatchFromHour: fromHour, dispatchToHour: toHour })
+      .where(eq(boards.id, BOARD))
+      .run();
+  }
+
+  /** A window that certainly excludes now, whenever the suite happens to run. */
+  function shutNow(): void {
+    const hour = new Date().getHours();
+    const from = (hour + 2) % 24;
+    window(from, (from + 1) % 24);
+  }
+
+  it('holds the queue outside its hours', async () => {
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    card('would run at night');
+    shutNow();
+
+    dispatcher.setMode(BOARD, 'automatic');
+    expect(await dispatcher.pump(BOARD)).toEqual([]);
+  });
+
+  it('holds rather than halts', async () => {
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    card('waiting for the window');
+    shutNow();
+
+    dispatcher.setMode(BOARD, 'automatic');
+    await dispatcher.pump(BOARD);
+
+    // A halt is sticky and asks for a person. A window that needed a manual
+    // resume every morning would be worse than no window.
+    expect(dispatcher.state(BOARD).halted).toBeNull();
+    expect(dispatcher.state(BOARD).holdingFor).toContain('Holding until');
+  });
+
+  it('runs when the window is open', async () => {
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    const id = card('inside the window');
+    window(0, 0);
+
+    // Same hour twice is always open, which is how a board says "any time"
+    // without the column meaning something different from null.
+    dispatcher.setMode(BOARD, 'automatic');
+    await vi.waitFor(() => expect(getCard(handle, id).status).not.toBe('idle'));
+  });
+
+  it('runs when no window is set', async () => {
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    const id = card('unscheduled');
+
+    dispatcher.setMode(BOARD, 'automatic');
+    await vi.waitFor(() => expect(getCard(handle, id).status).not.toBe('idle'));
+  });
+
+  it('stops holding once the window is opened', async () => {
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    const id = card('released');
+    shutNow();
+    dispatcher.setMode(BOARD, 'automatic');
+    await vi.waitFor(() => expect(dispatcher.state(BOARD).holdingFor).not.toBeNull());
+
+    // The hold is a fact about the clock, recomputed each pump rather than
+    // stored, so widening the window is enough to release it.
+    window(null, null);
+    await dispatcher.pump(BOARD);
+
+    expect(dispatcher.state(BOARD).holdingFor).toBeNull();
+    await vi.waitFor(() => expect(getCard(handle, id).status).not.toBe('idle'));
+  });
+
+  it('does not dispatch a card by hand outside the window either way', async () => {
+    // Deliberately allowed: the window governs the queue, not the operator.
+    // Someone pressing dispatch at noon has said what they want.
+    dispatcher.useExecutable(fakeClaude(SUCCEEDS));
+    const id = card('dispatched by hand');
+    shutNow();
+
+    await dispatcher.dispatch(BOARD, id)?.result;
+    await vi.waitFor(() => expect(getCard(handle, id).status).toBe('awaiting-review'));
+  });
+});

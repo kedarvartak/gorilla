@@ -100,6 +100,8 @@ export interface DispatchState {
   readonly spendNote: string;
   /** Cards that failed since the last one succeeded. Three stops the queue. */
   readonly failureStreak: number;
+  /** Why the queue is not starting anything, when the reason is not a halt. */
+  readonly holdingFor: string | null;
 }
 
 export interface MergeStep {
@@ -217,8 +219,16 @@ export const api = {
 
   markSeen: (cardId: string) => request<Card>(`/api/cards/${cardId}/seen`, { method: 'POST' }),
 
-  setBoard: (boardId: string, body: { dailyTokenBudget?: number | null; name?: string }) =>
-    request<Board>(`/api/boards/${boardId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  setBoard: (
+    boardId: string,
+    body: {
+      dailyTokenBudget?: number | null;
+      name?: string;
+      /** Both or neither: one hour on its own describes no window. */
+      dispatchFromHour?: number | null;
+      dispatchToHour?: number | null;
+    },
+  ) => request<Board>(`/api/boards/${boardId}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
   setDispatch: (boardId: string, body: { mode?: string; concurrency?: number; policy?: string }) =>
     request<DispatchState>(`/api/boards/${boardId}/dispatch`, {

@@ -25,6 +25,7 @@ import {
 import { accumulateCost, CostMeter } from '../launcher/cost.js';
 import { describeSpend, overBudget, spentSince, startOfDay } from './budget.js';
 import { classifyLaunchFailure, decideRetry, DEFAULT_MAX_ATTEMPTS } from './retry.js';
+import { describeWindow, isOpen, msUntilOpen, type DispatchWindow } from './window.js';
 
 /**
  * Decides which Ready card starts next (doc 05).
@@ -87,6 +88,11 @@ export interface BoardDispatchState {
    * the board stopping for no reason.
    */
   readonly failureStreak: number;
+  /**
+   * Why the queue is not starting anything, when the reason is not a halt
+   * (T41). Transient and recomputed: a hold stops being true on its own.
+   */
+  readonly holdingFor: string | null;
   readonly concurrency: number;
   /** Cards that finished and are waiting to be looked at. */
   readonly completed: readonly string[];
@@ -115,6 +121,7 @@ interface BoardState {
   mode: DispatchMode;
   policy: QueuePolicy;
   failureStreak: number;
+  holdingFor: string | null;
   concurrency: number;
   running: Map<string, RunningLaunch>;
   completed: Set<string>;
@@ -210,6 +217,7 @@ export class Dispatcher {
       mode: 'manual',
       policy: 'review',
       failureStreak: 0,
+      holdingFor: null,
       concurrency: DEFAULT_CONCURRENCY,
       running: new Map(),
       completed: new Set(),
@@ -226,6 +234,7 @@ export class Dispatcher {
       mode: state.mode,
       policy: state.policy,
       failureStreak: state.failureStreak,
+      holdingFor: state.holdingFor,
       concurrency: state.concurrency,
       running: [...state.running.keys()],
       completed: [...state.completed],
@@ -376,6 +385,19 @@ export class Dispatcher {
 
     const started: string[] = [];
 
+    // Recomputed on every pump. A hold is a fact about the clock, so it must
+    // not persist the way a halt does.
+    state.holdingFor = null;
+
+    const window = this.#windowFor(boardId);
+    if (window !== null && !isOpen(window, new Date())) {
+      state.holdingFor = describeWindow(window, new Date());
+      this.#sleepUntilOpen(boardId, window);
+      this.#pumping.delete(boardId);
+      this.#publish(boardId);
+      return [];
+    }
+
     while (state.running.size < state.concurrency && state.halted === null) {
       // The queue gate (P4). Asked before every start, not once per pump: a
       // card that finishes while this loop is running is exactly the case the
@@ -401,6 +423,41 @@ export class Dispatcher {
 
     this.#pumping.delete(boardId);
     return started;
+  }
+
+  /** The board's dispatch window, or null when it may work at any hour. */
+  #windowFor(boardId: string): DispatchWindow | null {
+    const board = this.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
+    if (board === undefined || board.dispatchFromHour === null || board.dispatchToHour === null) {
+      return null;
+    }
+
+    return { fromHour: board.dispatchFromHour, toHour: board.dispatchToHour };
+  }
+
+  /**
+   * Wakes the queue when the window opens.
+   *
+   * A timer rather than a poll: a board asleep until 22:00 should not be
+   * asking the clock every minute whether it is 22:00 yet. Unreferenced, so a
+   * sleeping board never holds the process open - a queue waiting for tomorrow
+   * is not a reason for `gorilla serve` to refuse to exit.
+   */
+  #sleepUntilOpen(boardId: string, window: DispatchWindow): void {
+    const existing = this.#wakeups.get(boardId);
+    if (existing !== undefined) clearTimeout(existing);
+
+    const timer = setTimeout(
+      () => {
+        this.#wakeups.delete(boardId);
+        if (this.#stopped) return;
+        void this.pump(boardId).catch(() => undefined);
+      },
+      msUntilOpen(window, new Date()),
+    );
+
+    timer.unref?.();
+    this.#wakeups.set(boardId, timer);
   }
 
   /**
@@ -680,6 +737,9 @@ export class Dispatcher {
 
   /** Attempts a card gets before a transient failure stops being retried. */
   maxAttempts = DEFAULT_MAX_ATTEMPTS;
+
+  /** Timers waking a board when its dispatch window opens (T41). */
+  readonly #wakeups = new Map<string, NodeJS.Timeout>();
 
   #recordCost(result: LaunchResult): void {
     if (result.sessionId === null) return;
@@ -1148,6 +1208,12 @@ export class Dispatcher {
 
   async shutdown(): Promise<void> {
     this.#stopped = true;
+    // Cleared rather than left to expire. They are unreferenced, so they would
+    // not hold the process open, but a timer firing into a closed database
+    // after shutdown is a crash looking for a slow night to happen on.
+    for (const timer of this.#wakeups.values()) clearTimeout(timer);
+    this.#wakeups.clear();
+
     await this.#registry.cancelAll();
   }
 }
