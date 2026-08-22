@@ -94,8 +94,8 @@ Everything here currently requires a terminal.
 | --- | --- | --- | --- |
 | T28 | Verify output on failure | ~~Withdrawn: built.~~ `VerifyReport.output` is captured and rendered in the card, deliberately only when it did not pass. | built |
 | T29 | Token and duration accounting | Each card shows what its runs cost, from the run events. | merged |
-| T30 | Branch diff summary | Files, insertions and deletions appear in the card, so review does not require a terminal. | open |
-| T31 | Full diff view | The branch's diff is readable in the card, per file. | open |
+| T30 | Branch diff summary | Files, insertions and deletions appear in the card, so review does not require a terminal. | merged |
+| T31 | Full diff view | The branch's diff is readable in the card, per file. | merged |
 | T32 | Run timeline density | The timeline distinguishes thinking, tool use, and waiting, rather than showing one undifferentiated run. | open |
 | T33 | Error grouping | Repeated identical errors within a run collapse into one entry with a count. | open |
 | T34 | Card search | Cards are searchable by title, body and touched path. | open |

@@ -3,6 +3,8 @@ import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../app.js';
 import { boards } from '../db/schema.js';
 import { fail } from './shared.js';
+import { fileDiff } from '../worktree/diff.js';
+import { getCard } from './cards.js';
 import { describeSpend, spentSince, startOfDay } from '../dispatch/budget.js';
 
 /**
@@ -101,6 +103,45 @@ export function registerDispatchRoutes(app: FastifyInstance, context: AppContext
       return result.ok
         ? reply.send({ removed: true })
         : reply.code(409).send({ error: result.reason });
+    },
+  );
+
+  /**
+   * One file's diff (T31).
+   *
+   * One at a time: the whole diff of a real card is megabytes, and an operator
+   * reads it a file at a time anyway. Served as text, because a diff wrapped
+   * in JSON is a diff nobody can pipe anywhere.
+   */
+  app.get<{ Params: { cardId: string }; Querystring: { path?: string } }>(
+    '/api/cards/:cardId/diff',
+    async (request, reply) => {
+      const path = request.query.path;
+      if (path === undefined || path.trim() === '') {
+        return reply.code(400).send({ error: 'Name the file to diff.', field: 'path' });
+      }
+
+      const card = getCard(context.database, request.params.cardId);
+      const board = context.database.db
+        .select()
+        .from(boards)
+        .where(eq(boards.id, card.boardId))
+        .get();
+
+      if (board === undefined) return reply.code(404).send({ error: 'No such board.' });
+
+      const workspace = context.dispatcher.worktreesFor(board.cwd).workspaceFor(card.id);
+      const diff = await fileDiff(board.cwd, workspace?.branch ?? null, path);
+
+      // Null means the branch could not be read, which for a merged card is
+      // the ordinary case rather than an error worth a 500.
+      if (diff === null) {
+        return reply.code(404).send({
+          error: 'That branch could not be read. A merged card has usually had its branch removed.',
+        });
+      }
+
+      return reply.type('text/plain; charset=utf-8').send(diff);
     },
   );
 

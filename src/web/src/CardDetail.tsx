@@ -253,6 +253,19 @@ interface Detail {
   readonly relatedCards?: readonly { cardId: string; title: string; shared: readonly string[] }[];
   /** Paths the run said it changed that git did not see. A question, not a verdict. */
   readonly claimedNotInGit?: readonly string[];
+  /** What the branch changed, from git (T30). */
+  readonly diff?: {
+    readonly files: readonly {
+      path: string;
+      insertions: number;
+      deletions: number;
+      binary: boolean;
+    }[];
+    readonly insertions: number;
+    readonly deletions: number;
+    /** False when the branch could not be read - usually because it was merged away. */
+    readonly readable: boolean;
+  };
   readonly runs: readonly RunDetail[];
   readonly realityNotes: readonly string[];
   /** The isolated branch this card's work sits on, or null if it never ran. */
@@ -450,6 +463,8 @@ export function CardDetail({
   const [copied, setCopied] = useState(false);
   const [subagents, setSubagents] = useState<readonly Subagent[]>([]);
   const [proposals, setProposals] = useState<readonly GuardrailProposal[]>([]);
+  /** The file whose diff is open, and its text. One at a time (T31). */
+  const [openDiff, setOpenDiff] = useState<{ path: string; text: string } | null>(null);
   const [showEntries, setShowEntries] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [timelineRunId, setTimelineRunId] = useState<string | null>(null);
@@ -1158,6 +1173,68 @@ export function CardDetail({
                       </li>
                     ))}
                   </ul>
+                )}
+              </div>
+            )}
+
+            {detail.diff === undefined || !detail.diff.readable ? null : (
+              <div className="mt-4 border-t border-line pt-2">
+                <h4 className="mb-1 font-mono text-[11px] uppercase tracking-wider text-dim">
+                  Diff ({detail.diff.files.length} file(s), +{detail.diff.insertions} −
+                  {detail.diff.deletions})
+                </h4>
+                {/* Reviewing used to mean leaving the board for a terminal,
+                    which is where the operator loses the context the board
+                    exists to hold. */}
+                <ul className="flex flex-col gap-0.5 font-mono text-[11px]">
+                  {detail.diff.files.map((file) => (
+                    <li key={file.path}>
+                      <button
+                        type="button"
+                        className="text-left text-dim hover:text-text"
+                        onClick={() => {
+                          void fetch(
+                            `/api/cards/${cardId}/diff?path=${encodeURIComponent(file.path)}`,
+                          )
+                            .then(async (response) =>
+                              response.ok ? await response.text() : 'That file could not be read.',
+                            )
+                            .then((text) => setOpenDiff({ path: file.path, text }))
+                            .catch((cause: Error) => setError(cause.message));
+                        }}
+                      >
+                        <span className="text-text">{file.path}</span>{' '}
+                        {/* Git reports no line counts for a binary file.
+                            Printing zeroes would read as 'changed nothing'. */}
+                        {file.binary ? (
+                          'binary'
+                        ) : (
+                          <>
+                            <span className="text-ok">+{file.insertions}</span>{' '}
+                            <span className="text-warn">−{file.deletions}</span>
+                          </>
+                        )}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+
+                {openDiff === null ? null : (
+                  <div className="mt-2 border-t border-line pt-2">
+                    <div className="mb-1 flex items-baseline gap-2">
+                      <span className="font-mono text-[11px] text-text">{openDiff.path}</span>
+                      <button
+                        type="button"
+                        className="font-mono text-[11px] text-dim hover:text-text"
+                        onClick={() => setOpenDiff(null)}
+                      >
+                        close
+                      </button>
+                    </div>
+                    <pre className="max-h-96 overflow-auto whitespace-pre bg-panel-2 p-2 font-mono text-[11px] text-dim">
+                      {openDiff.text}
+                    </pre>
+                  </div>
                 )}
               </div>
             )}
