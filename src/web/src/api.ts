@@ -388,6 +388,19 @@ export const api = {
 
   runFacets: <T>(runId: string) => optional<T>(`/api/runs/${runId}/facets`, isRecord),
 
+  /** The conversation, not the events (T71). */
+  runTranscript: <T>(runId: string) => optional<T>(`/api/runs/${runId}/transcript`, isRecord),
+
+  /** A fresh reading of the branch, entered as things to judge (T36, T69). */
+  secondOpinion: (cardId: string) =>
+    request<{ findings: unknown[]; note: string }>(`/api/cards/${cardId}/second-opinion`, {
+      method: 'POST',
+    }),
+
+  /** Two attempts at the same work, side by side (T61, T70). */
+  compare: <T>(boardId: string, cardIds: readonly string[]) =>
+    optional<T>(`/api/boards/${boardId}/compare?cards=${cardIds.join(',')}`, isRecord),
+
   /** Text rather than JSON, so it does not go through the typed client. */
   cardBriefMarkdown: async (cardId: string): Promise<string> => {
     const response = await fetch(`/api/cards/${cardId}/brief.md`);
