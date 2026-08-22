@@ -1,8 +1,10 @@
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../app.js';
 import { parseGuardrails } from '../cards/guardrails.js';
-import { boards, cards as cardsTable, columns, ledgerEntries } from '../db/schema.js';
+import { boards, cards as cardsTable, columns, ledgerEntries, runs } from '../db/schema.js';
 import { getCard, moveCard, updateCard } from './cards.js';
 import { apiError, badRequest, conflict, notFound } from './errors.js';
 import { markPromoted, storedEntryById } from '../ledger/store.js';
@@ -13,6 +15,7 @@ import { type Surprise } from '../ledger/surprises.js';
 import { GATE_REACH, mergeGate, type GateCard } from '../review/gate.js';
 import { describeMergeReport, mergeBranches, mergeTargetFor } from '../review/merge.js';
 import { isMerging, resolveConflicts } from '../review/resolve.js';
+import { branchDiff } from '../worktree/diff.js';
 import { fail, present, publish } from './shared.js';
 
 /**
@@ -226,6 +229,99 @@ export function registerReviewRoutes(app: FastifyInstance, context: AppContext):
         const entries = storedEntriesFor(context.database, card.id);
 
         return reply.send(proposeGuardrails(entries, parseGuardrails(card.guardrails)));
+      } catch (error) {
+        return fail(reply, error);
+      }
+    },
+  );
+
+  /**
+   * A fresh reading of the branch, entered as things to judge (T36).
+   *
+   * On demand. It costs a model call per card, and a reviewer that ran on
+   * every completion would double the spend of an overnight batch without
+   * anybody having asked for it.
+   */
+  app.post<{ Params: { cardId: string } }>(
+    '/api/cards/:cardId/second-opinion',
+    async (request, reply) => {
+      try {
+        const card = getCard(context.database, request.params.cardId);
+        const board = context.database.db
+          .select()
+          .from(boards)
+          .where(eq(boards.id, card.boardId))
+          .get();
+
+        if (board === undefined) return notFound(reply, 'No such board.');
+
+        const workspace = context.dispatcher.worktreesFor(board.cwd).workspaceFor(card.id);
+        if (workspace === undefined) {
+          return conflict(
+            reply,
+            'This card has no branch to review. Nothing has been dispatched against it.',
+          );
+        }
+
+        const diff = await branchDiff(board.cwd, workspace.branch);
+        if (diff.trim() === '') {
+          // Not a clean review. A branch with no diff has nothing to read, and
+          // reporting "no findings" would be a pass nobody earned.
+          return conflict(reply, 'That branch changes nothing, so there is nothing to review.');
+        }
+
+        const findings = await context.reviewer({
+          cardTitle: card.title,
+          goal: card.goalCondition,
+          diff,
+        });
+
+        // The entries hang off the card's most recent run, because the ledger
+        // requires one and the review is about what that run produced.
+        const run = context.database.db
+          .select()
+          .from(runs)
+          .where(eq(runs.cardId, card.id))
+          .orderBy(asc(runs.startedAt))
+          .all()
+          .at(-1);
+
+        if (run === undefined) {
+          return conflict(reply, 'This card has no run, so there is nothing to record against.');
+        }
+
+        for (const finding of findings) {
+          context.database.db
+            .insert(ledgerEntries)
+            .values({
+              id: randomUUID(),
+              cardId: card.id,
+              runId: run.id,
+              kind: finding.kind,
+              statement: finding.statement,
+              filePaths: JSON.stringify(finding.filePath === null ? [] : [finding.filePath]),
+              sourceEventIds: '[]',
+              // Marked as the model's, and left unreviewed, so the gate holds
+              // the merge until a person has read them. A reviewer that could
+              // settle its own findings would be a second agent deciding what
+              // is safe, which is the one thing the gate exists to prevent.
+              origin: 'model',
+              createdAt: Date.now(),
+            })
+            .run();
+        }
+
+        publish(context, 'second-opinion', { cardId: card.id, findings: findings.length });
+
+        return reply.send({
+          findings,
+          // Said explicitly. An empty list from a reviewer that read the diff
+          // and an empty list from one that fell over look identical.
+          note:
+            findings.length === 0
+              ? 'The reviewer read the diff and raised nothing.'
+              : `${String(findings.length)} thing(s) to judge before this merges.`,
+        });
       } catch (error) {
         return fail(reply, error);
       }

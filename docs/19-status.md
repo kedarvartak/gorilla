@@ -110,6 +110,10 @@ features nobody has ever used.
   tests against a fake CLI. Neither has stopped anything that was spending money.
 - **A dispatch window holding a real overnight queue.** The clock arithmetic is
   tested; no board has yet gone to sleep at 07:00 and woken at 22:00.
+- **A second opinion from a real session.** The reviewer is tested against an
+  injected runner, so no test spawns a CLI or spends anything. Nothing has yet
+  asked a real model to read a real branch, which means the prompt is unproven -
+  the part of this most likely to be wrong.
 - **A GitHub import against real GitHub.** `gorilla import` is tested against a
   stubbed transport and has never been given a token. What is proven is the shape
   handling; what is not is that GitHub answers the way the tests assume.
