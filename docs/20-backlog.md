@@ -124,7 +124,7 @@ Everything here currently requires a terminal.
 | --- | --- | --- | --- |
 | T35 | Merge queue | ~~Withdrawn: built.~~ `mergeBranches` merges in order and verifies after each step, reporting once. | built |
 | T36 | Pre-merge second opinion | A fresh agent reviews the branch and its findings enter the ledger as surprises before the gate opens. | open |
-| T37 | Review checklist from the ledger | The gate shows what was established during the run, so accepting is an informed act. | open |
+| T37 | Review checklist from the ledger | The card assembles what was checked, what was not, and what needs a verdict, so accepting is a decision rather than a click. | merged |
 | T38 | Follow-up card from a rejected entry | Rejecting a ledger entry can create the card that addresses it, linked to its origin. | merged |
 | T39 | Merge dry run | The board reports whether a branch would conflict, before the operator commits to merging. | merged |
 | T40 | Post-merge verification | ~~Withdrawn: built.~~ `mergeBranches` runs the verify command after each merge and records the result on the step. | built |

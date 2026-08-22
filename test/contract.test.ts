@@ -161,6 +161,7 @@ describe('what a card answers with', () => {
       'guardrails',
       'mergeForecast',
       'mergeTarget',
+      'readiness',
       'reality',
       'realityNotes',
       'relatedCards',
