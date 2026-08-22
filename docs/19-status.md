@@ -7,7 +7,7 @@ whatever got built stops being a record and becomes a description.
 This document is the other half: what actually exists, and what does not. It is the
 one file here that is expected to go out of date, so it says when it was last true.
 
-**Last verified: 22 August 2026, against `main` at 1,192 passing tests.**
+**Last verified: 22 August 2026, against `main` at 1,224 passing tests.**
 
 ## What is built
 
@@ -84,7 +84,7 @@ dispatcher - though its exit gate has not been run as a single unbroken cycle.
 
 ## What is not built
 
-Doc 20's list is empty: sixty-three entries built, five withdrawn with reasons.
+Doc 20's list is empty: seventy-four entries built, five withdrawn with reasons.
 What remains undone is therefore what nobody has written down yet, plus one
 thing that was written down and deliberately not built:
 
@@ -146,10 +146,15 @@ using the thing rather than by testing it.
 
 ## The backlog, as of 22 August 2026
 
-Doc 20 holds sixty-eight numbered items and none are open. Sixty-three are
-built or were found already built; five were withdrawn on contact with the
-code, struck through rather than deleted, each with the argument that killed
-them.
+Doc 20 holds seventy-nine numbered items across two waves and none are open.
+Seventy-four are built or were found already built; five were withdrawn on
+contact with the code, struck through rather than deleted, each with the
+argument that killed them.
+
+The second wave was written after the first was finished, from things this
+work established rather than from a fresh brainstorm: routes that existed and
+nothing called, a request whose cost had been measured rather than guessed at,
+and the signals the morning view had been built before.
 
 The withdrawals are the part worth reading. Two were unmeasurable - an
 invariant nobody can prove went unused, a running session with no channel to
