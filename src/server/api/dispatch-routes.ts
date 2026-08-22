@@ -5,6 +5,7 @@ import { boards } from '../db/schema.js';
 import { apiError, badRequest, conflict, notFound } from './errors.js';
 import { fail } from './shared.js';
 import { fileDiff } from '../worktree/diff.js';
+import { describeVerify } from '../verify/run.js';
 import { getCard } from './cards.js';
 import { describeSpend, spentSince, startOfDay } from '../dispatch/budget.js';
 
@@ -186,6 +187,30 @@ export function registerDispatchRoutes(app: FastifyInstance, context: AppContext
    * Distinct from dispatching it again: the worktree is kept, so the next run
    * continues in the checkout the last one left rather than starting over.
    */
+  /**
+   * Runs a card's verify command now (T57).
+   *
+   * Runs where the card's work is - its worktree - rather than in the board's
+   * checkout, so the answer is about the branch under review rather than about
+   * whatever the operator happens to have checked out.
+   */
+  app.post<{ Params: { boardId: string; cardId: string } }>(
+    '/api/boards/:boardId/cards/:cardId/verify',
+    async (request, reply) => {
+      const result = await context.dispatcher.verifyNow(
+        request.params.boardId,
+        request.params.cardId,
+      );
+
+      // Null means the card has no verify command. Not a failure, and not a
+      // pass either: reporting it as either would be the board asserting
+      // something nobody checked.
+      return result === null
+        ? reply.send({ ran: false, note: 'This card has no verify command.' })
+        : reply.send({ ran: true, result, note: describeVerify(result) });
+    },
+  );
+
   app.post<{ Params: { boardId: string; cardId: string }; Body: { note?: unknown } }>(
     '/api/boards/:boardId/cards/:cardId/retry',
     (request, reply) => {
