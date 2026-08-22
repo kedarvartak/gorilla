@@ -47,6 +47,7 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
   const [toolFilter, setToolFilter] = useState('');
   const [density, setDensity] = useState<string | null>(null);
   const [repeats, setRepeats] = useState<string | null>(null);
+  const [transcript, setTranscript] = useState<{ text?: string; note?: string } | null>(null);
 
   const load = useCallback(
     async (from: number, replace: boolean) => {
@@ -100,6 +101,32 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
         {/* A denial storm renders as eighty rows that each look like work.
             This is the one line that says they were all the same call. */}
         {repeats === null ? null : <span className="text-warn">{repeats}</span>}
+
+        {/* The reasoning, which the events do not carry. The board has stored
+            this path since Phase 0 and never opened it. */}
+        <button
+          type="button"
+          className="ml-auto rounded border border-line px-2 py-0.5 font-mono text-[11px] text-dim hover:text-text"
+          onClick={() => {
+            if (transcript !== null) {
+              setTranscript(null);
+              return;
+            }
+            void api
+              .runTranscript<{ available: boolean; text?: string; note?: string }>(runId)
+              .then((body) =>
+                setTranscript(
+                  body === null
+                    ? { note: 'The transcript could not be read.' }
+                    : body.available
+                      ? { text: body.text ?? '' }
+                      : { note: body.note ?? 'No transcript.' },
+                ),
+              );
+          }}
+        >
+          {transcript === null ? 'transcript' : 'events'}
+        </button>
         {compactions > 0 ? (
           <span className="text-warn">
             {compactions} compaction{compactions === 1 ? '' : 's'}
@@ -141,7 +168,23 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
         </button>
       </header>
 
-      <ol className="min-h-0 flex-1 overflow-y-auto px-4 py-2 font-mono text-[11px]">
+      {transcript === null ? null : (
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
+          {transcript.text === undefined ? (
+            <p className="text-dim">{transcript.note}</p>
+          ) : (
+            <pre className="whitespace-pre-wrap font-mono text-[11px] text-dim">
+              {transcript.text === '' ? 'The transcript is empty.' : transcript.text}
+            </pre>
+          )}
+        </div>
+      )}
+
+      <ol
+        className={`min-h-0 flex-1 overflow-y-auto px-4 py-2 font-mono text-[11px] ${
+          transcript === null ? '' : 'hidden'
+        }`}
+      >
         {entries.map((entry) =>
           entry.event === 'PreCompact' ? (
             <li key={entry.id} className="my-2 flex items-center gap-2 text-warn">

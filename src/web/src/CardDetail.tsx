@@ -497,6 +497,8 @@ export function CardDetail({
   const [openDiff, setOpenDiff] = useState<{ path: string; text: string } | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [retryNote, setRetryNote] = useState('');
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewNote, setReviewNote] = useState<string | null>(null);
   const [showEntries, setShowEntries] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [timelineRunId, setTimelineRunId] = useState<string | null>(null);
@@ -1276,6 +1278,33 @@ export function CardDetail({
                       </li>
                     ))}
                   </ul>
+                )}
+              </div>
+            )}
+
+            {detail.workspace === null ? null : (
+              <div className="mb-3">
+                {/* What it costs, before it is pressed. A button that quietly
+                    spends a model call is one an operator presses twice. */}
+                <button
+                  type="button"
+                  className="rounded border border-line px-2 py-0.5 font-mono text-[11px] text-dim hover:text-text disabled:opacity-50"
+                  disabled={reviewing}
+                  title="Asks a session that did not write this branch to read it. One model call on your Claude Code quota. Anything it raises has to be judged before this merges."
+                  onClick={() => {
+                    setReviewing(true);
+                    setReviewNote(null);
+                    void api
+                      .secondOpinion(cardId)
+                      .then((result) => setReviewNote(result.note))
+                      .catch((cause: Error) => setError(cause.message))
+                      .finally(() => setReviewing(false));
+                  }}
+                >
+                  {reviewing ? 'reading the branch…' : 'ask for a second opinion'}
+                </button>
+                {reviewNote === null ? null : (
+                  <p className="mt-1 font-mono text-[11px] text-dim">{reviewNote}</p>
                 )}
               </div>
             )}

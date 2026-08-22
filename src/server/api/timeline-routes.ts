@@ -1,6 +1,13 @@
+import { existsSync } from 'node:fs';
+
+import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
+
 import type { AppContext } from '../app.js';
+import { runs } from '../db/schema.js';
+import { notFound } from './errors.js';
 import { parseObject } from '../json.js';
+import { readTailWindow } from '../transcript/index.js';
 import { densityOf, describeDensity, totalsOf } from '../timeline/density.js';
 import { describeRepeats, repeatsIn } from '../timeline/repeats.js';
 
@@ -105,6 +112,55 @@ export function registerTimelineRoutes(app: FastifyInstance, context: AppContext
       hasMore: rows.length === limit,
     });
   });
+
+  /**
+   * The conversation, not the events (T71).
+   *
+   * The board has stored a transcript path on every run since Phase 0 and has
+   * never opened one. The timeline shows what the hooks saw - a tool asked
+   * for, a tool answered - which is the shape of the work and not its
+   * reasoning. The reasoning is on disk, in a file nothing has ever read back
+   * to the operator.
+   */
+  app.get<{ Params: { runId: string }; Querystring: { chars?: string } }>(
+    '/api/runs/:runId/transcript',
+    async (request, reply) => {
+      const run = context.database.db
+        .select()
+        .from(runs)
+        .where(eq(runs.id, request.params.runId))
+        .get();
+      if (run === undefined) return notFound(reply, 'No such run.');
+
+      if (run.transcriptPath === null) {
+        // Not an error. An attached session that never reported one, or a run
+        // from before the path was recorded, simply has nothing to open.
+        return reply.send({ available: false, note: 'This run recorded no transcript path.' });
+      }
+
+      if (!existsSync(run.transcriptPath)) {
+        // Said plainly rather than as an empty transcript. The file is
+        // Claude Code's, not the board's, and it can be cleaned up underneath.
+        return reply.send({
+          available: false,
+          note: `The transcript is no longer at ${run.transcriptPath}.`,
+        });
+      }
+
+      const requested = Number(request.query.chars);
+      const chars =
+        Number.isFinite(requested) && requested > 0 ? Math.min(requested, 200_000) : 20_000;
+
+      return reply.send({
+        available: true,
+        path: run.transcriptPath,
+        // The tail, because the end of a run is what an operator reads first
+        // and the whole thing can be megabytes.
+        text: await readTailWindow(run.transcriptPath, chars),
+        chars,
+      });
+    },
+  );
 
   app.get<{ Params: { runId: string } }>('/api/runs/:runId/facets', (request, reply) => {
     const events = context.database.sqlite
