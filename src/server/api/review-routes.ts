@@ -16,6 +16,7 @@ import { GATE_REACH, mergeGate, type GateCard } from '../review/gate.js';
 import { describeMergeReport, mergeBranches, mergeTargetFor } from '../review/merge.js';
 import { isMerging, resolveConflicts } from '../review/resolve.js';
 import { branchDiff } from '../worktree/diff.js';
+import { compareCards } from '../review/compare.js';
 import { fail, present, publish } from './shared.js';
 
 /**
@@ -232,6 +233,41 @@ export function registerReviewRoutes(app: FastifyInstance, context: AppContext):
       } catch (error) {
         return fail(reply, error);
       }
+    },
+  );
+
+  /**
+   * Two attempts at the same work, side by side (T61).
+   */
+  app.get<{ Params: { boardId: string }; Querystring: { cards?: string } }>(
+    '/api/boards/:boardId/compare',
+    async (request, reply) => {
+      const cardIds = (request.query.cards ?? '')
+        .split(',')
+        .map((id) => id.trim())
+        .filter((id) => id !== '');
+
+      if (cardIds.length < 2) {
+        return badRequest(reply, 'Name at least two cards to compare.', 'cards');
+      }
+
+      const board = context.database.db
+        .select()
+        .from(boards)
+        .where(eq(boards.id, request.params.boardId))
+        .get();
+
+      if (board === undefined) return notFound(reply, 'No such board.');
+
+      return reply.send(
+        await compareCards({
+          sqlite: context.database.sqlite,
+          repoCwd: board.cwd,
+          manager: context.dispatcher.worktreesFor(board.cwd),
+          cardIds,
+          verifyFor: (cardId) => context.dispatcher.verifyResultFor(cardId)?.status ?? null,
+        }),
+      );
     },
   );
 

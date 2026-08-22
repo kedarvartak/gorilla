@@ -181,7 +181,7 @@ because each one is reachable from what exists, not because the category has the
 
 | Id | Task | Done when | Status |
 | --- | --- | --- | --- |
-| T61 | Several attempts at one card | A card can be run N times on N branches, and the board presents the attempts side by side for the operator to choose between. | open |
+| T61 | Several attempts at one card | ~~Rescoped: compare two cards, do not re-key the dispatch path.~~ Cloning already gives two branches; the comparison is what was missing. | merged |
 | T62 | Steer a running session | ~~Withdrawn: not reachable.~~ A headless run reads its prompt from argv and the launcher gives it no stdin; there is no channel to steer it through. See the rescope. | dropped |
 | T63 | Keep the transcript after the worktree is gone | ~~Withdrawn: the premise is false.~~ Transcripts live in `~/.claude/projects/`, outside the worktree; `git worktree remove` does not touch them. Checked against the real database. | dropped |
 | T64 | Dependency graph on the board | ~~Rescoped: a plan, not a picture.~~ The order the board will work in, with each waiting card naming what it waits for. | merged |
@@ -222,6 +222,17 @@ Code already keeps, which is where the session lives and what `--resume` reads.
 The launcher has been able to pass `--resume` since it was written and nothing
 ever set it, so the work was not building a checkpointer - it was using the
 checkpoint that was already there.
+
+**T61, 22 August 2026.** Written as N runs of one card on N branches. Building
+that means re-keying three things: the worktree path, which is the card id; the
+lease primary key, which is the card id; and the runs table. Those are the
+pieces whose invariants exist to stop two agents sharing a checkout, and they
+are the last three worth destabilising for a comparison view.
+
+The cheap path already works and shipped the same day: clone the card, run
+both, and there are two branches. What was actually missing was the
+comparison, which is additive. So that is what was built, and it serves any
+future N-attempt work unchanged.
 
 **T64, 22 August 2026.** Written as a drawn dependency graph. Edges answer
 "what depends on what"; the operator's question is "why has nothing started",
