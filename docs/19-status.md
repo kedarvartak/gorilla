@@ -7,7 +7,7 @@ whatever got built stops being a record and becomes a description.
 This document is the other half: what actually exists, and what does not. It is the
 one file here that is expected to go out of date, so it says when it was last true.
 
-**Last verified: 22 August 2026, against `main` at 989 passing tests.**
+**Last verified: 22 August 2026, against `main` at 1,192 passing tests.**
 
 ## What is built
 
@@ -60,6 +60,22 @@ one file here that is expected to go out of date, so it says when it was last tr
 | Webhook on halt and on a card settling | Working | `src/server/notify/webhook.ts` |
 | `gorilla status`, with `--json` | Working | `src/cli/commands/status.ts` |
 | Stale-interface warning, in serve, health and the board | Working | `src/server/web/stamp.ts` |
+| One dispatcher per card, enforced by the database | Working | `src/server/dispatch/lease.ts` |
+| Fairness between boards sharing a machine | Working | `src/server/dispatch/fairness.ts` |
+| Resuming a run that was cut off | Working | `src/server/dispatch/resume.ts` |
+| A card scoped against a project rule, flagged | Working | `src/server/cards/contradictions.ts` |
+| Blast radius guessed from similar cards | Working | `src/server/cards/blast-radius.ts` |
+| A card cloned, and a card split | Working | `src/server/api/board-routes.ts` |
+| A list of tasks read from a file | Working | `src/server/cards/intake.ts` |
+| GitHub issues read onto the board | Working, never against real GitHub | `src/server/cards/github.ts` |
+| A rejection turned into the card that addresses it | Working | `src/server/api/brief-routes.ts` |
+| A second opinion from a session that did not write it | Working, never run for real | `src/server/review/second-opinion.ts` |
+| What the operator is about to accept, assembled | Working | `src/server/review/readiness.ts` |
+| Two attempts compared side by side | Working | `src/server/review/compare.ts` |
+| Where a run's time went, and what it kept retrying | Working | `src/server/timeline/` |
+| The order the board will work in, and why | Working | `src/server/cards/plan.ts` |
+| A run turned back into a replayable fixture | Working | `src/server/fixtures/from-run.ts` |
+| `gorilla status`, `export`, `add`, `import`, `fixture`, `dispatch`, `verify` | Working | `src/cli/commands/` |
 
 Against doc 10's phases: Phase 0 and Phase 1 are complete and were verified against
 their exit gates (docs 15 and 17). Phase 2 is built. Most of Phase 3 is built - the
@@ -68,14 +84,13 @@ dispatcher - though its exit gate has not been run as a single unbroken cycle.
 
 ## What is not built
 
-- **`--json` on every command.** Only `status` has it. The rest are still shaped
-  for a person reading them.
-- **A second opinion before the merge gate.** Nothing reviews a branch except the
-  operator and the verify command.
-- **Checkpointing a long run.** A killed process restarts its card rather than
-  resuming it.
-- **Several attempts at one card.** The board runs a card once at a time, and
-  comparing two approaches means running them as two cards.
+Doc 20's list is empty: sixty-three entries built, five withdrawn with reasons.
+What remains undone is therefore what nobody has written down yet, plus one
+thing that was written down and deliberately not built:
+
+- **N runs of one card on N branches.** Comparing two attempts works by cloning
+  the card and comparing the two, because re-keying the worktree path, the lease
+  and the runs table is not worth a comparison view. Doc 20 records the argument.
 - **The project model, in full.** Doc 12's cross-card context. Board-level invariants
   reach every dispatched card, marked as project rules rather than card rules, and the
   subsystem map now records which paths each card touched - from git and from the run's
@@ -123,7 +138,7 @@ features nobody has ever used.
 ## How this was built
 
 Fourteen cards have been dispatched to agents and merged through the board itself, out
-of ninety-four merged pull requests. The board has observed its own construction since
+of one hundred and twenty-three merged pull requests. The board has observed its own construction since
 Phase 1, which is doc 10's stated intent and the reason several defects were found at
 all: a false "merged and verified" on an empty branch, a run that read as in progress
 for twenty-five hours, and worktrees forgotten on every restart were each found by
@@ -131,9 +146,23 @@ using the thing rather than by testing it.
 
 ## The backlog, as of 22 August 2026
 
-Doc 20 holds sixty-eight numbered items. Twenty-eight are merged or were found to
-be already built; six were withdrawn on contact with the code, struck through
-rather than deleted.
+Doc 20 holds sixty-eight numbered items and none are open. Sixty-three are
+built or were found already built; five were withdrawn on contact with the
+code, struck through rather than deleted, each with the argument that killed
+them.
+
+The withdrawals are the part worth reading. Two were unmeasurable - an
+invariant nobody can prove went unused, a running session with no channel to
+steer it through. One was a false premise: worktree removal does not discard a
+transcript, which lives elsewhere. One collapsed into another. One was rejected
+on cost: N attempts per card would re-key the three structures that stop two
+agents sharing a checkout.
+
+Several more were narrowed rather than dropped. A reaper became a report, a
+template store became a clone, a drawn graph became an ordered list, and a
+prose contradiction check became a path check - in each case because the
+written version was either unreachable or would have asserted something the
+board cannot see.
 
 Two of them came out of using the product rather than reading it, which is the
 pattern doc 10 predicted and this document keeps recording. `gorilla status`, on
