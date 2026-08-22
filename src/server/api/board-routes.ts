@@ -545,6 +545,78 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
     },
   );
 
+  /**
+   * Splitting a card too large to dispatch (T52).
+   *
+   * A card an agent cannot finish in one run is not a card, it is a project,
+   * and the failure it produces is expensive: a run that spends its budget
+   * getting a third of the way and leaves a branch nobody wants.
+   *
+   * The parts depend on the original, not on each other. That is the
+   * conservative reading: the operator said this work divides, not that it
+   * sequences, and inventing an order between them would serialise work that
+   * could have run in parallel. They can add an order themselves.
+   */
+  app.post<{ Params: { cardId: string }; Body: { titles?: unknown } }>(
+    '/api/cards/:cardId/split',
+    (request, reply) => {
+      const titles = request.body?.titles;
+
+      if (!Array.isArray(titles) || titles.length < 2) {
+        return badRequest(
+          reply,
+          'Splitting a card needs at least two titles. One is a rename, not a split.',
+          'titles',
+        );
+      }
+
+      const cleaned = titles
+        .filter((title): title is string => typeof title === 'string')
+        .map((title) => title.trim())
+        .filter((title) => title !== '');
+
+      if (cleaned.length !== titles.length) {
+        return badRequest(reply, 'Every part needs a title.', 'titles');
+      }
+
+      try {
+        const source = getCard(context.database, request.params.cardId);
+
+        const parts = cleaned.map((title) => {
+          const part = createCard(context.database, {
+            boardId: source.boardId,
+            title,
+            body: [
+              `Split from "${source.title}".`,
+              '',
+              // The original's body is carried rather than divided. Dividing it
+              // would mean guessing which half of a description belongs to
+              // which part, and guessing wrong on the operator's behalf.
+              source.body.trim() === '' ? '' : source.body.trim(),
+            ]
+              .join('\n')
+              .trim(),
+            guardrails: parseGuardrails(source.guardrails),
+            goalCondition: source.goalCondition,
+            agentModel: source.agentModel,
+            agentEffort: source.agentEffort,
+            priority: source.priority,
+          });
+
+          addDependency(context.database, part.id, source.id);
+          publish('card-created', present(part));
+          return present(part);
+        });
+
+        // The original stays. It is the thing the parts depend on and the place
+        // the history lives; deleting it would orphan every run it already has.
+        return reply.code(201).send({ source: present(source), parts });
+      } catch (error) {
+        return fail(reply, error);
+      }
+    },
+  );
+
   app.post<{ Params: { cardId: string }; Body: { columnId?: string; index?: number } }>(
     '/api/cards/:cardId/move',
     (request, reply) => {

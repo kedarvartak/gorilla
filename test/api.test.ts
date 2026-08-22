@@ -817,3 +817,90 @@ describe('a new card shaped like one that worked', () => {
     expect(clone.body.title).toBe('The next one');
   });
 });
+
+describe('splitting a card that is too large', () => {
+  async function card(title: string): Promise<string> {
+    const created = await json<{ id: string }>('POST', `/api/boards/${boardId}/cards`, { title });
+    await json('PATCH', `/api/cards/${created.body.id}`, {
+      body: 'Everything that needs doing.',
+      guardrails: { verify: 'npm test' },
+      goalCondition: '`npm test` exits 0',
+    });
+    return created.body.id;
+  }
+
+  it('makes a card for each part', async () => {
+    const source = await card('A whole project');
+
+    const split = await json<{ parts: { title: string }[] }>('POST', `/api/cards/${source}/split`, {
+      titles: ['The first half', 'The second half'],
+    });
+
+    expect(split.status).toBe(201);
+    expect(split.body.parts.map((part) => part.title)).toEqual([
+      'The first half',
+      'The second half',
+    ]);
+  });
+
+  it('carries the context each part will need', async () => {
+    const source = await card('A whole project');
+
+    const split = await json<{ parts: { body: string; guardrails: { verify: string } }[] }>(
+      'POST',
+      `/api/cards/${source}/split`,
+      { titles: ['One', 'Two'] },
+    );
+
+    // The body is carried rather than divided: dividing it means guessing
+    // which half of a description belongs to which part.
+    expect(split.body.parts[0]?.body).toContain('Everything that needs doing.');
+    expect(split.body.parts[0]?.body).toContain('Split from "A whole project"');
+    expect(split.body.parts[0]?.guardrails.verify).toBe('npm test');
+  });
+
+  it('makes the parts depend on the original, not on each other', async () => {
+    const source = await card('A whole project');
+
+    const split = await json<{ parts: { id: string }[] }>('POST', `/api/cards/${source}/split`, {
+      titles: ['One', 'Two'],
+    });
+
+    // The operator said this divides, not that it sequences. Inventing an
+    // order would serialise work that could have run in parallel.
+    const first = await json<{ dependsOn: string[] }>(
+      'GET',
+      `/api/cards/${split.body.parts[0]?.id ?? ''}`,
+    );
+
+    expect(first.body.dependsOn).toEqual([source]);
+  });
+
+  it('keeps the original', async () => {
+    const source = await card('A whole project');
+    await json('POST', `/api/cards/${source}/split`, { titles: ['One', 'Two'] });
+
+    // It is what the parts depend on and where the history lives; deleting it
+    // would orphan every run it already has.
+    expect((await json('GET', `/api/cards/${source}`)).status).toBe(200);
+  });
+
+  it('refuses a split into one', async () => {
+    const source = await card('A whole project');
+
+    const refused = await json<{ error: string }>('POST', `/api/cards/${source}/split`, {
+      titles: ['Just the one'],
+    });
+
+    expect(refused.status).toBe(400);
+    expect(refused.body.error).toContain('a rename, not a split');
+  });
+
+  it('refuses a part with no title', async () => {
+    const source = await card('A whole project');
+
+    const refused = await json('POST', `/api/cards/${source}/split`, { titles: ['One', '  '] });
+
+    expect(refused.status).toBe(400);
+  });
+});

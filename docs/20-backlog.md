@@ -150,7 +150,7 @@ The point of the product: work that continues correctly while nobody is watching
 | T49 | Card templates | ~~Rescoped: cards are the templates.~~ A card can be cloned - body, guardrails, goal, models - without anything that happened to it. | merged |
 | T50 | Import GitHub issues as cards | Issues become cards with their origin recorded, without polling anything on a timer by default. | deferred |
 | T51 | Bulk card creation from a file | A markdown list becomes cards in one operation, with a dry run. | merged |
-| T52 | Card splitting | A card too large to dispatch can be split into dependent cards, preserving its context. | open |
+| T52 | Card splitting | A card too large to dispatch can be split into cards that depend on it, carrying its context. | merged |
 | T53 | Duplicate card detection | A new card that restates an existing one is flagged at creation. | merged |
 
 ## I. Command line and export
