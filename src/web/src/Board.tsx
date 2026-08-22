@@ -93,7 +93,7 @@ function ColumnView({
         {column.isReviewGate ? (
           <span className="size-1 rounded-full bg-attention" aria-hidden />
         ) : null}
-        <span className="text-[11px] tabular-nums text-faint">{cards.length}</span>
+        <span className="text-[12.5px] tabular-nums text-faint">{cards.length}</span>
       </header>
 
       <SortableContext items={cards.map((card) => card.id)} strategy={verticalListSortingStrategy}>
@@ -110,7 +110,7 @@ function ColumnView({
           {cards.length === 0 ? (
             /* An empty column is a legitimate state, not a setup step nobody
                completed, so it says what would put a card here. */
-            <li className="px-1 py-2 text-[11px] text-faint">
+            <li className="px-1 py-2 text-[12.5px] text-faint">
               {column.isTerminal ? 'Nothing finished yet.' : 'Nothing here.'}
             </li>
           ) : null}
@@ -348,7 +348,7 @@ export function Board(): ReactElement {
           {/* Three numbers, and only three. What is happening, what wants you,
               what finished - in that order, because that is the order an
               operator asks. */}
-          <dl className="flex items-baseline gap-4 text-[11px]">
+          <dl className="flex items-baseline gap-4 text-[12.5px]">
             <div className="flex items-baseline gap-1.5">
               <dt className="text-faint">Running</dt>
               <dd className="tabular-nums text-ink">{dispatch?.running.length ?? 0}</dd>
@@ -487,7 +487,7 @@ export function Board(): ReactElement {
         )}
 
         {hits === null ? null : (
-          <div className="border-b border-line bg-well px-4 py-2 text-[11px]">
+          <div className="border-b border-line bg-well px-4 py-2 text-[12.5px]">
             {hits.length === 0 ? (
               <span className="text-dim">Nothing matches “{query}”.</span>
             ) : (

@@ -114,8 +114,8 @@ export function Invariants({
   return (
     <Panel title="Project rules" onClose={onClose}>
       <header className="flex items-baseline gap-3 border-b border-line bg-surface px-4 py-2.5">
-        <h2 className="text-[13px] font-semibold tracking-tight text-ink">Project rules</h2>
-        <span className="text-[11px] text-dim">Handed to every card this board dispatches</span>
+        <h2 className="text-[14.5px] font-semibold tracking-tight text-ink">Project rules</h2>
+        <span className="text-[12.5px] text-dim">Handed to every card this board dispatches</span>
         <button
           type="button"
           aria-label="Close"
@@ -172,14 +172,14 @@ export function Invariants({
                     className="rounded border border-dashed border-line bg-surface px-3 py-2"
                   >
                     <div className="text-ink">{proposal.statement}</div>
-                    <div className="text-[11px] text-dim">
+                    <div className="text-[12.5px] text-dim">
                       {/* Named, because the claim is falsifiable and the
                         operator may disagree with it. */}
                       {proposal.cards.map((card) => card.title).join(', ')}
                     </div>
                     <button
                       type="button"
-                      className="mt-1 rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-ink"
+                      className="mt-1 rounded border border-line px-2 py-0.5 text-[12.5px] text-dim hover:text-ink"
                       onClick={() => void accept(proposal.statement)}
                     >
                       make it a project rule
@@ -200,13 +200,13 @@ export function Invariants({
                 {rule.sourceCardId === null ? null : (
                   // Where it came from, because a rule whose origin nobody knows
                   // is a rule nobody dares remove.
-                  <span className="text-[11px] text-dim">
+                  <span className="text-[12.5px] text-dim">
                     learned on {rule.sourceCardId.slice(0, 8)}
                   </span>
                 )}
                 <button
                   type="button"
-                  className="ml-auto rounded border border-line px-2 py-0.5 text-[11px] text-dim hover:text-danger"
+                  className="ml-auto rounded border border-line px-2 py-0.5 text-[12.5px] text-dim hover:text-danger"
                   onClick={() => void remove(rule.id)}
                 >
                   remove

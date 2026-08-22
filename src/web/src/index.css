@@ -68,8 +68,11 @@ body {
   background: var(--color-canvas);
   color: var(--color-ink);
   font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 1.45;
+  /* 14px, not 13. The board was built for density and lost legibility for it,
+     which the detail pane felt most: that surface is prose, read at length,
+     usually first thing. */
+  font-size: 14px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
@@ -88,9 +91,9 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 1px 7px;
+  padding: 1.5px 8px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 1.5;
   white-space: nowrap;
@@ -115,10 +118,50 @@ body {
   color: var(--color-info);
 }
 
+/**
+ * A section of the card detail.
+ *
+ * The pane holds a dozen independent things - the brief, the guardrails, the
+ * diff, what the run established, what is waiting on a verdict. Stacked in one
+ * column separated by rules, they read as one long document that has to be
+ * scrolled to be surveyed. Bounded and flowed into columns, they can be
+ * surveyed at a glance, which is what an operator deciding whether to merge is
+ * actually doing.
+ */
+.sections {
+  column-gap: 16px;
+}
+
+@media (min-width: 1100px) {
+  .sections {
+    column-count: 2;
+  }
+}
+
+@media (min-width: 1700px) {
+  .sections {
+    column-count: 3;
+  }
+}
+
+.section {
+  /* A section is never split down the middle by a column break: half a table
+     at the bottom of one column and half at the top of the next is worse than
+     an uneven column. */
+  break-inside: avoid;
+  display: inline-block;
+  width: 100%;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
 /* Structure, not text. Tracked out so a label reads as a different kind of
    thing from the content beneath it. */
 .eyebrow {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -129,7 +172,7 @@ body {
    are English and are set in the body face like everything else. */
 .ident {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12.5px;
 }
 
 :focus-visible {

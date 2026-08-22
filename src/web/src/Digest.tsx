@@ -122,33 +122,35 @@ function Section({
                 >
                   <div className="flex items-baseline gap-3">
                     <span className={dim ? 'text-dim' : 'text-ink'}>{entry.title}</span>
-                    <span className="text-[11px] text-dim">{entry.status}</span>
+                    <span className="text-[12.5px] text-dim">{entry.status}</span>
                     {entry.waitedFor === null ? null : (
                       // The number is the point: a card nobody has touched for
                       // three days is a different problem from one that
                       // stopped last night.
-                      <span className="text-[11px] text-dim">untouched for {entry.waitedFor}</span>
+                      <span className="text-[12.5px] text-dim">
+                        untouched for {entry.waitedFor}
+                      </span>
                     )}
                     {/* What it cost, when anything recorded it. Absent rather
                         than zero: a card whose runs reported no usage and one
                         that cost nothing are different facts (T76). */}
                     {entry.spent === null || entry.spent === undefined ? null : (
-                      <span className="text-[11px] text-dim">
+                      <span className="text-[12.5px] text-dim">
                         {Math.round(entry.spent / 1000)}k tokens
                       </span>
                     )}
                     {(entry.contradictions ?? 0) === 0 ? null : (
-                      <span className="text-[11px] text-danger">runs into a project rule</span>
+                      <span className="text-[12.5px] text-danger">runs into a project rule</span>
                     )}
                     {reason === null ? null : (
-                      <span className={`ml-auto text-[11px] ${reason.tone}`}>{reason.text}</span>
+                      <span className={`ml-auto text-[12.5px] ${reason.tone}`}>{reason.text}</span>
                     )}
                   </div>
                   {/* The brief's own headline, so this screen and the card
                       agree rather than each summarising separately - minus the
                       card's title, which the brief repeats and which is on the
                       line directly above. */}
-                  <div className="mt-0.5 text-[11px] text-dim">
+                  <div className="mt-0.5 text-[12.5px] text-dim">
                     {withoutTitle(entry.headline, entry.title)}
                   </div>
                 </button>
@@ -198,8 +200,8 @@ export function Digest({
   return (
     <Panel title="The morning digest" onClose={onClose}>
       <header className="flex items-baseline gap-3 border-b border-line bg-surface px-4 py-2.5">
-        <h2 className="text-[13px] font-semibold tracking-tight text-ink">While you were away</h2>
-        <span className="text-[11px] text-dim">
+        <h2 className="text-[14.5px] font-semibold tracking-tight text-ink">While you were away</h2>
+        <span className="text-[12.5px] text-dim">
           {body === null
             ? ''
             : `since ${new Date(body.since).toLocaleString()} · ${String(body.entries.length)} active card(s)`}
