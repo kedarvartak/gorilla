@@ -110,6 +110,9 @@ features nobody has ever used.
   tests against a fake CLI. Neither has stopped anything that was spending money.
 - **A dispatch window holding a real overnight queue.** The clock arithmetic is
   tested; no board has yet gone to sleep at 07:00 and woken at 22:00.
+- **A GitHub import against real GitHub.** `gorilla import` is tested against a
+  stubbed transport and has never been given a token. What is proven is the shape
+  handling; what is not is that GitHub answers the way the tests assume.
 - **An unattended overnight batch that completed clean.** The one attempt found four
   defects, which was worth more than the batch would have been.
 
