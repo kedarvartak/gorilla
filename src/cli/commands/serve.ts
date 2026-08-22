@@ -67,6 +67,9 @@ export const serveCommand: Command = {
     if (server.reconciledCards !== null) {
       process.stderr.write(`  ${server.reconciledCards}\n`);
     }
+    // The one warning here the operator can fix in ten seconds, and the one
+    // that otherwise presents as the board mysteriously lacking a feature.
+    if (server.staleBuild !== null) process.stderr.write(`  ${server.staleBuild}\n`);
     if (server.adopted > 0) {
       process.stderr.write(`  Rediscovered ${String(server.adopted)} card worktree(s).\n`);
     }

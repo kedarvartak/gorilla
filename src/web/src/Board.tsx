@@ -99,6 +99,8 @@ export function Board(): ReactElement {
   const [dispatch, setDispatch] = useState<DispatchState | null>(null);
   const [live, setLive] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Set when the served bundle is older than the server serving it (T1, T2). */
+  const [staleBuild, setStaleBuild] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [newPriority, setNewPriority] = useState<Card['priority']>('normal');
   const [openCardId, setOpenCardId] = useState<string | null>(null);
@@ -134,6 +136,27 @@ export function Board(): ReactElement {
     } catch (cause) {
       setError((cause as Error).message);
     }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    // Asked once, at open. The answer cannot change while the page is loaded:
+    // a rebuilt server is a restarted server, and this bundle would be gone.
+    void fetch('/health')
+      .then(async (response): Promise<unknown> => (response.ok ? await response.json() : null))
+      .then((body: unknown) => {
+        if (cancelled || typeof body !== 'object' || body === null) return;
+        const build = (body as { build?: { note?: string | null } }).build;
+        setStaleBuild(build?.note ?? null);
+      })
+      .catch(() => {
+        /* the banner is a courtesy; failing to fetch it must not break the board */
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -418,6 +441,13 @@ export function Board(): ReactElement {
           </button>
         </div>
       ) : null}
+
+      {/* Shown above everything, because the symptom otherwise looks like a
+          missing feature rather than an old bundle - which is what it looked
+          like the two times this actually happened. */}
+      {staleBuild === null ? null : (
+        <div className="border-b border-line bg-panel-2 px-4 py-2 text-warn">{staleBuild}</div>
+      )}
 
       {error !== null ? (
         <div className="border-b border-line bg-panel-2 px-4 py-2 text-warn">{error}</div>

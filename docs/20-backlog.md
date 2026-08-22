@@ -38,8 +38,8 @@ Two facts that must agree, currently agreeing only by luck.
 
 | Id | Task | Done when | Status |
 | --- | --- | --- | --- |
-| T1 | Build handshake between server and interface | The server exposes its build id; the UI refuses to run against a mismatched one and says so, rather than calling routes that 404. | open |
-| T2 | Refuse to serve a stale bundle | `src/server/web/routes.ts` serves the built UI only when its manifest matches the running server, and reports the mismatch otherwise. | open |
+| T1 | Build handshake between server and interface | The server compares when the interface was built against when it was built itself, and the board says so. Reports rather than refuses: see the note below. | merged |
+| T2 | Refuse to serve a stale bundle | ~~Rescoped: reports rather than refuses.~~ Folded into T1. | merged |
 | T3 | Route contract tests | Every route in the API has a test asserting its response shape, so a shape change breaks a test rather than a screen. | open |
 | T4 | Reject unknown fields on card update | `PATCH /api/cards/:cardId` returns 400 for a field it does not know, instead of accepting and dropping it. | open |
 | T5 | Migration ladder test | Every migration applies to an empty database and to the previous version's database, asserted in CI. | open |
@@ -168,6 +168,18 @@ because each one is reachable from what exists, not because the category has the
 | T60 | Failure taxonomy | Failures are classified by cause and counted, so the common failure is visible rather than remembered. | open |
 
 ---
+
+## Rescopes
+
+**T1 and T2, 22 August 2026.** Both were written as a refusal: the interface
+would decline to run against a mismatched server, and the server would decline
+to serve a stale bundle. Building it made the refusal look wrong. A board that
+will not start because its bundle is out of date leaves the operator with
+nothing, and a stale bundle is usually still fine for whatever they came to do.
+Being told is the entire ask; a locked door is a different and worse product.
+
+They also collapsed into one item. The comparison is the same in both
+directions, and the second entry would have been the first one's error message.
 
 ## Audit, 22 August 2026
 

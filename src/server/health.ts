@@ -1,6 +1,7 @@
 import type { Database } from 'better-sqlite3';
 
 import type { Dispatcher } from './dispatch/dispatcher.js';
+import { readBuildStamp, type BuildStamp } from './web/stamp.js';
 
 /**
  * What the board is doing, in one request (T44).
@@ -44,6 +45,8 @@ export interface Health {
    * and the one that usually means the hooks are pointing somewhere else.
    */
   readonly lastEventAt: number | null;
+  /** Whether the interface being served was built from this server's source. */
+  readonly build: BuildStamp;
 }
 
 interface Counts {
@@ -100,15 +103,23 @@ export function readHealth(input: {
     at: number | null;
   };
 
+  const build = readBuildStamp();
+
   // Attention, not "unhealthy". A halted queue is often the gate working
   // correctly - it stopped for something that needs a person - and calling
   // that a failure teaches the operator to ignore the signal.
-  const status: HealthStatus = reported.some((board) => board.halted !== null) ? 'attention' : 'ok';
+  //
+  // A stale bundle asks for attention on different grounds: it is the state in
+  // which every other number here can be right and the board still shows the
+  // operator something out of date.
+  const status: HealthStatus =
+    build.stale || reported.some((board) => board.halted !== null) ? 'attention' : 'ok';
 
   return {
     status,
     uptimeMs: input.now - input.startedAt,
     boards: reported,
     lastEventAt: last.at,
+    build,
   };
 }
