@@ -6,6 +6,7 @@ import { createDefaultColumns } from '../cards/defaults.js';
 import { parseGuardrails } from '../cards/guardrails.js';
 import { blockersFor, dispatchableCards } from '../cards/eligibility.js';
 import { executionOrder } from '../cards/order.js';
+import { proposeInvariants } from '../cards/invariant-proposals.js';
 import { looksFinished } from '../cards/staleness.js';
 import { canonicaliseCwd } from '../ingest/binding.js';
 import { boards, cardDependencies, columns, invariants, runs, type Card } from '../db/schema.js';
@@ -268,6 +269,21 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
 
       publish('invariants-changed', { boardId: request.params.boardId });
       return reply.code(204).send();
+    },
+  );
+
+  /**
+   * Card rules that have become project rules (T15).
+   *
+   * Proposals, like the guardrail shortlist. Writing a project rule from three
+   * cards' worth of evidence is still the operator's call: an invariant
+   * reaches every future card, and one the board invented would constrain work
+   * nobody agreed to constrain.
+   */
+  app.get<{ Params: { boardId: string } }>(
+    '/api/boards/:boardId/invariant-proposals',
+    (request) => {
+      return proposeInvariants(context.database.sqlite, request.params.boardId);
     },
   );
 

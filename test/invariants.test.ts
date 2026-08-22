@@ -138,3 +138,72 @@ describe('what a dispatched card is told', () => {
     expect(context).not.toContain('Rules for this project');
   });
 });
+
+describe('noticing that a card rule has become a project rule', () => {
+  async function cardWithRule(title: string, prohibit: readonly string[]): Promise<string> {
+    const created = await json<{ id: string }>('POST', `/api/boards/${boardId}/cards`, { title });
+    await json('PATCH', `/api/cards/${created.body.id}`, { guardrails: { prohibit } });
+    return created.body.id;
+  }
+
+  async function proposals(): Promise<{ statement: string; cards: unknown[] }[]> {
+    return (
+      await json<{ statement: string; cards: unknown[] }[]>(
+        'GET',
+        `/api/boards/${boardId}/invariant-proposals`,
+      )
+    ).body;
+  }
+
+  it('proposes a rule three cards already carry', async () => {
+    for (const title of ['a', 'b', 'c']) await cardWithRule(title, ['src/db/schema.ts']);
+
+    expect((await proposals()).map((entry) => entry.statement)).toEqual(['src/db/schema.ts']);
+  });
+
+  it('says nothing about a rule only two cards carry', async () => {
+    // Two cards sharing a rule is ordinary: they are usually one piece of work
+    // split in half. Three is where it stops being about those cards.
+    for (const title of ['a', 'b']) await cardWithRule(title, ['src/db/schema.ts']);
+
+    expect(await proposals()).toEqual([]);
+  });
+
+  it('matches wording rather than the exact string', async () => {
+    await cardWithRule('a', ['Never edit the schema.']);
+    await cardWithRule('b', ['never edit the schema']);
+    await cardWithRule('c', ['Never  edit the schema']);
+
+    // The same rule typed by hand onto three cards is three spellings of it,
+    // and an exact match would miss the case that motivates the feature.
+    expect(await proposals()).toHaveLength(1);
+  });
+
+  it('stops proposing one that is already a project rule', async () => {
+    for (const title of ['a', 'b', 'c']) await cardWithRule(title, ['src/db/schema.ts']);
+    await json('POST', `/api/boards/${boardId}/invariants`, { statement: 'src/db/schema.ts' });
+
+    expect(await proposals()).toEqual([]);
+  });
+
+  it('names the cards that carry it', async () => {
+    for (const title of ['first', 'second', 'third']) await cardWithRule(title, ['rule']);
+
+    // The claim is falsifiable and the operator may disagree with it, so the
+    // evidence travels with the proposal.
+    expect((await proposals())[0]?.cards).toHaveLength(3);
+  });
+
+  it('leaves verify commands alone', async () => {
+    for (const title of ['a', 'b', 'c']) {
+      const created = await json<{ id: string }>('POST', `/api/boards/${boardId}/cards`, { title });
+      await json('PATCH', `/api/cards/${created.body.id}`, {
+        guardrails: { verify: 'npm test' },
+      });
+    }
+
+    // A verify command is a property of the card's own work. Hoisting one to
+    // the project imposes one card's check on every other card.
+    expect(await proposals()).toEqual([]);
+  });
+});
