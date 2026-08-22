@@ -109,7 +109,7 @@ Everything here currently requires a terminal.
 | T37 | Review checklist from the ledger | The gate shows what was established during the run, so accepting is an informed act. | open |
 | T38 | Follow-up card from a rejected entry | Rejecting a ledger entry can create the card that addresses it, linked to its origin. | open |
 | T39 | Merge dry run | The board reports whether a branch would conflict, before the operator commits to merging. | merged |
-| T40 | Post-merge verification | The verify command runs once more on the merged result, and the card records that it did. | open |
+| T40 | Post-merge verification | ~~Withdrawn: built.~~ `mergeBranches` runs the verify command after each merge and records the result on the step. | built |
 
 ## G. Autonomy
 
@@ -141,10 +141,20 @@ The point of the product: work that continues correctly while nobody is watching
 | Id | Task | Done when | Status |
 | --- | --- | --- | --- |
 | T54 | `gorilla export` | The whole board state renders to one reviewable markdown file. | open |
-| T55 | `gorilla status` | Queue state, in-flight runs and halt state, without opening the interface. | open |
+| T55 | `gorilla status` | Queue state, in-flight runs and halt state, without opening the interface. | merged |
 | T56 | `gorilla dispatch` | A card is dispatched from the command line, reusing the service layer rather than the HTTP route. | open |
 | T57 | `gorilla verify` | The verify command runs against a card's branch from the terminal, reporting as the board would. | open |
-| T58 | Machine-readable output | Every command takes `--json`, so the board is scriptable. | open |
+| T58 | Machine-readable output | `status` takes `--json`. The rest of the commands do not yet. | open |
+
+## L. Found while building
+
+Entries that came out of using the thing, which is where doc 19 says the real
+defects have come from.
+
+| Id | Task | Done when | Status |
+| --- | --- | --- | --- |
+| T67 | A worktree must not register as a board of its own | `gorilla status` lists five boards on this machine, four of them named after card uuids: every dispatched card's worktree is a directory, `ensureBoardForCwd` runs per directory, and each one gets a board. Found when the status command first ran against the real database. | open |
+| T68 | Say nothing about a board with nothing on it | The status output is four-fifths empty boards. Partly T67's fault, but a board with no cards is worth one line at most. | open |
 
 ## K. Beyond one agent per card
 

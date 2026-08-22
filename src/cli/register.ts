@@ -6,6 +6,7 @@ import { probeCommand } from './commands/probe.js';
 import { replayCommand } from './commands/replay.js';
 import { reportCommand } from './commands/report.js';
 import { serveCommand } from './commands/serve.js';
+import { statusCommand } from './commands/status.js';
 
 /**
  * Single place commands are wired in. Importing this module has the side
@@ -25,4 +26,5 @@ export function registerBuiltinCommands(): void {
   registerCommand(replayCommand);
   registerCommand(reportCommand);
   registerCommand(serveCommand);
+  registerCommand(statusCommand);
 }
