@@ -177,7 +177,7 @@ export const api = {
   dispatchState: (boardId: string) => request<DispatchState>(`/api/boards/${boardId}/dispatch`),
 
   createCard: (boardId: string, title: string, priority: Card['priority'] = 'normal') =>
-    request<Card>(`/api/boards/${boardId}/cards`, {
+    request<Card & { duplicateNote?: string | null }>(`/api/boards/${boardId}/cards`, {
       method: 'POST',
       body: JSON.stringify({ title, priority }),
     }),

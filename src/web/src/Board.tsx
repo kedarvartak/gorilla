@@ -239,8 +239,11 @@ export function Board(): ReactElement {
   async function addCard(): Promise<void> {
     if (board === null || title.trim() === '') return;
     try {
-      await api.createCard(board.id, title.trim(), newPriority);
+      const created = await api.createCard(board.id, title.trim(), newPriority);
       setTitle('');
+      // Shown where errors are shown, but the card exists: this is a warning
+      // about the board's contents, not a failure to add to it (T53).
+      setError(created.duplicateNote ?? null);
     } catch (cause) {
       setError((cause as Error).message);
     }
