@@ -140,7 +140,7 @@ The point of the product: work that continues correctly while nobody is watching
 
 | Id | Task | Done when | Status |
 | --- | --- | --- | --- |
-| T54 | `gorilla export` | The whole board state renders to one reviewable markdown file. | open |
+| T54 | `gorilla export` | The whole board state renders to one reviewable markdown file, read from the database so it works with nothing serving. | merged |
 | T55 | `gorilla status` | Queue state, in-flight runs and halt state, without opening the interface. | merged |
 | T56 | `gorilla dispatch` | ~~Rescoped: it is an HTTP client, and has to be.~~ A card is dispatched from the command line by asking the running board. | merged |
 | T57 | `gorilla verify` | The verify command runs against a card's worktree from the terminal, through the board, reporting as the board would. | merged |
