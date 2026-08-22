@@ -118,7 +118,11 @@ function renderOffline(offline: Offline, url: string): string {
     '',
   ];
 
-  for (const board of offline.boards) {
+  const busy = offline.boards.filter(
+    (board) => board.queued > 0 || board.blocked > 0 || board.running > 0,
+  );
+
+  for (const board of busy) {
     lines.push(
       `${board.name}: ${String(board.queued)} queued, ${String(board.blocked)} blocked` +
         (board.running === 0
@@ -126,6 +130,15 @@ function renderOffline(offline: Offline, url: string): string {
           : `, ${String(board.running)} marked running (cut off - the next start will move them)`),
     );
   }
+
+  // Counted, not listed (T68). A board with nothing on it is worth one word;
+  // four of them listed in full is a report that is mostly padding, and the
+  // one board that matters is harder to find for it. Not omitted entirely,
+  // because "which boards does this database hold" is a real question.
+  const idle = offline.boards.length - busy.length;
+  if (idle > 0) lines.push(`${String(idle)} other board(s) have nothing on them.`);
+
+  if (offline.boards.length === 0) lines.push('This database holds no boards.');
 
   return lines.join('\n');
 }
