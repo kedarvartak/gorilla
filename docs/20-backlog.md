@@ -174,8 +174,8 @@ because each one is reachable from what exists, not because the category has the
 
 | Id | Task | Done when | Status |
 | --- | --- | --- | --- |
-| T59 | Throughput and lead time | The board reports cards completed, time from ready to merged, and where time is spent. | open |
-| T60 | Failure taxonomy | Failures are classified by cause and counted, so the common failure is visible rather than remembered. | open |
+| T59 | Throughput and lead time | The board reports cards added and merged, and the median time from a card being written to it merging. | merged |
+| T60 | Failure taxonomy | Failures are classified by cause and counted, so the common failure is visible rather than remembered. | merged |
 
 ---
 
