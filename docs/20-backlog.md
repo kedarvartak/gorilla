@@ -164,11 +164,11 @@ because each one is reachable from what exists, not because the category has the
 | Id | Task | Done when | Status |
 | --- | --- | --- | --- |
 | T61 | Several attempts at one card | A card can be run N times on N branches, and the board presents the attempts side by side for the operator to choose between. | open |
-| T62 | Steer a running session | An operator note reaches a live run without cancelling it, and the run records that it was steered. | open |
+| T62 | Steer a running session | ~~Withdrawn: not reachable.~~ A headless run reads its prompt from argv and the launcher gives it no stdin; there is no channel to steer it through. See the rescope. | dropped |
 | T63 | Keep the transcript after the worktree is gone | ~~Withdrawn: the premise is false.~~ Transcripts live in `~/.claude/projects/`, outside the worktree; `git worktree remove` does not touch them. Checked against the real database. | dropped |
 | T64 | Dependency graph on the board | The dependency edges are visible as a graph, not only as a blocked badge. | open |
 | T65 | Fairness across boards | Two boards on one machine cannot starve each other of the concurrency budget. | open |
-| T66 | Replay a card's run as a fixture | A recorded run becomes a regression fixture, so a dispatch bug is reproduced rather than described. | open |
+| T66 | Replay a card's run as a fixture | A run already in the database becomes a replayable fixture, so a bug found afterwards is reproduced rather than described. | merged |
 
 ## J. Metrics
 
@@ -180,6 +180,15 @@ because each one is reachable from what exists, not because the category has the
 ---
 
 ## Rescopes
+
+**T62, 22 August 2026. Withdrawn.** There is no channel. A dispatched run is
+`claude -p` with `stdio: ['ignore', 'pipe', 'pipe']`: it reads its prompt from
+argv and never reads standard input again, so nothing an operator types can
+reach it mid-turn. The alternatives are worse than nothing - a file the agent
+is asked to poll is advisory, and an agent deep in a turn will not poll it, so
+the board would show a steering feature that silently does not steer (R10).
+The nearest honest thing already exists: T22 delivers an operator's note to the
+next run, once, above everything the last one concluded.
 
 **T49, 22 August 2026.** Written as a named template store carrying guardrails
 and a verify command. A separate store of card-shaped objects is a second thing

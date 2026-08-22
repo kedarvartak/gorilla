@@ -255,3 +255,45 @@ describe('record then replay', () => {
     expect(Date.now() - started).toBeLessThan(5_000);
   });
 });
+
+describe('credentials, wherever they are', () => {
+  it('redacts a value under a secret-shaped key', () => {
+    // The content list is an allowlist of things that are long. A secret is
+    // short, so it was not on it, and a key called ANTHROPIC_API_KEY was
+    // neither content nor preserved - so its value went through verbatim.
+    const redacted = redactPayload({ env: { ANTHROPIC_API_KEY: 'sk-ant-not-a-real-key-000000' } });
+
+    expect(JSON.stringify(redacted)).not.toContain('sk-ant-not-a-real-key-000000');
+  });
+
+  it('redacts a credential pasted into ordinary text', () => {
+    // A secret printed by a tool or typed into a command line is not under a
+    // helpfully named key.
+    const redacted = redactPayload({ note: 'use ghp_abcdefghijklmnopqrstuvwxyz01 to push' });
+
+    const text = JSON.stringify(redacted);
+    expect(text).not.toContain('ghp_abcdefghijklmnopqrstuvwxyz01');
+    expect(text).toContain('[redacted secret]');
+  });
+
+  it('leaves identifiers alone', () => {
+    // Redacting anything that looks random would eat commit hashes, uuids and
+    // base64 content, and a fixture with its identifiers destroyed does not
+    // replay at all.
+    const redacted = redactPayload({
+      session_id: 'fdef2e6b-0fca-4d92-97f4-1272f1af793d',
+      sha: '9a0f0e8c1b2d3e4f5061728394a5b6c7d8e9f001',
+    });
+
+    expect(JSON.stringify(redacted)).toContain('fdef2e6b-0fca-4d92-97f4-1272f1af793d');
+    expect(JSON.stringify(redacted)).toContain('9a0f0e8c1b2d3e4f5061728394a5b6c7d8e9f001');
+  });
+
+  it('does not redact the name of a variable', () => {
+    // Source code mentioning ANTHROPIC_API_KEY is not a secret, and a fixture
+    // of a run that read this file should still be readable.
+    const redacted = redactPayload({ line: "const key = env['ANTHROPIC_API_KEY'];" });
+
+    expect(JSON.stringify(redacted)).toContain('ANTHROPIC_API_KEY');
+  });
+});

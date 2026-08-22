@@ -9,6 +9,7 @@ import { serveCommand } from './commands/serve.js';
 import { statusCommand } from './commands/status.js';
 import { exportCommand } from './commands/export.js';
 import { addCommand } from './commands/add.js';
+import { fixtureCommand } from './commands/fixture.js';
 import { dispatchCommand, verifyCommand } from './commands/card.js';
 
 /**
@@ -32,6 +33,7 @@ export function registerBuiltinCommands(): void {
   registerCommand(statusCommand);
   registerCommand(exportCommand);
   registerCommand(addCommand);
+  registerCommand(fixtureCommand);
   registerCommand(dispatchCommand);
   registerCommand(verifyCommand);
 }
