@@ -225,10 +225,9 @@ export function CardTile({
           {configurable ? (
             <div
               className="relative"
-              // dnd-kit listens on the card. Stop here, in capture, so opening
-              // the assignment chooser is never interpreted as beginning a drag.
-              onPointerDownCapture={(event) => event.stopPropagation()}
-              onClickCapture={(event) => event.stopPropagation()}
+              // dnd-kit listens on the card. Stop in the bubble phase: capture
+              // would prevent the button itself from receiving its click.
+              onPointerDown={(event) => event.stopPropagation()}
             >
               <button
                 type="button"
