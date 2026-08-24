@@ -1,38 +1,62 @@
-# Gorilla
+<div align="center"><pre>
+```text
+ ██████╗  ██████╗ ██████╗ ██╗██╗     ██╗      █████╗
+██╔════╝ ██╔═══██╗██╔══██╗██║██║     ██║     ██╔══██╗
+██║  ███╗██║   ██║██████╔╝██║██║     ██║     ███████║
+██║   ██║██║   ██║██╔══██╗██║██║     ██║     ██╔══██║
+╚██████╔╝╚██████╔╝██║  ██║██║███████╗███████╗██║  ██║
+ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚═╝  ╚═╝
+```
+</pre>
 
-A local-first Kanban board for driving Claude Code in autonomous modes without losing
-track of what is being built.
+**A local-first Kanban board for understanding autonomous Claude Code work.**
 
-Autonomous modes remove the interruptions that used to keep you informed: auto mode
-removes the per-tool prompt, `/goal` removes the per-turn prompt. The work continues;
-your model of the work does not. Gorilla binds each card to a real Claude Code session
-and accumulates a durable, readable record of what the agent did, decided, assumed,
-changed, and forgot - so that returning to a card after an unattended run takes two
-minutes rather than a transcript read you will not do.
+Gorilla helps you run Claude Code sessions unattended without losing track of what
+is being built. Each card is connected to a real Claude Code session and keeps a
+durable record of its changes, decisions, assumptions, risks, questions, and
+verification results.
 
-## Where it is
+It is not primarily an agent-orchestration tool. Orchestrators optimize for running
+more agents in parallel; Gorilla optimizes for **human comprehension**. When you
+return to a project, the board gives you a concise brief of what happened and what
+needs your judgement instead of requiring you to reread a long transcript.
 
-Working, and used to build itself: fourteen of its own cards have been dispatched to
-agents and merged through the board. It is not packaged or published, and several
-paths have passing tests but have never run in anger - which
-[docs/19-status.md](docs/19-status.md) lists separately, because "the tests pass" and
-"this has worked once for real" are different claims.
+## How it works
 
-Start with [docs/00-overview.md](docs/00-overview.md) for what it is for,
-[docs/19-status.md](docs/19-status.md) for what exists today, or
-[docs/20-backlog.md](docs/20-backlog.md) for every task and its status.
+1. Create cards describing the work and its definition of done.
+2. Dispatch cards to Claude Code sessions in isolated Git worktrees.
+3. Gorilla observes hooks, transcripts, tool activity, and Git changes.
+4. It builds a mechanical and model-assisted ledger for each card.
+5. Review the result, verify the work, and accept, correct, retry, or block it.
 
-## Using it
+The board can run manually or unattended, with review gates, dependencies, budgets,
+retries, dispatch windows, stall detection, notifications, and live updates. It runs
+locally using SQLite and does not require a hosted service or separate API key when
+using the Claude Code CLI.
+
+## Run it
 
 ```bash
-npm install && npm run build
-node dist/cli/index.js init     # write hook configuration into this project
-node dist/cli/index.js serve    # the board, at http://127.0.0.1:4300
+npm install
+npm run build
+node dist/cli/index.js init
+node dist/cli/index.js serve
 ```
 
-`init` registers the hooks that let the board see a session; `serve` runs the board and
-creates one for the directory it starts in. `doctor` reports what the board cannot see.
+Open **http://127.0.0.1:4300**.
 
-Plan work in a Claude Code conversation and post it with `/gorilla:plan`; bind a session
-to a card with `/gorilla:claim`. Synthesis runs through the Claude Code CLI on the quota
-you already have - no API key, and none is asked for.
+`init` installs the Claude Code hooks for the current project. `serve` starts the
+local board. Planning and claiming can be done from Claude Code with
+`/gorilla:plan` and `/gorilla:claim`.
+
+## Development
+
+```bash
+npm run dev       # development server
+npm run test      # build and run tests
+npm run typecheck
+npm run lint
+```
+
+Gorilla is intentionally local-first and Claude Code-specific: its strongest
+features depend on Claude Code hooks, transcripts, compaction events, and the CLI.
