@@ -1,13 +1,13 @@
 <div align="center"><pre>
-```text
+
  ██████╗  ██████╗ ██████╗ ██╗██╗     ██╗      █████╗
 ██╔════╝ ██╔═══██╗██╔══██╗██║██║     ██║     ██╔══██╗
 ██║  ███╗██║   ██║██████╔╝██║██║     ██║     ███████║
 ██║   ██║██║   ██║██╔══██╗██║██║     ██║     ██╔══██║
 ╚██████╔╝╚██████╔╝██║  ██║██║███████╗███████╗██║  ██║
  ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚═╝  ╚═╝
-```
-</pre>
+
+</pre></div>
 
 **A local-first Kanban board for understanding autonomous Claude Code work.**
 
@@ -36,7 +36,7 @@ using the Claude Code CLI.
 
 ## Run it
 
-```bash
+```
 npm install
 npm run build
 node dist/cli/index.js init
