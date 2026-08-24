@@ -53,6 +53,7 @@ function ColumnView({
   cards,
   runnable,
   onOpen,
+  onAssign,
   onRun,
   onCancel,
 }: {
@@ -60,6 +61,7 @@ function ColumnView({
   cards: Card[];
   runnable: ReadonlySet<string>;
   onOpen: (card: Card) => void;
+  onAssign: (card: Card, provider: Card['agentProvider']) => void;
   onRun: (card: Card) => void;
   onCancel: (card: Card) => void;
 }): ReactElement {
@@ -122,6 +124,7 @@ function ColumnView({
               runnable={runnable.has(card.id)}
               terminal={column.isTerminal}
               onOpen={onOpen}
+              onAssign={onAssign}
               onRun={onRun}
               onCancel={onCancel}
             />
@@ -247,6 +250,16 @@ export function Board(): ReactElement {
     } catch (cause) {
       // A refused move is usually a dependency guard, and the reason is the
       // useful part - so it is shown rather than swallowed.
+      setError((cause as Error).message);
+    }
+    await load();
+  }
+
+  async function assign(card: Card, agentProvider: Card['agentProvider']): Promise<void> {
+    try {
+      await api.updateCard(card.id, { agentProvider });
+      setError(null);
+    } catch (cause) {
       setError((cause as Error).message);
     }
     await load();
@@ -528,6 +541,7 @@ export function Board(): ReactElement {
                 cards={byColumn.get(column.id) ?? []}
                 runnable={runnable}
                 onOpen={(card) => setOpenCardId(card.id)}
+                onAssign={(card, provider) => void assign(card, provider)}
                 onRun={(card) => void run(card)}
                 onCancel={(card) => void cancel(card)}
               />

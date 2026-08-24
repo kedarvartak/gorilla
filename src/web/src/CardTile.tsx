@@ -1,8 +1,11 @@
-import type { ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
 
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Play, Robot, Stop } from '@phosphor-icons/react';
+import { CaretDown, Play, Stop } from '@phosphor-icons/react';
+
+import claudeLogo from './assets/claude-color.webp';
+import codexLogo from './assets/codex.webp';
 
 import type { Card } from './api.js';
 
@@ -57,6 +60,8 @@ export interface CardTileProps {
   /** In a terminal column. What a finished card needs shown is not the same. */
   readonly terminal: boolean;
   readonly onOpen: (card: Card) => void;
+  /** Reassigns an idle card to another supported coding CLI. */
+  readonly onAssign: (card: Card, provider: Card['agentProvider']) => void;
   readonly onRun: (card: Card) => void;
   readonly onCancel: (card: Card) => void;
 }
@@ -67,9 +72,11 @@ export function CardTile({
   runnable,
   terminal,
   onOpen,
+  onAssign,
   onRun,
   onCancel,
 }: CardTileProps): ReactElement {
+  const [assigning, setAssigning] = useState(false);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: card.id,
   });
@@ -216,16 +223,55 @@ export function CardTile({
           {/* A finished card does not need to be told which model ran it or what
               constrained it. Those answer "how will this go", and it has gone. */}
           {configurable ? (
-            <span
-              className={`chip inline-flex items-center gap-1 ${
-                card.agentProvider === 'codex' ? 'text-[#f59a4a]' : ''
-              }`}
-              title={`This card will run with ${card.agentProvider === 'codex' ? 'Codex' : 'Claude Code'}`}
-            >
-              <Robot size={13} weight="fill" aria-hidden />
-              {card.agentProvider === 'codex' ? 'Codex' : 'Claude'}
-              {card.agentModel === null ? '' : ` · ${card.agentModel}`}
-            </span>
+            <div className="relative">
+              <button
+                type="button"
+                className="chip inline-flex items-center gap-1 hover:bg-well"
+                title="Change the coding agent assigned to this card"
+                aria-expanded={assigning}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setAssigning((open) => !open);
+                }}
+              >
+                <img
+                  src={card.agentProvider === 'codex' ? codexLogo : claudeLogo}
+                  alt=""
+                  className="size-3.5 rounded-sm object-cover"
+                />
+                {card.agentProvider === 'codex' ? 'Codex' : 'Claude'}
+                {card.agentModel === null ? '' : ` · ${card.agentModel}`}
+                <CaretDown size={11} aria-hidden />
+              </button>
+              {!assigning ? null : (
+                <div className="absolute z-20 mt-1 flex min-w-28 flex-col gap-1 rounded-md border border-line bg-surface p-1 shadow-lg">
+                  {(
+                    [
+                      ['claude', 'Claude', claudeLogo],
+                      ['codex', 'Codex', codexLogo],
+                    ] as const
+                  ).map(([provider, label, logo]) => (
+                    <button
+                      key={provider}
+                      type="button"
+                      className={`flex items-center gap-1.5 rounded px-1.5 py-1 text-left text-[12.5px] hover:bg-well ${
+                        card.agentProvider === provider ? 'text-ink' : 'text-dim'
+                      }`}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setAssigning(false);
+                        if (provider !== card.agentProvider) onAssign(card, provider);
+                      }}
+                    >
+                      <img src={logo} alt="" className="size-4 rounded-sm object-cover" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           ) : null}
 
           {configurable && hard + advisory > 0 ? (
