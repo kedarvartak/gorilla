@@ -14,6 +14,7 @@ import { isValidHour } from '../dispatch/window.js';
 import { describeDuplicates, findDuplicates } from '../cards/duplicates.js';
 import { looksFinished } from '../cards/staleness.js';
 import { canonicaliseCwd } from '../ingest/binding.js';
+import type { AgentProvider } from '../agents/providers.js';
 import {
   boards,
   cardDependencies,
@@ -54,6 +55,7 @@ const EDITABLE_CARD_FIELDS: ReadonlySet<string> = new Set([
   'body',
   'goalCondition',
   'guardrails',
+  'agentProvider',
   'agentModel',
   'agentEffort',
   'synthesisModel',
@@ -406,6 +408,9 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
             ? {}
             : { goalCondition: body['goalCondition'] as string | null }),
           ...(body['guardrails'] === undefined ? {} : { guardrails: body['guardrails'] }),
+          ...(body['agentProvider'] === undefined
+            ? {}
+            : { agentProvider: body['agentProvider'] as AgentProvider }),
           ...(body['agentModel'] === undefined
             ? {}
             : { agentModel: body['agentModel'] as string | null }),
@@ -487,6 +492,9 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
             ? {}
             : { goalCondition: body['goalCondition'] as string | null }),
           ...(body['guardrails'] === undefined ? {} : { guardrails: body['guardrails'] }),
+          ...(body['agentProvider'] === undefined
+            ? {}
+            : { agentProvider: body['agentProvider'] as AgentProvider }),
           ...(body['agentModel'] === undefined
             ? {}
             : { agentModel: body['agentModel'] as string | null }),

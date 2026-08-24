@@ -4,8 +4,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
-import { buildArgs, renderCardContext, settingsOverlay, type LaunchSpec } from './args.js';
+import {
+  buildArgs,
+  buildCodexArgs,
+  renderCardContext,
+  settingsOverlay,
+  type LaunchSpec,
+} from './args.js';
 import type { GuardrailSet } from '../cards/guardrails.js';
+import type { AgentProvider } from '../agents/providers.js';
 
 /**
  * Spawns and supervises `claude -p` for a dispatched card (doc 07 section 3).
@@ -29,6 +36,10 @@ export interface StreamEventPayload {
 
 export interface LaunchOptions {
   readonly cwd: string;
+  /** The provider-specific CLI to invoke. */
+  readonly agentProvider?: AgentProvider;
+  /** A board-generated id for providers without Claude hook session ids. */
+  readonly sessionId?: string;
   readonly title: string;
   readonly body: string;
   readonly guardrails: GuardrailSet;
@@ -99,42 +110,37 @@ export interface RunningLaunch {
 
 function writeLaunchFiles(options: LaunchOptions): {
   contextPath: string;
+  context: string;
   settingsPath: string | null;
 } {
   const dir = mkdtempSync(join(tmpdir(), 'gorilla-launch-'));
 
   const contextPath = join(dir, 'card-context.md');
-  writeFileSync(
-    contextPath,
-    renderCardContext({
-      title: options.title,
-      body: options.body,
-      guardrails: options.guardrails,
-      ...(options.branch === undefined ? {} : { branch: options.branch }),
-      ...(options.invariants === undefined ? {} : { invariants: options.invariants }),
-      ...(options.acceptedEntries === undefined
-        ? {}
-        : { acceptedEntries: options.acceptedEntries }),
-      ...(options.rejectedEntries === undefined
-        ? {}
-        : { rejectedEntries: options.rejectedEntries }),
-      ...(options.previousRuns === undefined ? {} : { previousRuns: options.previousRuns }),
-      ...(options.operatorNote === undefined ? {} : { operatorNote: options.operatorNote }),
-    }),
-    'utf8',
-  );
+  const context = renderCardContext({
+    title: options.title,
+    body: options.body,
+    guardrails: options.guardrails,
+    ...(options.branch === undefined ? {} : { branch: options.branch }),
+    ...(options.invariants === undefined ? {} : { invariants: options.invariants }),
+    ...(options.acceptedEntries === undefined ? {} : { acceptedEntries: options.acceptedEntries }),
+    ...(options.rejectedEntries === undefined ? {} : { rejectedEntries: options.rejectedEntries }),
+    ...(options.previousRuns === undefined ? {} : { previousRuns: options.previousRuns }),
+    ...(options.operatorNote === undefined ? {} : { operatorNote: options.operatorNote }),
+  });
+  writeFileSync(contextPath, context, 'utf8');
 
   const overlay = settingsOverlay(options.guardrails);
-  if (Object.keys(overlay).length === 0) return { contextPath, settingsPath: null };
+  if (Object.keys(overlay).length === 0) return { contextPath, context, settingsPath: null };
 
   const settingsPath = join(dir, 'gorilla-launch-settings.json');
   writeFileSync(settingsPath, JSON.stringify(overlay, null, 2), 'utf8');
 
-  return { contextPath, settingsPath };
+  return { contextPath, context, settingsPath };
 }
 
 export function launch(options: LaunchOptions): RunningLaunch {
-  const { contextPath, settingsPath } = writeLaunchFiles(options);
+  const provider = options.agentProvider ?? 'claude';
+  const { contextPath, context, settingsPath } = writeLaunchFiles(options);
 
   const spec: LaunchSpec = {
     goalCondition: options.goalCondition ?? null,
@@ -152,7 +158,10 @@ export function launch(options: LaunchOptions): RunningLaunch {
     resumeSessionId: options.resumeSessionId ?? null,
   };
 
-  const child = spawn(options.executable ?? 'claude', buildArgs(spec), {
+  // Codex has no Claude-compatible hooks or settings overlay. Its JSONL stream
+  // is still retained by the dispatcher, while card context travels in the prompt.
+  const args = provider === 'codex' ? buildCodexArgs(spec, context) : buildArgs(spec);
+  const child = spawn(options.executable ?? (provider === 'codex' ? 'codex' : 'claude'), args, {
     cwd: options.cwd,
     env: {
       ...process.env,
@@ -168,7 +177,7 @@ export function launch(options: LaunchOptions): RunningLaunch {
   });
 
   const events: StreamEventPayload[] = [];
-  let sessionId: string | null = null;
+  let sessionId: string | null = options.sessionId ?? null;
   let retries = 0;
   let cancelled = false;
   let stderr = '';

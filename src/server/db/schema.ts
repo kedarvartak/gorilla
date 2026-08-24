@@ -261,6 +261,10 @@ export const cards = sqliteTable(
     /** GuardrailSet as JSON. See src/server/cards/guardrails.ts. */
     guardrails: text('guardrails').notNull().default('{}'),
 
+    /** Which coding CLI works this card. Kept separate from its model. */
+    agentProvider: text('agent_provider', { enum: ['claude', 'codex'] })
+      .notNull()
+      .default('claude'),
     agentModel: text('agent_model'),
     agentEffort: text('agent_effort'),
     permissionMode: text('permission_mode'),

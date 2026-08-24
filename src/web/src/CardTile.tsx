@@ -2,7 +2,7 @@ import type { ReactElement } from 'react';
 
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Play, Stop } from '@phosphor-icons/react';
+import { Play, Robot, Stop } from '@phosphor-icons/react';
 
 import type { Card } from './api.js';
 
@@ -215,8 +215,17 @@ export function CardTile({
 
           {/* A finished card does not need to be told which model ran it or what
               constrained it. Those answer "how will this go", and it has gone. */}
-          {configurable && card.agentModel !== null ? (
-            <span className="chip">{card.agentModel}</span>
+          {configurable ? (
+            <span
+              className={`chip inline-flex items-center gap-1 ${
+                card.agentProvider === 'codex' ? 'text-[#f59a4a]' : ''
+              }`}
+              title={`This card will run with ${card.agentProvider === 'codex' ? 'Codex' : 'Claude Code'}`}
+            >
+              <Robot size={13} weight="fill" aria-hidden />
+              {card.agentProvider === 'codex' ? 'Codex' : 'Claude'}
+              {card.agentModel === null ? '' : ` · ${card.agentModel}`}
+            </span>
           ) : null}
 
           {configurable && hard + advisory > 0 ? (
@@ -257,7 +266,7 @@ export function CardTile({
                 event.stopPropagation();
                 onRun(card);
               }}
-              title="Dispatch a Claude Code session for this card"
+              title={`Dispatch a ${card.agentProvider === 'codex' ? 'Codex' : 'Claude Code'} session for this card`}
             >
               <Play size={12} weight="fill" aria-hidden />
               Run

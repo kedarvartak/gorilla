@@ -23,7 +23,9 @@ export interface Card {
   readonly status:
     'idle' | 'queued' | 'running' | 'awaiting-review' | 'blocked' | 'done' | 'abandoned';
   readonly goalCondition: string | null;
-  /** Reaches `claude --model` for this card's run. Null means the board default. */
+  /** Which coding CLI is dispatched for this card. */
+  readonly agentProvider: 'claude' | 'codex';
+  /** Provider-specific model. Null means the provider default. */
   readonly agentModel: string | null;
   /** Reorders the dispatch queue within a Ready column; not decoration. */
   readonly priority: 'high' | 'normal' | 'low';
@@ -233,6 +235,7 @@ export const api = {
       title: string;
       body: string;
       goalCondition: string | null;
+      agentProvider: Card['agentProvider'];
       agentModel: string | null;
       agentEffort: string | null;
       synthesisModel: string | null;

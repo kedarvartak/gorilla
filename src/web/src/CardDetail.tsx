@@ -77,7 +77,8 @@ function storedFraction(): number {
  *
  * Null everywhere means the board default, which is what most cards should say.
  */
-const AGENT_MODELS = ['haiku', 'sonnet', 'opus', 'fable'] as const;
+const CLAUDE_MODELS = ['haiku', 'sonnet', 'opus', 'fable'] as const;
+const CODEX_MODELS = ['gpt-5.3-codex', 'gpt-5.2-codex', 'o3'] as const;
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 
 interface LedgerEntry {
@@ -1037,9 +1038,19 @@ export function CardDetail({
                 />
                 <FieldSelect
                   label="Agent"
+                  value={detail.card.agentProvider}
+                  options={['claude', 'codex']}
+                  title="The coding CLI dispatched for this card. Claude sessions are observed through hooks; Codex output is captured from its JSON stream."
+                  neutralLabel="claude"
+                  onPick={(agentProvider) =>
+                    patch({ agentProvider: (agentProvider ?? 'claude') as Card['agentProvider'] })
+                  }
+                />
+                <FieldSelect
+                  label="Model"
                   value={detail.card.agentModel}
-                  options={AGENT_MODELS}
-                  title="Reaches `claude --model` for this card's run."
+                  options={detail.card.agentProvider === 'codex' ? CODEX_MODELS : CLAUDE_MODELS}
+                  title={`Reaches the selected ${detail.card.agentProvider} CLI for this card's run.`}
                   onPick={(agentModel) => patch({ agentModel })}
                 />
                 <FieldSelect
@@ -1052,7 +1063,7 @@ export function CardDetail({
                 <FieldSelect
                   label="Synthesis"
                   value={detail.card.synthesisModel}
-                  options={AGENT_MODELS}
+                  options={CLAUDE_MODELS}
                   title="Used only for windows that escalate - compaction, and manual re-extraction. Not the model that does the work."
                   onPick={(synthesisModel) => patch({ synthesisModel })}
                 />

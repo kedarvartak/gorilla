@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { eq } from 'drizzle-orm';
 
 import { getCard, updateCard } from '../api/cards.js';
@@ -745,10 +747,32 @@ export class Dispatcher {
     }
 
     const meter = new CostMeter();
+    const providerSessionId = card.agentProvider === 'codex' ? randomUUID() : null;
+
+    // Claude creates its durable run through hooks. Codex does not expose that
+    // hook contract, so Gorilla owns a stable run id and captures its JSONL
+    // output directly instead of pretending it received Claude events.
+    if (providerSessionId !== null) {
+      this.database.db
+        .insert(runs)
+        .values({
+          id: randomUUID(),
+          boardId,
+          cardId,
+          sessionId: providerSessionId,
+          mode: 'launched',
+          startedAt: Date.now(),
+          cwd: workspace,
+          gitBranch: this.#worktreesFor(board.cwd).workspaceFor(cardId)?.branch ?? null,
+        })
+        .run();
+    }
 
     const running = this.#registry.track(
       launch({
         cwd: workspace,
+        agentProvider: card.agentProvider,
+        ...(providerSessionId === null ? {} : { sessionId: providerSessionId }),
         title: card.title,
         body: card.body,
         guardrails: parseGuardrails(card.guardrails),
@@ -776,6 +800,7 @@ export class Dispatcher {
         ...(rejected.length === 0 ? {} : { rejectedEntries: rejected }),
         ...(this.#executable === undefined ? {} : { executable: this.#executable }),
         onEvent: (event) => {
+          if (providerSessionId !== null) this.#recordProviderEvent(providerSessionId, event);
           meter.feed(event);
           if (!meter.exceeds(card.tokenCeiling)) return;
 
@@ -804,6 +829,7 @@ export class Dispatcher {
     }
 
     state.running.set(cardId, running);
+    if (providerSessionId !== null) this.events.onRunStarted?.(boardId, cardId, providerSessionId);
     this.#publish(boardId);
 
     void running.result.then(
@@ -858,6 +884,24 @@ export class Dispatcher {
 
   /** Boards already told their queue is empty, so they are told once (T75). */
   readonly #announced = new Set<string>();
+
+  /** Preserves provider output without mislabelling it as a Claude hook. */
+  #recordProviderEvent(sessionId: string, payload: unknown): void {
+    const run = this.database.db.select().from(runs).where(eq(runs.sessionId, sessionId)).get();
+    if (run === undefined) return;
+
+    this.database.sqlite.transaction(() => {
+      const next = this.database.sqlite
+        .prepare('UPDATE runs SET last_seq = last_seq + 1 WHERE id = ? RETURNING last_seq')
+        .get(run.id) as { last_seq: number } | undefined;
+      if (next === undefined) return;
+      this.database.sqlite
+        .prepare(
+          'INSERT INTO events (run_id, session_id, seq, event_name, received_at, payload) VALUES (?, ?, ?, ?, ?, ?)',
+        )
+        .run(run.id, sessionId, next.last_seq, 'CodexEvent', Date.now(), JSON.stringify(payload));
+    })();
+  }
 
   #recordCost(result: LaunchResult): void {
     if (result.sessionId === null) return;
@@ -1034,6 +1078,13 @@ export class Dispatcher {
     }
 
     this.#recordCost(result);
+    if (card.agentProvider === 'codex' && result.sessionId !== null) {
+      this.database.db
+        .update(runs)
+        .set({ endedAt: Date.now(), endReason: result.outcome })
+        .where(eq(runs.sessionId, result.sessionId))
+        .run();
+    }
     this.events.onRunFinished?.(boardId, cardId, result);
 
     if (result.outcome === 'cancelled') {
