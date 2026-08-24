@@ -100,7 +100,7 @@ export function CardTile({
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`group relative shrink-0 overflow-hidden rounded-md border bg-surface transition-colors ${
+      className={`group relative shrink-0 ${assigning ? 'overflow-visible' : 'overflow-hidden'} rounded-md border bg-surface transition-colors ${
         isDragging
           ? 'border-brand opacity-70'
           : 'border-line hover:border-edge focus-within:border-edge'
@@ -223,7 +223,13 @@ export function CardTile({
           {/* A finished card does not need to be told which model ran it or what
               constrained it. Those answer "how will this go", and it has gone. */}
           {configurable ? (
-            <div className="relative">
+            <div
+              className="relative"
+              // dnd-kit listens on the card. Stop here, in capture, so opening
+              // the assignment chooser is never interpreted as beginning a drag.
+              onPointerDownCapture={(event) => event.stopPropagation()}
+              onClickCapture={(event) => event.stopPropagation()}
+            >
               <button
                 type="button"
                 className="chip inline-flex items-center gap-1 hover:bg-well"
