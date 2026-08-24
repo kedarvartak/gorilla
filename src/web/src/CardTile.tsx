@@ -1,8 +1,8 @@
-import { useState, type ReactElement } from 'react';
+import type { ReactElement } from 'react';
 
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { CaretDown, Play, Stop } from '@phosphor-icons/react';
+import { Play, Stop } from '@phosphor-icons/react';
 
 import claudeLogo from './assets/claude-color.webp';
 import codexLogo from './assets/codex.webp';
@@ -60,8 +60,6 @@ export interface CardTileProps {
   /** In a terminal column. What a finished card needs shown is not the same. */
   readonly terminal: boolean;
   readonly onOpen: (card: Card) => void;
-  /** Reassigns an idle card to another supported coding CLI. */
-  readonly onAssign: (card: Card, provider: Card['agentProvider']) => void;
   readonly onRun: (card: Card) => void;
   readonly onCancel: (card: Card) => void;
 }
@@ -72,11 +70,9 @@ export function CardTile({
   runnable,
   terminal,
   onOpen,
-  onAssign,
   onRun,
   onCancel,
 }: CardTileProps): ReactElement {
-  const [assigning, setAssigning] = useState(false);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: card.id,
   });
@@ -100,7 +96,7 @@ export function CardTile({
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`group relative shrink-0 ${assigning ? 'overflow-visible' : 'overflow-hidden'} rounded-md border bg-surface transition-colors ${
+      className={`group relative shrink-0 overflow-hidden rounded-md border bg-surface transition-colors ${
         isDragging
           ? 'border-brand opacity-70'
           : 'border-line hover:border-edge focus-within:border-edge'
@@ -144,6 +140,13 @@ export function CardTile({
           >
             {card.rank ?? ''}
           </span>
+
+          <img
+            src={card.agentProvider === 'codex' ? codexLogo : claudeLogo}
+            alt={card.agentProvider === 'codex' ? 'Codex' : 'Claude'}
+            title={`Assigned to ${card.agentProvider === 'codex' ? 'Codex' : 'Claude Code'}`}
+            className="mt-0.5 size-4 shrink-0 rounded-sm object-cover"
+          />
 
           {/* Two lines, always. A card three lines tall beside one that is one
               line makes a column nobody can scan; the rest is a hover away. */}
@@ -219,65 +222,6 @@ export function CardTile({
               May be done
             </span>
           )}
-
-          {/* A finished card does not need to be told which model ran it or what
-              constrained it. Those answer "how will this go", and it has gone. */}
-          {configurable ? (
-            <div
-              className="relative"
-              // dnd-kit listens on the card. Stop in the bubble phase: capture
-              // would prevent the button itself from receiving its click.
-              onPointerDown={(event) => event.stopPropagation()}
-            >
-              <button
-                type="button"
-                className="chip inline-flex items-center gap-1 hover:bg-well"
-                title="Change the coding agent assigned to this card"
-                aria-expanded={assigning}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setAssigning((open) => !open);
-                }}
-              >
-                <img
-                  src={card.agentProvider === 'codex' ? codexLogo : claudeLogo}
-                  alt=""
-                  className="size-3.5 rounded-sm object-cover"
-                />
-                {card.agentProvider === 'codex' ? 'Codex' : 'Claude'}
-                {card.agentModel === null ? '' : ` · ${card.agentModel}`}
-                <CaretDown size={11} aria-hidden />
-              </button>
-              {!assigning ? null : (
-                <div className="absolute z-20 mt-1 flex min-w-28 flex-col gap-1 rounded-md border border-line bg-surface p-1 shadow-lg">
-                  {(
-                    [
-                      ['claude', 'Claude', claudeLogo],
-                      ['codex', 'Codex', codexLogo],
-                    ] as const
-                  ).map(([provider, label, logo]) => (
-                    <button
-                      key={provider}
-                      type="button"
-                      className={`flex items-center gap-1.5 rounded px-1.5 py-1 text-left text-[12.5px] hover:bg-well ${
-                        card.agentProvider === provider ? 'text-ink' : 'text-dim'
-                      }`}
-                      onPointerDown={(event) => event.stopPropagation()}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setAssigning(false);
-                        if (provider !== card.agentProvider) onAssign(card, provider);
-                      }}
-                    >
-                      <img src={logo} alt="" className="size-4 rounded-sm object-cover" />
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : null}
 
           {configurable && hard + advisory > 0 ? (
             <span
