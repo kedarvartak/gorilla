@@ -44,6 +44,16 @@
   --color-info: #1d5fb5;
   --color-info-tint: #e7f0fc;
 
+  /* Which agent a card is assigned to. Not part of the tone scale above and
+     deliberately outside it: those colours mean "this wants a person", and an
+     agent's identity means nothing of the sort. These are the two marks' own
+     colours, used only to tint the plate each mark sits on, so that a board
+     running both providers can be read for provenance from across a desk. */
+  --color-claude: #d97757;
+  --color-claude-plate: #fbe6db;
+  --color-codex: #10141c;
+  --color-codex-plate: #e4e7ec;
+
   /* IBM Plex, because it was drawn as an engineering typeface and because its
      sans and mono share a skeleton. This interface sets branch names, session
      ids and file paths inline with ordinary prose constantly, and a pairing

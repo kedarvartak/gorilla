@@ -222,6 +222,19 @@ export const api = {
       body: JSON.stringify({ title, priority }),
     }),
 
+  /**
+   * Rearranges the pipeline itself.
+   *
+   * Sends every column id, not the pair that swapped: the server refuses a
+   * partial list, because a caller holding a stale board would otherwise move
+   * a column nobody dragged.
+   */
+  reorderColumns: (boardId: string, order: readonly string[]) =>
+    request<Column[]>(`/api/boards/${boardId}/columns`, {
+      method: 'PATCH',
+      body: JSON.stringify({ order }),
+    }),
+
   moveCard: (cardId: string, columnId: string, index: number) =>
     request<Card>(`/api/cards/${cardId}/move`, {
       method: 'POST',
@@ -473,6 +486,7 @@ export function subscribe(onChange: () => void, onStatus?: (live: boolean) => vo
     'card-deleted',
     'card-seen',
     'card-merged',
+    'columns-reordered',
     'plan-created',
     'dispatch-state',
     'run-started',

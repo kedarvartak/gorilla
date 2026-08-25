@@ -3,6 +3,7 @@ import { asc, eq, and, isNotNull } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../app.js';
 import { createDefaultColumns } from '../cards/defaults.js';
+import { reorderColumns } from '../cards/column-order.js';
 import { parseGuardrails } from '../cards/guardrails.js';
 import { blockersFor, dispatchableCards } from '../cards/eligibility.js';
 import { executionOrder } from '../cards/order.js';
@@ -202,6 +203,33 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
       .orderBy(asc(columns.position))
       .all();
   });
+
+  app.patch<{ Params: { boardId: string }; Body: { order?: unknown } }>(
+    '/api/boards/:boardId/columns',
+    (request, reply) => {
+      const order = request.body.order;
+
+      if (!Array.isArray(order) || order.some((id) => typeof id !== 'string')) {
+        return badRequest(reply, 'order must be an array of column ids.');
+      }
+
+      const result = reorderColumns(context.database, request.params.boardId, order as string[]);
+      if (!result.ok) return badRequest(reply, result.error ?? 'Those columns could not be moved.');
+
+      const moved = context.database.db
+        .select()
+        .from(columns)
+        .where(eq(columns.boardId, request.params.boardId))
+        .orderBy(asc(columns.position))
+        .all();
+
+      // The board is a live screen and column order is shared structure, so
+      // every other window has to be told rather than left showing a pipeline
+      // that is no longer the one the dispatcher reads.
+      publish('columns-reordered', { boardId: request.params.boardId, columns: moved });
+      return reply.send(moved);
+    },
+  );
 
   app.get<{ Params: { boardId: string } }>('/api/boards/:boardId/cards', (request) => {
     // Ranked here rather than in the interface: the order has to agree with what

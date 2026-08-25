@@ -7,7 +7,7 @@ whatever got built stops being a record and becomes a description.
 This document is the other half: what actually exists, and what does not. It is the
 one file here that is expected to go out of date, so it says when it was last true.
 
-**Last verified: 22 August 2026, against `main` at 1,224 passing tests.**
+**Last verified: 22 August 2026, against `main` at 1,245 passing tests.**
 
 ## What is built
 
