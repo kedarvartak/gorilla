@@ -122,12 +122,12 @@ export function CardTile({
         card.priority === 'normal' ? '' : `, ${card.priority} priority`
       }${unseen ? ', unseen changes' : ''}. Press o to open${runnable ? ', d to dispatch' : ''}.`}
     >
-      <div className="px-3 py-2.5">
-        <div className="flex items-start gap-2">
+      <div className="flex min-h-52 flex-col px-4 py-4">
+        <div className="flex items-start gap-3">
           {/* A fixed gutter, so titles line up down the column whether or not a
               card has a number. */}
           <span
-            className={`w-4 shrink-0 pt-px text-right text-[12.5px] ${
+            className={`w-4 shrink-0 pt-1 text-right text-[12.5px] ${
               card.rankBlocked ? 'text-faint' : 'text-dim'
             }`}
             title={
@@ -145,13 +145,13 @@ export function CardTile({
             src={card.agentProvider === 'codex' ? codexLogo : claudeLogo}
             alt={card.agentProvider === 'codex' ? 'Codex' : 'Claude'}
             title={`Assigned to ${card.agentProvider === 'codex' ? 'Codex' : 'Claude Code'}`}
-            className="mt-0.5 size-4 shrink-0 rounded-sm object-cover"
+            className="size-8 shrink-0 rounded-md object-cover"
           />
 
           {/* Two lines, always. A card three lines tall beside one that is one
               line makes a column nobody can scan; the rest is a hover away. */}
           <span
-            className="line-clamp-2 min-h-[2.75em] min-w-0 flex-1 font-medium leading-snug text-ink"
+            className="line-clamp-2 min-h-[2.75em] min-w-0 flex-1 text-[16px] font-semibold leading-snug text-ink"
             title={card.title}
           >
             {card.title}
@@ -159,18 +159,20 @@ export function CardTile({
 
           {unseen ? (
             <span
-              className="mt-1.5 size-1.5 shrink-0 rounded-full bg-attention"
+              className="mt-2 size-1.5 shrink-0 rounded-full bg-attention"
               title="Changed since you last looked"
               aria-hidden
             />
           ) : null}
         </div>
 
-        {/* One line of chips, never two. A card that grows a row because it
-            carries one more fact is a card whose height depends on its
-            configuration, and a column of those cannot be scanned. What does
-            not fit is clipped, and the tooltips carry it. */}
-        <div className="mt-2 flex items-center gap-1 overflow-hidden pl-6">
+        {/* The card body is a one-glance scope cue. Detail still owns the full
+            specification; this is just enough context to recognise the work. */}
+        <p className="mt-4 line-clamp-2 min-h-[2.75rem] pl-7 text-[12.5px] leading-snug text-dim">
+          {card.body.trim() === '' ? (card.goalCondition ?? 'No description yet.') : card.body}
+        </p>
+
+        <div className="mt-auto flex items-center gap-1 border-t border-line pt-3">
           {/* "Merged" replaces "Done" rather than sitting beside it: a card the
               board merged and a card the operator marked finished are different
               outcomes, and showing both words would restate the ambiguity. */}
@@ -242,7 +244,7 @@ export function CardTile({
           {card.status === 'running' ? (
             <button
               type="button"
-              className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12.5px] font-medium text-danger transition-colors hover:bg-danger-tint"
+              className="ml-auto inline-flex items-center gap-1 rounded-md border border-danger/30 px-2.5 py-1 text-[12.5px] font-medium text-danger transition-colors hover:bg-danger-tint"
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.stopPropagation();
@@ -255,7 +257,7 @@ export function CardTile({
           ) : runnable ? (
             <button
               type="button"
-              className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12.5px] font-medium text-ok opacity-0 transition-opacity hover:bg-ok-tint focus-visible:opacity-100 group-hover:opacity-100"
+              className="ml-auto inline-flex items-center gap-1 rounded-md border border-ok/30 px-2.5 py-1 text-[12.5px] font-medium text-ok transition-colors hover:bg-ok-tint"
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.stopPropagation();
@@ -267,6 +269,12 @@ export function CardTile({
               Run
             </button>
           ) : null}
+          <span
+            className="ml-1 whitespace-nowrap text-[11.5px] text-faint"
+            title={`Last changed ${waitedFor(since)}`}
+          >
+            {waiting ? waitedFor(since) : 'updated'}
+          </span>
         </div>
       </div>
 
