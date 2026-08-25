@@ -23,7 +23,9 @@ export interface Card {
   readonly status:
     'idle' | 'queued' | 'running' | 'awaiting-review' | 'blocked' | 'done' | 'abandoned';
   readonly goalCondition: string | null;
-  /** Reaches `claude --model` for this card's run. Null means the board default. */
+  /** Which coding CLI is dispatched for this card. */
+  readonly agentProvider: 'claude' | 'codex';
+  /** Provider-specific model. Null means the provider default. */
   readonly agentModel: string | null;
   /** Reorders the dispatch queue within a Ready column; not decoration. */
   readonly priority: 'high' | 'normal' | 'low';
@@ -220,6 +222,19 @@ export const api = {
       body: JSON.stringify({ title, priority }),
     }),
 
+  /**
+   * Rearranges the pipeline itself.
+   *
+   * Sends every column id, not the pair that swapped: the server refuses a
+   * partial list, because a caller holding a stale board would otherwise move
+   * a column nobody dragged.
+   */
+  reorderColumns: (boardId: string, order: readonly string[]) =>
+    request<Column[]>(`/api/boards/${boardId}/columns`, {
+      method: 'PATCH',
+      body: JSON.stringify({ order }),
+    }),
+
   moveCard: (cardId: string, columnId: string, index: number) =>
     request<Card>(`/api/cards/${cardId}/move`, {
       method: 'POST',
@@ -233,6 +248,7 @@ export const api = {
       title: string;
       body: string;
       goalCondition: string | null;
+      agentProvider: Card['agentProvider'];
       agentModel: string | null;
       agentEffort: string | null;
       synthesisModel: string | null;
@@ -470,6 +486,7 @@ export function subscribe(onChange: () => void, onStatus?: (live: boolean) => vo
     'card-deleted',
     'card-seen',
     'card-merged',
+    'columns-reordered',
     'plan-created',
     'dispatch-state',
     'run-started',

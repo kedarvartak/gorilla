@@ -7,6 +7,7 @@ import { parseGuardrails, serialiseGuardrails } from '../cards/guardrails.js';
 import type { DatabaseHandle } from '../db/client.js';
 import { cardDependencies, cards, columns, type Card } from '../db/schema.js';
 import { needsRenumber, positionForIndex, renumber } from './positions.js';
+import { isAgentProvider, type AgentProvider } from '../agents/providers.js';
 
 /**
  * Card operations.
@@ -34,6 +35,7 @@ export interface CreateCardInput {
   readonly index?: number;
   readonly goalCondition?: string | null;
   readonly guardrails?: unknown;
+  readonly agentProvider?: AgentProvider;
   readonly agentModel?: string | null;
   readonly agentEffort?: string | null;
   readonly permissionMode?: string | null;
@@ -78,6 +80,10 @@ export function createCard(handle: DatabaseHandle, input: CreateCardInput): Card
   const title = input.title.trim();
   if (title === '') throw new CardError('A card needs a title.', 400, 'title');
 
+  if (input.agentProvider !== undefined && !isAgentProvider(input.agentProvider)) {
+    throw new CardError('Agent must be either claude or codex.', 400, 'agentProvider');
+  }
+
   const columnId = input.columnId ?? firstColumn(handle, input.boardId);
 
   const column = handle.db.select().from(columns).where(eq(columns.id, columnId)).get();
@@ -105,6 +111,7 @@ export function createCard(handle: DatabaseHandle, input: CreateCardInput): Card
       goalCondition: input.goalCondition ?? null,
       guardrails: serialiseGuardrails(parseGuardrails(JSON.stringify(input.guardrails ?? {}))),
       fromEntryId: input.fromEntryId ?? null,
+      agentProvider: input.agentProvider ?? 'claude',
       agentModel: input.agentModel ?? null,
       agentEffort: input.agentEffort ?? null,
       permissionMode: input.permissionMode ?? null,
@@ -141,6 +148,7 @@ export interface UpdateCardInput {
   readonly body?: string;
   readonly goalCondition?: string | null;
   readonly guardrails?: unknown;
+  readonly agentProvider?: AgentProvider;
   readonly agentModel?: string | null;
   readonly agentEffort?: string | null;
   readonly permissionMode?: string | null;
@@ -156,6 +164,10 @@ export function updateCard(handle: DatabaseHandle, cardId: string, input: Update
 
   if (input.title !== undefined && input.title.trim() === '') {
     throw new CardError('A card needs a title.', 400, 'title');
+  }
+
+  if (input.agentProvider !== undefined && !isAgentProvider(input.agentProvider)) {
+    throw new CardError('Agent must be either claude or codex.', 400, 'agentProvider');
   }
 
   // A ceiling of zero would stop every run on its first message, which reads
@@ -182,6 +194,7 @@ export function updateCard(handle: DatabaseHandle, cardId: string, input: Update
       ...(input.guardrails === undefined
         ? {}
         : { guardrails: serialiseGuardrails(parseGuardrails(JSON.stringify(input.guardrails))) }),
+      ...(input.agentProvider === undefined ? {} : { agentProvider: input.agentProvider }),
       ...(input.agentModel === undefined ? {} : { agentModel: input.agentModel }),
       ...(input.agentEffort === undefined ? {} : { agentEffort: input.agentEffort }),
       ...(input.permissionMode === undefined ? {} : { permissionMode: input.permissionMode }),

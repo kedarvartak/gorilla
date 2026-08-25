@@ -6,13 +6,17 @@ import {
   closestCorners,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
 } from '@dnd-kit/core';
 import {
   SortableContext,
+  horizontalListSortingStrategy,
   sortableKeyboardCoordinates,
+  useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useDroppable } from '@dnd-kit/core';
 
 import {
@@ -33,7 +37,15 @@ import { Invariants } from './Invariants.js';
 import { Activity } from './Activity.js';
 import { CardTile } from './CardTile.js';
 import { Sidebar, type View } from './Sidebar.js';
-import { MagnifyingGlass, Plus } from '@phosphor-icons/react';
+import {
+  CaretLeft,
+  CaretRight,
+  DotsSixVertical,
+  MagnifyingGlass,
+  Plus,
+} from '@phosphor-icons/react';
+
+import { loadCollapsed, reorder, saveCollapsed, toggle } from './column-view-state.js';
 
 /**
  * The board (doc 09, screen 1).
@@ -44,14 +56,44 @@ import { MagnifyingGlass, Plus } from '@phosphor-icons/react';
  * identical to an empty one.
  */
 
+/**
+ * Which droppables a drag is allowed to land on.
+ *
+ * Both kinds of drag share one context, and without this they compete: a
+ * column dragged across the board is always nearer to some card than to the
+ * far corner of the column under the pointer, so `closestCorners` hands back a
+ * card and the column never moves. Restricting the candidates by what is being
+ * dragged is what keeps the two independent.
+ */
+const boardCollisions: CollisionDetection = (args) => {
+  const draggingColumn = String(args.active.id).startsWith(COLUMN_DRAG_PREFIX);
+
+  return closestCorners({
+    ...args,
+    droppableContainers: args.droppableContainers.filter(
+      (container) => String(container.id).startsWith(COLUMN_DRAG_PREFIX) === draggingColumn,
+    ),
+  });
+};
+
+/** Drops the undefined a lookup by id can produce, without widening the type. */
+function isColumn(column: Column | undefined): column is Column {
+  return column !== undefined;
+}
+
 function unseenSince(card: Card): boolean {
   return card.lastSeenAt === null || card.updatedAt > card.lastSeenAt;
 }
+
+/** Column ids are namespaced so one DndContext can carry both kinds of drag. */
+const COLUMN_DRAG_PREFIX = 'col:';
 
 function ColumnView({
   column,
   cards,
   runnable,
+  collapsed,
+  onToggle,
   onOpen,
   onRun,
   onCancel,
@@ -59,34 +101,108 @@ function ColumnView({
   column: Column;
   cards: Card[];
   runnable: ReadonlySet<string>;
+  collapsed: boolean;
+  onToggle: (columnId: string) => void;
   onOpen: (card: Card) => void;
   onRun: (card: Card) => void;
   onCancel: (card: Card) => void;
 }): ReactElement {
   const { setNodeRef, isOver } = useDroppable({ id: `column:${column.id}` });
 
-  // Every column the same share of the width. Fixed widths left a strip of
-  // dead board to the right of the last column; a wider last column made its
-  // cards a different size from every other card, which is worse - a board is
-  // read by scanning, and scanning wants one card shape.
-  const width = 'min-w-0 flex-1 basis-0';
+  // The header is the handle, not the whole column: a column that moved
+  // whenever a card inside it was picked up would make the board unusable.
+  const {
+    attributes,
+    listeners,
+    setNodeRef: setColumnRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: `${COLUMN_DRAG_PREFIX}${column.id}` });
+
+  const flags = column.isReady
+    ? 'Cards here are eligible for dispatch'
+    : column.isReviewGate
+      ? 'Nothing merges from here while anything on it is unjudged'
+      : undefined;
+
+  const style = { transform: CSS.Transform.toString(transform), transition };
+
+  if (collapsed) {
+    // A folded column keeps its count and its name. Dropped entirely it would
+    // read as a column that had been deleted, and the operator who folded
+    // "Done" three days ago would have no way back to it.
+    return (
+      <section
+        ref={setColumnRef}
+        style={style}
+        className={`flex w-11 shrink-0 flex-col items-center gap-3 rounded-lg border bg-well py-3 transition-colors ${
+          isDragging ? 'border-brand opacity-70' : 'border-line'
+        }`}
+        aria-label={`${column.name}, folded`}
+      >
+        <button
+          type="button"
+          className="rounded-md p-1 text-faint transition-colors hover:bg-surface hover:text-ink"
+          onClick={() => onToggle(column.id)}
+          title={`Unfold ${column.name}`}
+          aria-label={`Unfold ${column.name}`}
+        >
+          <CaretRight size={14} aria-hidden />
+        </button>
+
+        <span className="text-[12.5px] font-medium tabular-nums text-dim">{cards.length}</span>
+
+        <span
+          className="eyebrow whitespace-nowrap [writing-mode:vertical-rl]"
+          title={flags}
+          {...attributes}
+          {...listeners}
+        >
+          {column.name}
+        </span>
+      </section>
+    );
+  }
 
   return (
-    <section className={`flex min-h-0 flex-col ${width}`} aria-label={column.name}>
-      <header className="flex items-baseline gap-2 px-1 pb-2">
+    <section
+      ref={setColumnRef}
+      style={style}
+      // A floor, not a fixed width. Five columns sharing a narrow window each
+      // ended up about a hundred pixels wide, which turns every title into an
+      // ellipsis; the row scrolls instead, and folding what is not in use is
+      // the way to get the width back.
+      className={`flex min-h-0 w-[280px] min-w-[280px] flex-1 basis-0 flex-col ${
+        isDragging ? 'opacity-70' : ''
+      }`}
+      aria-label={column.name}
+    >
+      {/* Every unfolded column takes the same share of what is left. Fixed
+          widths left a strip of dead board to the right of the last column; a
+          wider last column made its cards a different size from every other
+          card, which is worse - a board is read by scanning, and scanning
+          wants one card shape. */}
+      <header
+        className={`group/header mb-2 flex items-center gap-2 rounded-md px-1 py-0.5 transition-colors ${
+          isDragging ? 'bg-brand-tint' : 'hover:bg-well'
+        }`}
+      >
+        {/* Grip on hover only. Five columns each showing a permanent handle is
+            five pieces of furniture on a screen that is meant to be read. */}
+        <span
+          className="-ml-1 cursor-grab text-faint opacity-0 transition-opacity group-hover/header:opacity-100"
+          title={`Drag to move ${column.name} in the pipeline`}
+          {...attributes}
+          {...listeners}
+        >
+          <DotsSixVertical size={14} aria-hidden />
+        </span>
+
         {/* The flags used to print beside the name and stutter - "Ready ready",
             "Needs review gate". What they mean now lives in the tooltip and in
             a single dot, because the name already carries the word. */}
-        <h2
-          className="eyebrow"
-          title={
-            column.isReady
-              ? 'Cards here are eligible for dispatch'
-              : column.isReviewGate
-                ? 'Nothing merges from here while anything on it is unjudged'
-                : undefined
-          }
-        >
+        <h2 className="eyebrow" title={flags}>
           {column.name}
         </h2>
         {column.isReady ? <span className="size-1 rounded-full bg-ok" aria-hidden /> : null}
@@ -94,6 +210,16 @@ function ColumnView({
           <span className="size-1 rounded-full bg-attention" aria-hidden />
         ) : null}
         <span className="text-[12.5px] tabular-nums text-faint">{cards.length}</span>
+
+        <button
+          type="button"
+          className="ml-auto rounded-md p-1 text-faint opacity-0 transition-opacity hover:bg-surface hover:text-ink group-hover/header:opacity-100"
+          onClick={() => onToggle(column.id)}
+          title={`Fold ${column.name} away`}
+          aria-label={`Fold ${column.name} away`}
+        >
+          <CaretLeft size={14} aria-hidden />
+        </button>
       </header>
 
       <SortableContext items={cards.map((card) => card.id)} strategy={verticalListSortingStrategy}>
@@ -138,6 +264,7 @@ export function Board(): ReactElement {
   const [cards, setCards] = useState<Card[]>([]);
   const [dispatch, setDispatch] = useState<DispatchState | null>(null);
   const [live, setLive] = useState(false);
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   /** Set when the served bundle is older than the server serving it (T1, T2). */
   const [staleBuild, setStaleBuild] = useState<string | null>(null);
@@ -163,6 +290,9 @@ export function Board(): ReactElement {
       }
 
       setBoard(first);
+      // Read once the board is known, because what is folded is per board.
+      setCollapsed(loadCollapsed(window.localStorage, first.id));
+
       const [nextColumns, nextCards, state, eligible] = await Promise.all([
         api.columns(first.id),
         api.cards(first.id),
@@ -222,11 +352,43 @@ export function Board(): ReactElement {
   const unseen = cards.filter(unseenSince).length;
 
   async function onDragEnd(event: DragEndEvent): Promise<void> {
-    const cardId = String(event.active.id);
+    const activeId = String(event.active.id);
     const over = event.over;
     if (over === null) return;
 
     const overId = String(over.id);
+
+    // A column being dragged and a card being dragged arrive through the same
+    // handler, and only the prefix separates them.
+    if (activeId.startsWith(COLUMN_DRAG_PREFIX)) {
+      // Anything that is not another column is not a place a column can go.
+      // Without this a column dropped over a card would silently do nothing
+      // or, worse, be read as a card id.
+      if (!overId.startsWith(COLUMN_DRAG_PREFIX) || board === null) return;
+
+      const ids = columns.map((column) => column.id);
+      const next = reorder(
+        ids,
+        activeId.slice(COLUMN_DRAG_PREFIX.length),
+        overId.slice(COLUMN_DRAG_PREFIX.length),
+      );
+      if (next === ids) return;
+
+      // Shown moved before the server agrees. A pipeline that snaps back for
+      // the length of a round trip reads as a drag that failed.
+      setColumns(next.map((id) => columns.find((column) => column.id === id)).filter(isColumn));
+
+      try {
+        await api.reorderColumns(board.id, next);
+        setError(null);
+      } catch (cause) {
+        setError((cause as Error).message);
+      }
+      await load();
+      return;
+    }
+
+    const cardId = activeId;
     const targetColumn = overId.startsWith('column:')
       ? overId.slice('column:'.length)
       : cards.find((card) => card.id === overId)?.columnId;
@@ -517,22 +679,33 @@ export function Board(): ReactElement {
 
         <DndContext
           sensors={sensors}
-          collisionDetection={closestCorners}
+          collisionDetection={boardCollisions}
           onDragEnd={(event) => void onDragEnd(event)}
         >
-          <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-3 py-4">
-            {columns.map((column) => (
-              <ColumnView
-                key={column.id}
-                column={column}
-                cards={byColumn.get(column.id) ?? []}
-                runnable={runnable}
-                onOpen={(card) => setOpenCardId(card.id)}
-                onRun={(card) => void run(card)}
-                onCancel={(card) => void cancel(card)}
-              />
-            ))}
-          </div>
+          <SortableContext
+            items={columns.map((column) => `${COLUMN_DRAG_PREFIX}${column.id}`)}
+            strategy={horizontalListSortingStrategy}
+          >
+            <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-3 py-4">
+              {columns.map((column) => (
+                <ColumnView
+                  key={column.id}
+                  column={column}
+                  cards={byColumn.get(column.id) ?? []}
+                  runnable={runnable}
+                  collapsed={collapsed.has(column.id)}
+                  onToggle={(columnId) => {
+                    const next = toggle(collapsed, columnId);
+                    setCollapsed(next);
+                    if (board !== null) saveCollapsed(window.localStorage, board.id, next);
+                  }}
+                  onOpen={(card) => setOpenCardId(card.id)}
+                  onRun={(card) => void run(card)}
+                  onCancel={(card) => void cancel(card)}
+                />
+              ))}
+            </div>
+          </SortableContext>
         </DndContext>
 
         {view !== 'digest' ? null : (

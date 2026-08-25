@@ -4,6 +4,9 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Play, Stop } from '@phosphor-icons/react';
 
+import claudeLogo from './assets/claude-color.webp';
+import codexLogo from './assets/codex.webp';
+
 import type { Card } from './api.js';
 
 /**
@@ -16,6 +19,12 @@ import type { Card } from './api.js';
  * A column already says what stage a card is at. What it cannot say is how
  * long the card has been sitting there while nobody watched, which is the rule
  * along the bottom edge and the reason this product exists.
+ *
+ * The anchor is the dispatch plate: the assigned agent's own mark, on a plate
+ * tinted to that agent, with the position in the running order set beneath it.
+ * On a board where two providers run, which one holds a card decides what the
+ * work will cost and what it can be trusted with, and that is not something to
+ * learn by opening the card.
  */
 
 const STATUS_LABEL: Record<Card['status'], string> = {
@@ -35,6 +44,15 @@ function statusTone(status: Card['status']): string {
   if (status === 'running') return 'chip-info';
   return '';
 }
+
+const AGENTS = {
+  claude: {
+    name: 'Claude Code',
+    logo: claudeLogo,
+    plate: 'border-claude/25 bg-claude-plate',
+  },
+  codex: { name: 'Codex', logo: codexLogo, plate: 'border-codex/20 bg-codex-plate' },
+} as const;
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -74,13 +92,7 @@ export function CardTile({
     id: card.id,
   });
 
-  const hard = card.guardrailDetail.filter((rail) => rail.enforcement === 'hard').length;
-  const advisory = card.guardrailDetail.filter((rail) => rail.enforcement === 'advisory').length;
-
-  // What is left to configure. A finished or abandoned card will not run
-  // again, so which model it would use and what would constrain it are
-  // answers to a question nobody is asking.
-  const configurable = !terminal && card.status !== 'abandoned' && card.mergedAt === null;
+  const agent = card.agentProvider === 'codex' ? AGENTS.codex : AGENTS.claude;
 
   const since = Date.now() - card.updatedAt;
   const waiting = isWaiting(card);
@@ -93,7 +105,7 @@ export function CardTile({
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`group relative shrink-0 overflow-hidden rounded-md border bg-surface transition-colors ${
+      className={`group relative shrink-0 overflow-hidden rounded-lg border bg-surface transition-colors ${
         isDragging
           ? 'border-brand opacity-70'
           : 'border-line hover:border-edge focus-within:border-edge'
@@ -115,55 +127,83 @@ export function CardTile({
           onRun(card);
         }
       }}
-      aria-label={`${card.title}, ${STATUS_LABEL[card.status]}${
+      aria-label={`${card.title}, ${STATUS_LABEL[card.status]}, assigned to ${agent.name}${
         card.priority === 'normal' ? '' : `, ${card.priority} priority`
       }${unseen ? ', unseen changes' : ''}. Press o to open${runnable ? ', d to dispatch' : ''}.`}
     >
-      <div className="px-3 py-2.5">
-        <div className="flex items-start gap-2">
-          {/* A fixed gutter, so titles line up down the column whether or not a
-              card has a number. */}
+      <div className="flex gap-3 px-3.5 pb-3 pt-3.5">
+        {/* The dispatch plate. Fixed width, so titles line up down the column
+            whether or not a card has a position in the order. */}
+        <div className="flex w-10 shrink-0 flex-col items-center gap-1">
           <span
-            className={`w-4 shrink-0 pt-px text-right text-[12.5px] ${
-              card.rankBlocked ? 'text-faint' : 'text-dim'
+            className={`flex size-10 items-center justify-center rounded-lg border ${agent.plate} ${
+              card.status === 'running' ? 'ring-2 ring-info ring-offset-1' : ''
             }`}
             title={
-              card.rank === null
-                ? undefined
-                : card.rankBlocked
-                  ? `${String(card.rank)} in the order, but blocked until its dependencies finish`
-                  : `${String(card.rank)} in the order to work in`
+              card.status === 'running'
+                ? `${agent.name} is running this card now`
+                : `Assigned to ${agent.name}`
             }
           >
-            {card.rank ?? ''}
+            <img src={agent.logo} alt={agent.name} className="size-7 object-contain" />
           </span>
 
-          {/* Two lines, always. A card three lines tall beside one that is one
-              line makes a column nobody can scan; the rest is a hover away. */}
-          <span
-            className="line-clamp-2 min-h-[2.75em] min-w-0 flex-1 font-medium leading-snug text-ink"
-            title={card.title}
-          >
-            {card.title}
-          </span>
-
-          {unseen ? (
+          {/* Mono, because it is an ordinal the board computed rather than a
+              word anybody wrote. */}
+          {card.rank === null ? null : (
             <span
-              className="mt-1.5 size-1.5 shrink-0 rounded-full bg-attention"
-              title="Changed since you last looked"
-              aria-hidden
-            />
-          ) : null}
+              className={`font-mono text-[11.5px] leading-none ${
+                card.rankBlocked ? 'text-faint' : 'text-dim'
+              }`}
+              title={
+                card.rankBlocked
+                  ? `${String(card.rank)} in the order, but blocked until its dependencies finish`
+                  : `${String(card.rank)} in the order to work in`
+              }
+            >
+              {card.rank}
+            </span>
+          )}
         </div>
 
-        {/* One line of chips, never two. A card that grows a row because it
-            carries one more fact is a card whose height depends on its
-            configuration, and a column of those cannot be scanned. What does
-            not fit is clipped, and the tooltips carry it. */}
-        <div className="mt-2 flex items-center gap-1 overflow-hidden pl-6">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex items-start gap-2">
+            {/* Two lines, always. A card three lines tall beside one that is
+                one line makes a column nobody can scan; the rest is a hover
+                away. */}
+            <span
+              className="line-clamp-2 min-h-[2.6em] min-w-0 flex-1 text-[15.5px] font-semibold leading-[1.3] text-ink"
+              title={card.title}
+            >
+              {card.title}
+            </span>
+
+            {unseen ? (
+              <span
+                className="mt-1.5 size-1.5 shrink-0 rounded-full bg-attention"
+                title="Changed since you last looked"
+                aria-hidden
+              />
+            ) : null}
+          </div>
+
+          {/* Enough context to recognise the work. The detail pane still owns
+              the specification. */}
+          <p className="mt-1.5 line-clamp-2 min-h-[2.6em] text-[12.5px] leading-[1.3] text-dim">
+            {card.body.trim() === '' ? (card.goalCondition ?? 'No description yet.') : card.body}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 border-t border-line px-3.5 py-2.5">
+        {/* Two groups, and the left one clips. Allowed to wrap, a card whose
+            chips and Run button together overran the width grew a second row
+            and stood taller than every card beside it, which is the one thing
+            a column of cards cannot afford. */}
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
           {/* "Merged" replaces "Done" rather than sitting beside it: a card the
-              board merged and a card the operator marked finished are different
-              outcomes, and showing both words would restate the ambiguity. */}
+            board merged and a card the operator marked finished are different
+            outcomes, and showing both words would restate the ambiguity. */}
           {card.mergedAt === null ? (
             <span className={`chip ${statusTone(card.status)}`}>{STATUS_LABEL[card.status]}</span>
           ) : (
@@ -178,7 +218,7 @@ export function CardTile({
           )}
 
           {/* Priority changes what runs next. `normal` shows nothing: a chip on
-              every card conveys no ordering at all. */}
+            every card conveys no ordering at all. */}
           {card.priority === 'normal' ? null : (
             <span
               className={`chip ${card.priority === 'high' ? 'chip-danger' : ''}`}
@@ -203,8 +243,8 @@ export function CardTile({
 
           {terminal || !card.looksFinished ? null : (
             /* Shown on the tile because a signal only visible after opening a
-               card is a signal nobody sees: an operator with fifteen cards will
-               not open fifteen cards. */
+             card is a signal nobody sees: an operator with fifteen cards will
+             not open fifteen cards. */
             <span
               className="chip chip-attention"
               title="Every file this card names already exists and it has never run. Open it to see why the board thinks so."
@@ -213,32 +253,20 @@ export function CardTile({
             </span>
           )}
 
-          {/* A finished card does not need to be told which model ran it or what
-              constrained it. Those answer "how will this go", and it has gone. */}
-          {configurable && card.agentModel !== null ? (
-            <span className="chip">{card.agentModel}</span>
-          ) : null}
+          {/* The guardrail count used to print here as "2 hard · 3 advisory".
+              It was the longest chip on the tile and the one nobody acted on
+              from the board; the specification tab now states each rail in
+              full. */}
+        </div>
 
-          {configurable && hard + advisory > 0 ? (
-            <span
-              className="chip"
-              title={card.guardrailDetail
-                .map((rail) => `${rail.text} (${rail.enforcement})`)
-                .join('\n')}
-            >
-              {/* Split, never a single total: a guardrail believed to be
-                  enforced but which is not is worse than none (R10). */}
-              {hard} hard · {advisory} advisory
-            </span>
-          ) : null}
-
+        <div className="flex shrink-0 items-center gap-2">
           {/* Stopping an agent is always visible. Starting one appears on hover
-              or focus, because a column of idle cards each offering a button is
-              a column of buttons. */}
+            or focus, because a column of idle cards each offering a button is
+            a column of buttons. */}
           {card.status === 'running' ? (
             <button
               type="button"
-              className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12.5px] font-medium text-danger transition-colors hover:bg-danger-tint"
+              className="inline-flex items-center gap-1 rounded-md border border-danger/30 px-2.5 py-1 text-[12.5px] font-medium text-danger transition-colors hover:bg-danger-tint"
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.stopPropagation();
@@ -251,18 +279,31 @@ export function CardTile({
           ) : runnable ? (
             <button
               type="button"
-              className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12.5px] font-medium text-ok opacity-0 transition-opacity hover:bg-ok-tint focus-visible:opacity-100 group-hover:opacity-100"
+              className="inline-flex items-center gap-1 rounded-md border border-ok/30 px-2.5 py-1 text-[12.5px] font-medium text-ok transition-colors hover:bg-ok-tint"
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.stopPropagation();
                 onRun(card);
               }}
-              title="Dispatch a Claude Code session for this card"
+              title={`Dispatch a ${agent.name} session for this card`}
             >
               <Play size={12} weight="fill" aria-hidden />
               Run
             </button>
           ) : null}
+
+          {/* The elapsed time yields to the button rather than squeezing the
+              status chip out of the row. Nothing is lost: the rule along the
+              bottom edge is the same fact drawn, and it carries the phrase in
+              its tooltip. */}
+          {card.status === 'running' || runnable ? null : (
+            <span
+              className="whitespace-nowrap text-[11.5px] text-faint"
+              title={`Last changed ${waitedFor(since)}`}
+            >
+              {waiting ? waitedFor(since) : 'updated'}
+            </span>
+          )}
         </div>
       </div>
 

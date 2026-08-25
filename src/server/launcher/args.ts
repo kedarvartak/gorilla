@@ -109,6 +109,17 @@ export function buildArgs(spec: LaunchSpec): string[] {
   return args;
 }
 
+/** Arguments for the Codex CLI's non-interactive JSON stream. */
+export function buildCodexArgs(spec: LaunchSpec, context: string): string[] {
+  const prompt = [composePrompt(spec), context].filter((part) => part.trim() !== '').join('\n\n');
+  const args = ['exec', '--json', '--full-auto'];
+  if (spec.agentModel !== null && spec.agentModel !== undefined && spec.agentModel !== '') {
+    args.push('--model', spec.agentModel);
+  }
+  args.push(prompt);
+  return args;
+}
+
 export interface CardContextInput {
   /** The card's own branch, when it has an isolated worktree. */
   readonly branch?: string | null;
