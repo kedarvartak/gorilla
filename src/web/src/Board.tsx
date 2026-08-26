@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactElement,
+} from 'react';
 import {
   DndContext,
   KeyboardSensor,
@@ -37,15 +45,16 @@ import { Invariants } from './Invariants.js';
 import { Activity } from './Activity.js';
 import { CardTile } from './CardTile.js';
 import { Sidebar, type View } from './Sidebar.js';
-import {
-  CaretLeft,
-  CaretRight,
-  DotsSixVertical,
-  MagnifyingGlass,
-  Plus,
-} from '@phosphor-icons/react';
+import { DotsSixVertical, MagnifyingGlass, Plus } from '@phosphor-icons/react';
 
-import { loadCollapsed, reorder, saveCollapsed, toggle } from './column-view-state.js';
+import {
+  DEFAULT_COLUMN_SHARE,
+  loadColumnWidths,
+  reorder,
+  resizeColumnShares,
+  saveColumnWidths,
+  totalColumnShares,
+} from './column-view-state.js';
 
 /**
  * The board (doc 09, screen 1).
@@ -92,8 +101,9 @@ function ColumnView({
   column,
   cards,
   runnable,
-  collapsed,
-  onToggle,
+  share,
+  totalShares,
+  onResize,
   onOpen,
   onRun,
   onCancel,
@@ -101,8 +111,9 @@ function ColumnView({
   column: Column;
   cards: Card[];
   runnable: ReadonlySet<string>;
-  collapsed: boolean;
-  onToggle: (columnId: string) => void;
+  share: number;
+  totalShares: number;
+  onResize: (columnId: string, deltaPixels: number, finished: boolean) => void;
   onOpen: (card: Card) => void;
   onRun: (card: Card) => void;
   onCancel: (card: Card) => void;
@@ -126,56 +137,40 @@ function ColumnView({
       ? 'Nothing merges from here while anything on it is unjudged'
       : undefined;
 
-  const style = { transform: CSS.Transform.toString(transform), transition };
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
 
-  if (collapsed) {
-    // A folded column keeps its count and its name. Dropped entirely it would
-    // read as a column that had been deleted, and the operator who folded
-    // "Done" three days ago would have no way back to it.
-    return (
-      <section
-        ref={setColumnRef}
-        style={style}
-        className={`flex w-11 shrink-0 flex-col items-center gap-3 rounded-lg border bg-well py-3 transition-colors ${
-          isDragging ? 'border-brand opacity-70' : 'border-line'
-        }`}
-        aria-label={`${column.name}, folded`}
-      >
-        <button
-          type="button"
-          className="rounded-md p-1 text-faint transition-colors hover:bg-surface hover:text-ink"
-          onClick={() => onToggle(column.id)}
-          title={`Unfold ${column.name}`}
-          aria-label={`Unfold ${column.name}`}
-        >
-          <CaretRight size={14} aria-hidden />
-        </button>
+  const startResize = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    const handle = event.currentTarget;
+    let lastX = event.clientX;
+    handle.setPointerCapture(event.pointerId);
 
-        <span className="text-[12.5px] font-medium tabular-nums text-dim">{cards.length}</span>
+    const move = (moved: PointerEvent): void => {
+      const delta = moved.clientX - lastX;
+      lastX = moved.clientX;
+      onResize(column.id, delta, false);
+    };
+    const stop = (): void => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', stop);
+      handle.removeEventListener('pointercancel', stop);
+      onResize(column.id, 0, true);
+    };
 
-        <span
-          className="eyebrow whitespace-nowrap [writing-mode:vertical-rl]"
-          title={flags}
-          {...attributes}
-          {...listeners}
-        >
-          {column.name}
-        </span>
-      </section>
-    );
-  }
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', stop);
+    handle.addEventListener('pointercancel', stop);
+  };
 
   return (
     <section
       ref={setColumnRef}
       style={style}
-      // A floor, not a fixed width. Five columns sharing a narrow window each
-      // ended up about a hundred pixels wide, which turns every title into an
-      // ellipsis; the row scrolls instead, and folding what is not in use is
-      // the way to get the width back.
-      className={`flex min-h-0 w-[280px] min-w-[280px] flex-1 basis-0 flex-col ${
-        isDragging ? 'opacity-70' : ''
-      }`}
+      className={`relative flex min-h-0 min-w-0 flex-col ${isDragging ? 'opacity-70' : ''}`}
       aria-label={column.name}
     >
       {/* Every unfolded column takes the same share of what is left. Fixed
@@ -210,16 +205,6 @@ function ColumnView({
           <span className="size-1 rounded-full bg-attention" aria-hidden />
         ) : null}
         <span className="text-[12.5px] tabular-nums text-faint">{cards.length}</span>
-
-        <button
-          type="button"
-          className="ml-auto rounded-md p-1 text-faint opacity-0 transition-opacity hover:bg-surface hover:text-ink group-hover/header:opacity-100"
-          onClick={() => onToggle(column.id)}
-          title={`Fold ${column.name} away`}
-          aria-label={`Fold ${column.name} away`}
-        >
-          <CaretLeft size={14} aria-hidden />
-        </button>
       </header>
 
       <SortableContext items={cards.map((card) => card.id)} strategy={verticalListSortingStrategy}>
@@ -254,6 +239,30 @@ function ColumnView({
           ))}
         </ul>
       </SortableContext>
+
+      {/* A real width control, independent of the header grip that changes
+          pipeline order. The larger invisible hit area keeps the one-pixel
+          rule usable without making it visually heavy. */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={`Resize ${column.name}`}
+        aria-valuemin={10}
+        aria-valuemax={90}
+        aria-valuenow={Math.round((share / totalShares) * 100)}
+        tabIndex={0}
+        className="group/resize absolute inset-y-0 -right-2 z-10 w-4 cursor-col-resize touch-none"
+        title={`Drag to resize ${column.name}`}
+        onPointerDown={startResize}
+        onKeyDown={(event) => {
+          const delta = event.key === 'ArrowLeft' ? -24 : event.key === 'ArrowRight' ? 24 : 0;
+          if (delta === 0) return;
+          event.preventDefault();
+          onResize(column.id, delta, true);
+        }}
+      >
+        <span className="mx-auto block h-full w-px bg-line transition-colors group-hover/resize:bg-brand group-focus/resize:bg-brand" />
+      </div>
     </section>
   );
 }
@@ -264,7 +273,8 @@ export function Board(): ReactElement {
   const [cards, setCards] = useState<Card[]>([]);
   const [dispatch, setDispatch] = useState<DispatchState | null>(null);
   const [live, setLive] = useState(false);
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const boardGrid = useRef<HTMLDivElement>(null);
+  const [columnShares, setColumnShares] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   /** Set when the served bundle is older than the server serving it (T1, T2). */
   const [staleBuild, setStaleBuild] = useState<string | null>(null);
@@ -290,8 +300,9 @@ export function Board(): ReactElement {
       }
 
       setBoard(first);
-      // Read once the board is known, because what is folded is per board.
-      setCollapsed(loadCollapsed(window.localStorage, first.id));
+      setColumnShares((current) =>
+        Object.keys(current).length > 0 ? current : loadColumnWidths(window.localStorage, first.id),
+      );
 
       const [nextColumns, nextCards, state, eligible] = await Promise.all([
         api.columns(first.id),
@@ -686,24 +697,44 @@ export function Board(): ReactElement {
             items={columns.map((column) => `${COLUMN_DRAG_PREFIX}${column.id}`)}
             strategy={horizontalListSortingStrategy}
           >
-            <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-3 py-4">
-              {columns.map((column) => (
-                <ColumnView
-                  key={column.id}
-                  column={column}
-                  cards={byColumn.get(column.id) ?? []}
-                  runnable={runnable}
-                  collapsed={collapsed.has(column.id)}
-                  onToggle={(columnId) => {
-                    const next = toggle(collapsed, columnId);
-                    setCollapsed(next);
-                    if (board !== null) saveCollapsed(window.localStorage, board.id, next);
-                  }}
-                  onOpen={(card) => setOpenCardId(card.id)}
-                  onRun={(card) => void run(card)}
-                  onCancel={(card) => void cancel(card)}
-                />
-              ))}
+            <div
+              ref={boardGrid}
+              className="grid min-h-0 min-w-0 flex-1 gap-4 overflow-hidden px-3 py-4"
+              style={{
+                gridTemplateColumns: columns
+                  .map((column) => `${String(columnShares[column.id] ?? DEFAULT_COLUMN_SHARE)}fr`)
+                  .join(' '),
+              }}
+            >
+              {columns.map((column) => {
+                const ids = columns.map((item) => item.id);
+                const totalShares = totalColumnShares(columnShares, ids);
+                return (
+                  <ColumnView
+                    key={column.id}
+                    column={column}
+                    cards={byColumn.get(column.id) ?? []}
+                    runnable={runnable}
+                    share={columnShares[column.id] ?? DEFAULT_COLUMN_SHARE}
+                    totalShares={totalShares}
+                    onResize={(columnId, deltaPixels, finished) => {
+                      setColumnShares((current) => {
+                        const available = boardGrid.current?.clientWidth ?? 1;
+                        const total = totalColumnShares(current, ids);
+                        const deltaShares = (deltaPixels / available) * total;
+                        const next = resizeColumnShares(current, ids, columnId, deltaShares);
+                        if (finished && board !== null) {
+                          saveColumnWidths(window.localStorage, board.id, next);
+                        }
+                        return next;
+                      });
+                    }}
+                    onOpen={(card) => setOpenCardId(card.id)}
+                    onRun={(card) => void run(card)}
+                    onCancel={(card) => void cancel(card)}
+                  />
+                );
+              })}
             </div>
           </SortableContext>
         </DndContext>
