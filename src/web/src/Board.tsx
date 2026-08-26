@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
   type ReactElement,
@@ -47,13 +48,12 @@ import { Sidebar, type View } from './Sidebar.js';
 import { DotsSixVertical, MagnifyingGlass, Plus } from '@phosphor-icons/react';
 
 import {
-  DEFAULT_COLUMN_WIDTH,
-  MAX_COLUMN_WIDTH,
-  MIN_COLUMN_WIDTH,
-  clampColumnWidth,
+  DEFAULT_COLUMN_SHARE,
   loadColumnWidths,
   reorder,
+  resizeColumnShares,
   saveColumnWidths,
+  totalColumnShares,
 } from './column-view-state.js';
 
 /**
@@ -101,7 +101,8 @@ function ColumnView({
   column,
   cards,
   runnable,
-  width,
+  share,
+  totalShares,
   onResize,
   onOpen,
   onRun,
@@ -110,8 +111,9 @@ function ColumnView({
   column: Column;
   cards: Card[];
   runnable: ReadonlySet<string>;
-  width: number;
-  onResize: (columnId: string, width: number, finished: boolean) => void;
+  share: number;
+  totalShares: number;
+  onResize: (columnId: string, deltaPixels: number, finished: boolean) => void;
   onOpen: (card: Card) => void;
   onRun: (card: Card) => void;
   onCancel: (card: Card) => void;
@@ -138,29 +140,25 @@ function ColumnView({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    width,
-    minWidth: width,
-    maxWidth: width,
   };
 
   const startResize = (event: ReactPointerEvent<HTMLDivElement>): void => {
     event.preventDefault();
     event.stopPropagation();
     const handle = event.currentTarget;
-    const startX = event.clientX;
-    const startWidth = width;
-    let latest = width;
+    let lastX = event.clientX;
     handle.setPointerCapture(event.pointerId);
 
     const move = (moved: PointerEvent): void => {
-      latest = clampColumnWidth(startWidth + moved.clientX - startX);
-      onResize(column.id, latest, false);
+      const delta = moved.clientX - lastX;
+      lastX = moved.clientX;
+      onResize(column.id, delta, false);
     };
     const stop = (): void => {
       handle.removeEventListener('pointermove', move);
       handle.removeEventListener('pointerup', stop);
       handle.removeEventListener('pointercancel', stop);
-      onResize(column.id, latest, true);
+      onResize(column.id, 0, true);
     };
 
     handle.addEventListener('pointermove', move);
@@ -172,7 +170,7 @@ function ColumnView({
     <section
       ref={setColumnRef}
       style={style}
-      className={`relative flex min-h-0 shrink-0 flex-col ${isDragging ? 'opacity-70' : ''}`}
+      className={`relative flex min-h-0 min-w-0 flex-col ${isDragging ? 'opacity-70' : ''}`}
       aria-label={column.name}
     >
       {/* Every unfolded column takes the same share of what is left. Fixed
@@ -249,25 +247,18 @@ function ColumnView({
         role="separator"
         aria-orientation="vertical"
         aria-label={`Resize ${column.name}`}
-        aria-valuemin={MIN_COLUMN_WIDTH}
-        aria-valuemax={MAX_COLUMN_WIDTH}
-        aria-valuenow={width}
+        aria-valuemin={10}
+        aria-valuemax={90}
+        aria-valuenow={Math.round((share / totalShares) * 100)}
         tabIndex={0}
         className="group/resize absolute inset-y-0 -right-2 z-10 w-4 cursor-col-resize touch-none"
         title={`Drag to resize ${column.name}`}
         onPointerDown={startResize}
         onKeyDown={(event) => {
           const delta = event.key === 'ArrowLeft' ? -24 : event.key === 'ArrowRight' ? 24 : 0;
-          if (delta !== 0) {
-            event.preventDefault();
-            onResize(column.id, clampColumnWidth(width + delta), true);
-          } else if (event.key === 'Home') {
-            event.preventDefault();
-            onResize(column.id, MIN_COLUMN_WIDTH, true);
-          } else if (event.key === 'End') {
-            event.preventDefault();
-            onResize(column.id, MAX_COLUMN_WIDTH, true);
-          }
+          if (delta === 0) return;
+          event.preventDefault();
+          onResize(column.id, delta, true);
         }}
       >
         <span className="mx-auto block h-full w-px bg-line transition-colors group-hover/resize:bg-brand group-focus/resize:bg-brand" />
@@ -282,7 +273,8 @@ export function Board(): ReactElement {
   const [cards, setCards] = useState<Card[]>([]);
   const [dispatch, setDispatch] = useState<DispatchState | null>(null);
   const [live, setLive] = useState(false);
-  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+  const boardGrid = useRef<HTMLDivElement>(null);
+  const [columnShares, setColumnShares] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   /** Set when the served bundle is older than the server serving it (T1, T2). */
   const [staleBuild, setStaleBuild] = useState<string | null>(null);
@@ -308,7 +300,7 @@ export function Board(): ReactElement {
       }
 
       setBoard(first);
-      setColumnWidths((current) =>
+      setColumnShares((current) =>
         Object.keys(current).length > 0 ? current : loadColumnWidths(window.localStorage, first.id),
       );
 
@@ -705,26 +697,44 @@ export function Board(): ReactElement {
             items={columns.map((column) => `${COLUMN_DRAG_PREFIX}${column.id}`)}
             strategy={horizontalListSortingStrategy}
           >
-            <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto px-3 py-4 [scrollbar-width:thin]">
-              {columns.map((column) => (
-                <ColumnView
-                  key={column.id}
-                  column={column}
-                  cards={byColumn.get(column.id) ?? []}
-                  runnable={runnable}
-                  width={columnWidths[column.id] ?? DEFAULT_COLUMN_WIDTH}
-                  onResize={(columnId, width, finished) => {
-                    const next = { ...columnWidths, [columnId]: width };
-                    setColumnWidths(next);
-                    if (finished && board !== null) {
-                      saveColumnWidths(window.localStorage, board.id, next);
-                    }
-                  }}
-                  onOpen={(card) => setOpenCardId(card.id)}
-                  onRun={(card) => void run(card)}
-                  onCancel={(card) => void cancel(card)}
-                />
-              ))}
+            <div
+              ref={boardGrid}
+              className="grid min-h-0 min-w-0 flex-1 gap-4 overflow-hidden px-3 py-4"
+              style={{
+                gridTemplateColumns: columns
+                  .map((column) => `${String(columnShares[column.id] ?? DEFAULT_COLUMN_SHARE)}fr`)
+                  .join(' '),
+              }}
+            >
+              {columns.map((column) => {
+                const ids = columns.map((item) => item.id);
+                const totalShares = totalColumnShares(columnShares, ids);
+                return (
+                  <ColumnView
+                    key={column.id}
+                    column={column}
+                    cards={byColumn.get(column.id) ?? []}
+                    runnable={runnable}
+                    share={columnShares[column.id] ?? DEFAULT_COLUMN_SHARE}
+                    totalShares={totalShares}
+                    onResize={(columnId, deltaPixels, finished) => {
+                      setColumnShares((current) => {
+                        const available = boardGrid.current?.clientWidth ?? 1;
+                        const total = totalColumnShares(current, ids);
+                        const deltaShares = (deltaPixels / available) * total;
+                        const next = resizeColumnShares(current, ids, columnId, deltaShares);
+                        if (finished && board !== null) {
+                          saveColumnWidths(window.localStorage, board.id, next);
+                        }
+                        return next;
+                      });
+                    }}
+                    onOpen={(card) => setOpenCardId(card.id)}
+                    onRun={(card) => void run(card)}
+                    onCancel={(card) => void cancel(card)}
+                  />
+                );
+              })}
             </div>
           </SortableContext>
         </DndContext>
