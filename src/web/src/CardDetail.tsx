@@ -1013,14 +1013,25 @@ export function CardDetail({
           <>
             <div className="section">
               <h4 className="mb-2 eyebrow">What this card is</h4>
-              {detail.card.body === '' ? (
-                <p className="text-dim">
-                  No description. An agent reads this before anything else, so a card with none is a
-                  card that starts from its title alone.
-                </p>
-              ) : (
-                <p className="whitespace-pre-wrap text-ink">{detail.card.body}</p>
-              )}
+              {/* Sessions inferred from hooks begin with a mechanical name. The
+                  flap is where their human name belongs: edit on blur or Enter,
+                  using the same safe save rule as the rest of the card. */}
+              <TextField
+                label="card title"
+                value={detail.card.title}
+                placeholder="Name this work"
+                onSave={(title) => patch({ title })}
+              />
+              <div className="mt-3">
+                {detail.card.body === '' ? (
+                  <p className="text-dim">
+                    No description. An agent reads this before anything else, so a card with none is
+                    a card that starts from its title alone.
+                  </p>
+                ) : (
+                  <p className="whitespace-pre-wrap text-ink">{detail.card.body}</p>
+                )}
+              </div>
             </div>
 
             <div className="section">
