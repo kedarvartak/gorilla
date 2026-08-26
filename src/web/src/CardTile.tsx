@@ -182,7 +182,7 @@ export function CardTile({
               <input
                 autoFocus
                 aria-label="Card name"
-                className="min-w-0 flex-1 rounded border border-brand bg-well px-2 py-1 text-[15.5px] font-semibold leading-[1.3] text-ink"
+                className="min-w-0 flex-1 border-b border-brand bg-transparent px-0 py-0 text-[15.5px] font-semibold leading-[1.3] text-ink outline-none"
                 value={draftTitle}
                 onPointerDown={(event) => event.stopPropagation()}
                 onChange={(changed) => setDraftTitle(changed.target.value)}
