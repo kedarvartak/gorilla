@@ -1,8 +1,8 @@
-import type { ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
 
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Play, Stop } from '@phosphor-icons/react';
+import { DotsThreeVertical, Play, Stop } from '@phosphor-icons/react';
 
 import claudeLogo from './assets/claude-color.webp';
 import codexLogo from './assets/codex.webp';
@@ -75,6 +75,8 @@ export interface CardTileProps {
   /** In a terminal column. What a finished card needs shown is not the same. */
   readonly terminal: boolean;
   readonly onOpen: (card: Card) => void;
+  readonly onRename: (card: Card, title: string) => void;
+  readonly onDelete: (card: Card) => void;
   readonly onRun: (card: Card) => void;
   readonly onCancel: (card: Card) => void;
 }
@@ -85,9 +87,14 @@ export function CardTile({
   runnable,
   terminal,
   onOpen,
+  onRename,
+  onDelete,
   onRun,
   onCancel,
 }: CardTileProps): ReactElement {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(card.title);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: card.id,
   });
@@ -177,6 +184,84 @@ export function CardTile({
             >
               {card.title}
             </span>
+
+            <div className="relative shrink-0" onPointerDown={(event) => event.stopPropagation()}>
+              <button
+                type="button"
+                className="rounded p-1 text-faint opacity-0 transition-colors hover:bg-well hover:text-ink group-hover:opacity-100 focus-visible:opacity-100"
+                title="Card actions"
+                aria-label={`Actions for ${card.title}`}
+                aria-expanded={menuOpen}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setMenuOpen((open) => !open);
+                  setRenaming(false);
+                  setDraftTitle(card.title);
+                }}
+              >
+                <DotsThreeVertical size={16} weight="bold" aria-hidden />
+              </button>
+              {!menuOpen ? null : (
+                <div className="absolute top-full right-0 z-30 mt-1 w-44 rounded-md border border-line bg-surface p-1 shadow-lg">
+                  {!renaming ? (
+                    <>
+                      <button
+                        type="button"
+                        className="w-full rounded px-2 py-1.5 text-left text-[12.5px] text-dim hover:bg-well hover:text-ink"
+                        onClick={() => setRenaming(true)}
+                      >
+                        Edit name
+                      </button>
+                      <button
+                        type="button"
+                        className="w-full rounded px-2 py-1.5 text-left text-[12.5px] text-danger hover:bg-danger-tint"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          onDelete(card);
+                        }}
+                      >
+                        Delete card
+                      </button>
+                    </>
+                  ) : (
+                    <form
+                      className="p-1"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        const title = draftTitle.trim();
+                        if (title === '') return;
+                        setMenuOpen(false);
+                        onRename(card, title);
+                      }}
+                    >
+                      <label className="sr-only" htmlFor={`rename-${card.id}`}>
+                        Card name
+                      </label>
+                      <input
+                        id={`rename-${card.id}`}
+                        autoFocus
+                        className="w-full rounded border border-line bg-well px-2 py-1 text-[12.5px] text-ink"
+                        value={draftTitle}
+                        onChange={(changed) => setDraftTitle(changed.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Escape') {
+                            setRenaming(false);
+                            setDraftTitle(card.title);
+                          }
+                        }}
+                      />
+                      <button
+                        type="submit"
+                        className="mt-1 w-full rounded bg-brand px-2 py-1 text-[12.5px] text-white disabled:opacity-50"
+                        disabled={draftTitle.trim() === ''}
+                      >
+                        Save name
+                      </button>
+                    </form>
+                  )}
+                </div>
+              )}
+            </div>
 
             {unseen ? (
               <span
