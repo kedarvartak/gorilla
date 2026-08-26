@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import {
   DndContext,
   KeyboardSensor,
@@ -45,7 +45,7 @@ import {
   Plus,
 } from '@phosphor-icons/react';
 
-import { loadCollapsed, reorder, saveCollapsed, toggle } from './column-view-state.js';
+import { reorder } from './column-view-state.js';
 
 /**
  * The board (doc 09, screen 1).
@@ -92,8 +92,6 @@ function ColumnView({
   column,
   cards,
   runnable,
-  collapsed,
-  onToggle,
   onOpen,
   onRun,
   onCancel,
@@ -101,8 +99,6 @@ function ColumnView({
   column: Column;
   cards: Card[];
   runnable: ReadonlySet<string>;
-  collapsed: boolean;
-  onToggle: (columnId: string) => void;
   onOpen: (card: Card) => void;
   onRun: (card: Card) => void;
   onCancel: (card: Card) => void;
@@ -128,52 +124,14 @@ function ColumnView({
 
   const style = { transform: CSS.Transform.toString(transform), transition };
 
-  if (collapsed) {
-    // A folded column keeps its count and its name. Dropped entirely it would
-    // read as a column that had been deleted, and the operator who folded
-    // "Done" three days ago would have no way back to it.
-    return (
-      <section
-        ref={setColumnRef}
-        style={style}
-        className={`flex w-11 shrink-0 flex-col items-center gap-3 rounded-lg border bg-well py-3 transition-colors ${
-          isDragging ? 'border-brand opacity-70' : 'border-line'
-        }`}
-        aria-label={`${column.name}, folded`}
-      >
-        <button
-          type="button"
-          className="rounded-md p-1 text-faint transition-colors hover:bg-surface hover:text-ink"
-          onClick={() => onToggle(column.id)}
-          title={`Unfold ${column.name}`}
-          aria-label={`Unfold ${column.name}`}
-        >
-          <CaretRight size={14} aria-hidden />
-        </button>
-
-        <span className="text-[12.5px] font-medium tabular-nums text-dim">{cards.length}</span>
-
-        <span
-          className="eyebrow whitespace-nowrap [writing-mode:vertical-rl]"
-          title={flags}
-          {...attributes}
-          {...listeners}
-        >
-          {column.name}
-        </span>
-      </section>
-    );
-  }
-
   return (
     <section
       ref={setColumnRef}
       style={style}
-      // A floor, not a fixed width. Five columns sharing a narrow window each
-      // ended up about a hundred pixels wide, which turns every title into an
-      // ellipsis; the row scrolls instead, and folding what is not in use is
-      // the way to get the width back.
-      className={`flex min-h-0 w-[280px] min-w-[280px] flex-1 basis-0 flex-col ${
+      // One responsive lane at a time on narrow screens, a readable fixed
+      // measure on wide ones. The surrounding rail slides between lanes rather
+      // than asking the operator to hide part of their pipeline.
+      className={`flex min-h-0 w-[min(320px,calc(100vw-5rem))] min-w-[min(320px,calc(100vw-5rem))] snap-start flex-col ${
         isDragging ? 'opacity-70' : ''
       }`}
       aria-label={column.name}
@@ -210,16 +168,6 @@ function ColumnView({
           <span className="size-1 rounded-full bg-attention" aria-hidden />
         ) : null}
         <span className="text-[12.5px] tabular-nums text-faint">{cards.length}</span>
-
-        <button
-          type="button"
-          className="ml-auto rounded-md p-1 text-faint opacity-0 transition-opacity hover:bg-surface hover:text-ink group-hover/header:opacity-100"
-          onClick={() => onToggle(column.id)}
-          title={`Fold ${column.name} away`}
-          aria-label={`Fold ${column.name} away`}
-        >
-          <CaretLeft size={14} aria-hidden />
-        </button>
       </header>
 
       <SortableContext items={cards.map((card) => card.id)} strategy={verticalListSortingStrategy}>
@@ -264,7 +212,7 @@ export function Board(): ReactElement {
   const [cards, setCards] = useState<Card[]>([]);
   const [dispatch, setDispatch] = useState<DispatchState | null>(null);
   const [live, setLive] = useState(false);
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const columnRail = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   /** Set when the served bundle is older than the server serving it (T1, T2). */
   const [staleBuild, setStaleBuild] = useState<string | null>(null);
@@ -290,8 +238,6 @@ export function Board(): ReactElement {
       }
 
       setBoard(first);
-      // Read once the board is known, because what is folded is per board.
-      setCollapsed(loadCollapsed(window.localStorage, first.id));
 
       const [nextColumns, nextCards, state, eligible] = await Promise.all([
         api.columns(first.id),
@@ -686,24 +632,44 @@ export function Board(): ReactElement {
             items={columns.map((column) => `${COLUMN_DRAG_PREFIX}${column.id}`)}
             strategy={horizontalListSortingStrategy}
           >
-            <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-3 py-4">
-              {columns.map((column) => (
-                <ColumnView
-                  key={column.id}
-                  column={column}
-                  cards={byColumn.get(column.id) ?? []}
-                  runnable={runnable}
-                  collapsed={collapsed.has(column.id)}
-                  onToggle={(columnId) => {
-                    const next = toggle(collapsed, columnId);
-                    setCollapsed(next);
-                    if (board !== null) saveCollapsed(window.localStorage, board.id, next);
-                  }}
-                  onOpen={(card) => setOpenCardId(card.id)}
-                  onRun={(card) => void run(card)}
-                  onCancel={(card) => void cancel(card)}
-                />
-              ))}
+            <div className="relative min-h-0 flex-1">
+              {/* The pipeline stays intact. These controls move the viewport by
+                  one lane, so a narrow screen still reads a board as stages
+                  rather than as a collection of columns the operator hid. */}
+              <button
+                type="button"
+                className="absolute top-1/2 left-1 z-10 -translate-y-1/2 rounded-full border border-line bg-surface p-1.5 text-dim shadow-sm hover:text-ink"
+                title="Show earlier columns"
+                aria-label="Show earlier columns"
+                onClick={() => columnRail.current?.scrollBy({ left: -320, behavior: 'smooth' })}
+              >
+                <CaretLeft size={16} aria-hidden />
+              </button>
+              <button
+                type="button"
+                className="absolute top-1/2 right-1 z-10 -translate-y-1/2 rounded-full border border-line bg-surface p-1.5 text-dim shadow-sm hover:text-ink"
+                title="Show later columns"
+                aria-label="Show later columns"
+                onClick={() => columnRail.current?.scrollBy({ left: 320, behavior: 'smooth' })}
+              >
+                <CaretRight size={16} aria-hidden />
+              </button>
+              <div
+                ref={columnRail}
+                className="flex h-full min-h-0 snap-x snap-mandatory gap-3 overflow-x-auto px-8 py-4 [scrollbar-width:thin]"
+              >
+                {columns.map((column) => (
+                  <ColumnView
+                    key={column.id}
+                    column={column}
+                    cards={byColumn.get(column.id) ?? []}
+                    runnable={runnable}
+                    onOpen={(card) => setOpenCardId(card.id)}
+                    onRun={(card) => void run(card)}
+                    onCancel={(card) => void cancel(card)}
+                  />
+                ))}
+              </div>
             </div>
           </SortableContext>
         </DndContext>
