@@ -175,15 +175,39 @@ export function CardTile({
 
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex items-start gap-2">
-            {/* Two lines, always. A card three lines tall beside one that is
-                one line makes a column nobody can scan; the rest is a hover
-                away. */}
-            <span
-              className="line-clamp-2 min-h-[2.6em] min-w-0 flex-1 text-[15.5px] font-semibold leading-[1.3] text-ink"
-              title={card.title}
-            >
-              {card.title}
-            </span>
+            {/* Edit mode replaces the title itself. Renaming should not make a
+                second miniature card or a detached form the operator has to
+                associate with this one. */}
+            {renaming ? (
+              <input
+                autoFocus
+                aria-label="Card name"
+                className="min-w-0 flex-1 rounded border border-brand bg-well px-2 py-1 text-[15.5px] font-semibold leading-[1.3] text-ink"
+                value={draftTitle}
+                onPointerDown={(event) => event.stopPropagation()}
+                onChange={(changed) => setDraftTitle(changed.target.value)}
+                onBlur={() => {
+                  const title = draftTitle.trim();
+                  setRenaming(false);
+                  if (title !== '' && title !== card.title) onRename(card, title);
+                  else setDraftTitle(card.title);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') event.currentTarget.blur();
+                  if (event.key === 'Escape') {
+                    setDraftTitle(card.title);
+                    setRenaming(false);
+                  }
+                }}
+              />
+            ) : (
+              <span
+                className="line-clamp-2 min-h-[2.6em] min-w-0 flex-1 text-[15.5px] font-semibold leading-[1.3] text-ink"
+                title={card.title}
+              >
+                {card.title}
+              </span>
+            )}
 
             <div className="relative shrink-0" onPointerDown={(event) => event.stopPropagation()}>
               <button
@@ -195,7 +219,6 @@ export function CardTile({
                 onClick={(event) => {
                   event.stopPropagation();
                   setMenuOpen((open) => !open);
-                  setRenaming(false);
                   setDraftTitle(card.title);
                 }}
               >
@@ -203,62 +226,26 @@ export function CardTile({
               </button>
               {!menuOpen ? null : (
                 <div className="absolute top-full right-0 z-30 mt-1 w-44 rounded-md border border-line bg-surface p-1 shadow-lg">
-                  {!renaming ? (
-                    <>
-                      <button
-                        type="button"
-                        className="w-full rounded px-2 py-1.5 text-left text-[12.5px] text-dim hover:bg-well hover:text-ink"
-                        onClick={() => setRenaming(true)}
-                      >
-                        Edit name
-                      </button>
-                      <button
-                        type="button"
-                        className="w-full rounded px-2 py-1.5 text-left text-[12.5px] text-danger hover:bg-danger-tint"
-                        onClick={() => {
-                          setMenuOpen(false);
-                          onDelete(card);
-                        }}
-                      >
-                        Delete card
-                      </button>
-                    </>
-                  ) : (
-                    <form
-                      className="p-1"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        const title = draftTitle.trim();
-                        if (title === '') return;
-                        setMenuOpen(false);
-                        onRename(card, title);
-                      }}
-                    >
-                      <label className="sr-only" htmlFor={`rename-${card.id}`}>
-                        Card name
-                      </label>
-                      <input
-                        id={`rename-${card.id}`}
-                        autoFocus
-                        className="w-full rounded border border-line bg-well px-2 py-1 text-[12.5px] text-ink"
-                        value={draftTitle}
-                        onChange={(changed) => setDraftTitle(changed.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Escape') {
-                            setRenaming(false);
-                            setDraftTitle(card.title);
-                          }
-                        }}
-                      />
-                      <button
-                        type="submit"
-                        className="mt-1 w-full rounded bg-brand px-2 py-1 text-[12.5px] text-white disabled:opacity-50"
-                        disabled={draftTitle.trim() === ''}
-                      >
-                        Save name
-                      </button>
-                    </form>
-                  )}
+                  <button
+                    type="button"
+                    className="w-full rounded px-2 py-1.5 text-left text-[12.5px] text-dim hover:bg-well hover:text-ink"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setRenaming(true);
+                    }}
+                  >
+                    Edit name
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full rounded px-2 py-1.5 text-left text-[12.5px] text-danger hover:bg-danger-tint"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onDelete(card);
+                    }}
+                  >
+                    Delete card
+                  </button>
                 </div>
               )}
             </div>
