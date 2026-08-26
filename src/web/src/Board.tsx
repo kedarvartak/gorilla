@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactElement,
+} from 'react';
 import {
   DndContext,
   KeyboardSensor,
@@ -37,15 +44,17 @@ import { Invariants } from './Invariants.js';
 import { Activity } from './Activity.js';
 import { CardTile } from './CardTile.js';
 import { Sidebar, type View } from './Sidebar.js';
-import {
-  CaretLeft,
-  CaretRight,
-  DotsSixVertical,
-  MagnifyingGlass,
-  Plus,
-} from '@phosphor-icons/react';
+import { DotsSixVertical, MagnifyingGlass, Plus } from '@phosphor-icons/react';
 
-import { reorder } from './column-view-state.js';
+import {
+  DEFAULT_COLUMN_WIDTH,
+  MAX_COLUMN_WIDTH,
+  MIN_COLUMN_WIDTH,
+  clampColumnWidth,
+  loadColumnWidths,
+  reorder,
+  saveColumnWidths,
+} from './column-view-state.js';
 
 /**
  * The board (doc 09, screen 1).
@@ -92,6 +101,8 @@ function ColumnView({
   column,
   cards,
   runnable,
+  width,
+  onResize,
   onOpen,
   onRun,
   onCancel,
@@ -99,6 +110,8 @@ function ColumnView({
   column: Column;
   cards: Card[];
   runnable: ReadonlySet<string>;
+  width: number;
+  onResize: (columnId: string, width: number, finished: boolean) => void;
   onOpen: (card: Card) => void;
   onRun: (card: Card) => void;
   onCancel: (card: Card) => void;
@@ -122,18 +135,44 @@ function ColumnView({
       ? 'Nothing merges from here while anything on it is unjudged'
       : undefined;
 
-  const style = { transform: CSS.Transform.toString(transform), transition };
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    width,
+    minWidth: width,
+    maxWidth: width,
+  };
+
+  const startResize = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    const handle = event.currentTarget;
+    const startX = event.clientX;
+    const startWidth = width;
+    let latest = width;
+    handle.setPointerCapture(event.pointerId);
+
+    const move = (moved: PointerEvent): void => {
+      latest = clampColumnWidth(startWidth + moved.clientX - startX);
+      onResize(column.id, latest, false);
+    };
+    const stop = (): void => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', stop);
+      handle.removeEventListener('pointercancel', stop);
+      onResize(column.id, latest, true);
+    };
+
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', stop);
+    handle.addEventListener('pointercancel', stop);
+  };
 
   return (
     <section
       ref={setColumnRef}
       style={style}
-      // One responsive lane at a time on narrow screens, a readable fixed
-      // measure on wide ones. The surrounding rail slides between lanes rather
-      // than asking the operator to hide part of their pipeline.
-      className={`flex min-h-0 w-[min(320px,calc(100vw-5rem))] min-w-[min(320px,calc(100vw-5rem))] snap-start flex-col ${
-        isDragging ? 'opacity-70' : ''
-      }`}
+      className={`relative flex min-h-0 shrink-0 flex-col ${isDragging ? 'opacity-70' : ''}`}
       aria-label={column.name}
     >
       {/* Every unfolded column takes the same share of what is left. Fixed
@@ -202,6 +241,37 @@ function ColumnView({
           ))}
         </ul>
       </SortableContext>
+
+      {/* A real width control, independent of the header grip that changes
+          pipeline order. The larger invisible hit area keeps the one-pixel
+          rule usable without making it visually heavy. */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={`Resize ${column.name}`}
+        aria-valuemin={MIN_COLUMN_WIDTH}
+        aria-valuemax={MAX_COLUMN_WIDTH}
+        aria-valuenow={width}
+        tabIndex={0}
+        className="group/resize absolute inset-y-0 -right-2 z-10 w-4 cursor-col-resize touch-none"
+        title={`Drag to resize ${column.name}`}
+        onPointerDown={startResize}
+        onKeyDown={(event) => {
+          const delta = event.key === 'ArrowLeft' ? -24 : event.key === 'ArrowRight' ? 24 : 0;
+          if (delta !== 0) {
+            event.preventDefault();
+            onResize(column.id, clampColumnWidth(width + delta), true);
+          } else if (event.key === 'Home') {
+            event.preventDefault();
+            onResize(column.id, MIN_COLUMN_WIDTH, true);
+          } else if (event.key === 'End') {
+            event.preventDefault();
+            onResize(column.id, MAX_COLUMN_WIDTH, true);
+          }
+        }}
+      >
+        <span className="mx-auto block h-full w-px bg-line transition-colors group-hover/resize:bg-brand group-focus/resize:bg-brand" />
+      </div>
     </section>
   );
 }
@@ -212,7 +282,7 @@ export function Board(): ReactElement {
   const [cards, setCards] = useState<Card[]>([]);
   const [dispatch, setDispatch] = useState<DispatchState | null>(null);
   const [live, setLive] = useState(false);
-  const columnRail = useRef<HTMLDivElement>(null);
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   /** Set when the served bundle is older than the server serving it (T1, T2). */
   const [staleBuild, setStaleBuild] = useState<string | null>(null);
@@ -238,6 +308,9 @@ export function Board(): ReactElement {
       }
 
       setBoard(first);
+      setColumnWidths((current) =>
+        Object.keys(current).length > 0 ? current : loadColumnWidths(window.localStorage, first.id),
+      );
 
       const [nextColumns, nextCards, state, eligible] = await Promise.all([
         api.columns(first.id),
@@ -632,44 +705,26 @@ export function Board(): ReactElement {
             items={columns.map((column) => `${COLUMN_DRAG_PREFIX}${column.id}`)}
             strategy={horizontalListSortingStrategy}
           >
-            <div className="relative min-h-0 flex-1">
-              {/* The pipeline stays intact. These controls move the viewport by
-                  one lane, so a narrow screen still reads a board as stages
-                  rather than as a collection of columns the operator hid. */}
-              <button
-                type="button"
-                className="absolute top-1/2 left-1 z-10 -translate-y-1/2 rounded-full border border-line bg-surface p-1.5 text-dim shadow-sm hover:text-ink"
-                title="Show earlier columns"
-                aria-label="Show earlier columns"
-                onClick={() => columnRail.current?.scrollBy({ left: -320, behavior: 'smooth' })}
-              >
-                <CaretLeft size={16} aria-hidden />
-              </button>
-              <button
-                type="button"
-                className="absolute top-1/2 right-1 z-10 -translate-y-1/2 rounded-full border border-line bg-surface p-1.5 text-dim shadow-sm hover:text-ink"
-                title="Show later columns"
-                aria-label="Show later columns"
-                onClick={() => columnRail.current?.scrollBy({ left: 320, behavior: 'smooth' })}
-              >
-                <CaretRight size={16} aria-hidden />
-              </button>
-              <div
-                ref={columnRail}
-                className="flex h-full min-h-0 snap-x snap-mandatory gap-3 overflow-x-auto px-8 py-4 [scrollbar-width:thin]"
-              >
-                {columns.map((column) => (
-                  <ColumnView
-                    key={column.id}
-                    column={column}
-                    cards={byColumn.get(column.id) ?? []}
-                    runnable={runnable}
-                    onOpen={(card) => setOpenCardId(card.id)}
-                    onRun={(card) => void run(card)}
-                    onCancel={(card) => void cancel(card)}
-                  />
-                ))}
-              </div>
+            <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto px-3 py-4 [scrollbar-width:thin]">
+              {columns.map((column) => (
+                <ColumnView
+                  key={column.id}
+                  column={column}
+                  cards={byColumn.get(column.id) ?? []}
+                  runnable={runnable}
+                  width={columnWidths[column.id] ?? DEFAULT_COLUMN_WIDTH}
+                  onResize={(columnId, width, finished) => {
+                    const next = { ...columnWidths, [columnId]: width };
+                    setColumnWidths(next);
+                    if (finished && board !== null) {
+                      saveColumnWidths(window.localStorage, board.id, next);
+                    }
+                  }}
+                  onOpen={(card) => setOpenCardId(card.id)}
+                  onRun={(card) => void run(card)}
+                  onCancel={(card) => void cancel(card)}
+                />
+              ))}
             </div>
           </SortableContext>
         </DndContext>
