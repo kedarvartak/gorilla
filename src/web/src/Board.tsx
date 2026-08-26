@@ -105,6 +105,8 @@ function ColumnView({
   totalShares,
   onResize,
   onOpen,
+  onRename,
+  onDelete,
   onRun,
   onCancel,
 }: {
@@ -115,6 +117,8 @@ function ColumnView({
   totalShares: number;
   onResize: (columnId: string, deltaPixels: number, finished: boolean) => void;
   onOpen: (card: Card) => void;
+  onRename: (card: Card, title: string) => void;
+  onDelete: (card: Card) => void;
   onRun: (card: Card) => void;
   onCancel: (card: Card) => void;
 }): ReactElement {
@@ -233,6 +237,8 @@ function ColumnView({
               runnable={runnable.has(card.id)}
               terminal={column.isTerminal}
               onOpen={onOpen}
+              onRename={onRename}
+              onDelete={onDelete}
               onRun={onRun}
               onCancel={onCancel}
             />
@@ -420,6 +426,27 @@ export function Board(): ReactElement {
     } catch (cause) {
       // A refused move is usually a dependency guard, and the reason is the
       // useful part - so it is shown rather than swallowed.
+      setError((cause as Error).message);
+    }
+    await load();
+  }
+
+  async function rename(card: Card, title: string): Promise<void> {
+    try {
+      await api.updateCard(card.id, { title });
+      setError(null);
+    } catch (cause) {
+      setError((cause as Error).message);
+    }
+    await load();
+  }
+
+  async function deleteCard(card: Card): Promise<void> {
+    if (!window.confirm(`Delete “${card.title}”? This also removes its runs and ledger.`)) return;
+    try {
+      await api.deleteCard(card.id);
+      setError(null);
+    } catch (cause) {
       setError((cause as Error).message);
     }
     await load();
@@ -730,6 +757,8 @@ export function Board(): ReactElement {
                       });
                     }}
                     onOpen={(card) => setOpenCardId(card.id)}
+                    onRename={(card, title) => void rename(card, title)}
+                    onDelete={(card) => void deleteCard(card)}
                     onRun={(card) => void run(card)}
                     onCancel={(card) => void cancel(card)}
                   />

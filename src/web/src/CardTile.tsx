@@ -1,8 +1,8 @@
-import type { ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
 
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Play, Stop } from '@phosphor-icons/react';
+import { DotsThreeVertical, Play, Stop } from '@phosphor-icons/react';
 
 import claudeLogo from './assets/claude-color.webp';
 import codexLogo from './assets/codex.webp';
@@ -75,6 +75,8 @@ export interface CardTileProps {
   /** In a terminal column. What a finished card needs shown is not the same. */
   readonly terminal: boolean;
   readonly onOpen: (card: Card) => void;
+  readonly onRename: (card: Card, title: string) => void;
+  readonly onDelete: (card: Card) => void;
   readonly onRun: (card: Card) => void;
   readonly onCancel: (card: Card) => void;
 }
@@ -85,9 +87,14 @@ export function CardTile({
   runnable,
   terminal,
   onOpen,
+  onRename,
+  onDelete,
   onRun,
   onCancel,
 }: CardTileProps): ReactElement {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(card.title);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: card.id,
   });
@@ -168,15 +175,80 @@ export function CardTile({
 
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex items-start gap-2">
-            {/* Two lines, always. A card three lines tall beside one that is
-                one line makes a column nobody can scan; the rest is a hover
-                away. */}
-            <span
-              className="line-clamp-2 min-h-[2.6em] min-w-0 flex-1 text-[15.5px] font-semibold leading-[1.3] text-ink"
-              title={card.title}
-            >
-              {card.title}
-            </span>
+            {/* Edit mode replaces the title itself. Renaming should not make a
+                second miniature card or a detached form the operator has to
+                associate with this one. */}
+            {renaming ? (
+              <input
+                autoFocus
+                aria-label="Card name"
+                className="min-w-0 flex-1 border-b border-brand bg-transparent px-0 py-0 text-[15.5px] font-semibold leading-[1.3] text-ink outline-none"
+                value={draftTitle}
+                onPointerDown={(event) => event.stopPropagation()}
+                onChange={(changed) => setDraftTitle(changed.target.value)}
+                onBlur={() => {
+                  const title = draftTitle.trim();
+                  setRenaming(false);
+                  if (title !== '' && title !== card.title) onRename(card, title);
+                  else setDraftTitle(card.title);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') event.currentTarget.blur();
+                  if (event.key === 'Escape') {
+                    setDraftTitle(card.title);
+                    setRenaming(false);
+                  }
+                }}
+              />
+            ) : (
+              <span
+                className="line-clamp-2 min-h-[2.6em] min-w-0 flex-1 text-[15.5px] font-semibold leading-[1.3] text-ink"
+                title={card.title}
+              >
+                {card.title}
+              </span>
+            )}
+
+            <div className="relative shrink-0" onPointerDown={(event) => event.stopPropagation()}>
+              <button
+                type="button"
+                className="rounded p-1 text-faint opacity-0 transition-colors hover:bg-well hover:text-ink group-hover:opacity-100 focus-visible:opacity-100"
+                title="Card actions"
+                aria-label={`Actions for ${card.title}`}
+                aria-expanded={menuOpen}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setMenuOpen((open) => !open);
+                  setDraftTitle(card.title);
+                }}
+              >
+                <DotsThreeVertical size={16} weight="bold" aria-hidden />
+              </button>
+              {!menuOpen ? null : (
+                <div className="absolute top-full right-0 z-30 mt-1 w-44 rounded-md border border-line bg-surface p-1 shadow-lg">
+                  <button
+                    type="button"
+                    className="w-full rounded px-2 py-1.5 text-left text-[12.5px] text-dim hover:bg-well hover:text-ink"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setRenaming(true);
+                    }}
+                  >
+                    Edit name
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full rounded px-2 py-1.5 text-left text-[12.5px] text-danger hover:bg-danger-tint"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onDelete(card);
+                    }}
+                  >
+                    Delete card
+                  </button>
+                </div>
+              )}
+            </div>
 
             {unseen ? (
               <span
