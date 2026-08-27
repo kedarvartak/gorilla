@@ -4,6 +4,7 @@ import {
   isValidElement,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactElement,
@@ -500,7 +501,7 @@ function Rail({
 /** The row unit the spans are counted in. Matches `grid-auto-rows` in index.css. */
 const ROW_PX = 4;
 /** The gap between sections, added to each span so it does not need a row-gap. */
-const SECTION_GAP_PX = 16;
+const SECTION_GAP_PX = 20;
 
 /**
  * One section, given a row span from its own measured height.
@@ -516,7 +517,16 @@ const SECTION_GAP_PX = 16;
  * textarea is dragged taller - and a span fixed at first paint would leave a
  * gap or an overlap the moment any of that happened.
  */
-function SectionItem({ children }: { children: ReactNode }): ReactElement {
+function SectionItem({
+  children,
+  column,
+  onSpan,
+}: {
+  children: ReactNode;
+  /** The column the group assigned, or null before it has decided. */
+  column: number | null;
+  onSpan: (span: number, wide: boolean) => void;
+}): ReactElement {
   /**
    * Measured on the inner element, never on the outer one.
    *
@@ -538,13 +548,29 @@ function SectionItem({ children }: { children: ReactNode }): ReactElement {
 
     const measure = (): void => {
       const height = node.getBoundingClientRect().height;
-      // A section with nothing in it keeps one row rather than none: a zero
-      // span would let the next item in the column start on top of it.
-      setSpan(height === 0 ? 1 : Math.max(1, Math.ceil((height + SECTION_GAP_PX) / ROW_PX)));
-      setWide(node.firstElementChild?.classList.contains('section--wide') ?? false);
+      // One row of slack on top of the rounding. A span that comes out even a
+      // pixel short lets the next section in the column sit on the bottom edge
+      // of this one, and a four-pixel overshoot is invisible where an overlap
+      // is the first thing anybody notices.
+      const rows =
+        height === 0 ? 1 : Math.max(1, Math.ceil((height + SECTION_GAP_PX) / ROW_PX) + 1);
+      const isWide = node.firstElementChild?.classList.contains('section--wide') ?? false;
+      setSpan(rows);
+      setWide(isWide);
+      // Reported up as the natural span so the group can choose columns from
+      // heights it knows before the browser has placed anything.
+      onSpan(rows, isWide);
     };
 
     measure();
+
+    // Again once the fonts are in. Text measured against a fallback face is a
+    // different height from the same text in IBM Plex, and every section
+    // measured before the swap would be short by that difference.
+    void document.fonts?.ready.then(measure).catch(() => {
+      /* no font loading API; the first measurement stands */
+    });
+
     // Guarded because the span is a layout refinement, not a correctness
     // requirement: without an observer every section keeps its first measured
     // height, which is wrong only for the ones that change.
@@ -555,12 +581,19 @@ function SectionItem({ children }: { children: ReactNode }): ReactElement {
     return () => {
       observer.disconnect();
     };
-  }, []);
+  }, [onSpan]);
 
   return (
     <div
       className="min-w-0"
-      style={{ gridRowEnd: `span ${String(span)}`, ...(wide ? { gridColumn: '1 / -1' } : {}) }}
+      style={{
+        gridRowEnd: `span ${String(span)}`,
+        ...(wide
+          ? { gridColumn: '1 / -1' }
+          : column === null
+            ? {}
+            : { gridColumn: String(column) }),
+      }}
     >
       <div ref={inner} className="min-w-0">
         {children}
@@ -577,16 +610,120 @@ function SectionItem({ children }: { children: ReactNode }): ReactElement {
  * every conditional section renders when it has nothing to say.
  */
 function SectionFlow({ children }: { children: ReactNode }): ReactElement {
+  const items = flattenSections(children);
+  const container = useRef<HTMLDivElement>(null);
+  /** Natural spans, reported by each section once it has measured itself. */
+  const [spans, setSpans] = useState<readonly (number | undefined)[]>([]);
+  const [wides, setWides] = useState<readonly boolean[]>([]);
+  const [columns, setColumns] = useState(0);
+
+  const report = useCallback((index: number, span: number, wide: boolean): void => {
+    setSpans((current) => {
+      if (current[index] === span) return current;
+      const next = [...current];
+      next[index] = span;
+      return next;
+    });
+    setWides((current) => {
+      if (current[index] === wide) return current;
+      const next = [...current];
+      next[index] = wide;
+      return next;
+    });
+  }, []);
+
+  /** How many tracks the width gave us. Read from the grid rather than guessed. */
+  useEffect(() => {
+    const node = container.current;
+    if (node === null) return;
+
+    const read = (): void => {
+      setColumns(getComputedStyle(node).gridTemplateColumns.split(' ').filter(Boolean).length);
+    };
+
+    read();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(read);
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+    };
+    // Re-read as the sections report in. At first paint the container has no
+    // laid-out children and the computed tracks can come back as `none`, which
+    // reads as one column and would leave the placement switched off for good -
+    // the observer only fires when the box changes size, and it does not.
+  }, [spans.length]);
+
+  /**
+   * Each section into the column that is currently shortest.
+   *
+   * This is the half of masonry that CSS will not do. `grid-auto-flow: dense`
+   * fills holes but never chooses a column on the strength of how tall it
+   * already is, so two tall sections that happen to be adjacent in the DOM end
+   * up stacked in one column and the group finishes three hundred pixels
+   * taller than it needed to, ragged on three sides.
+   *
+   * Greedy shortest-first is the standard answer and it is enough here: the
+   * sections are independent boxes, so the only cost is that column order stops
+   * matching DOM order, and the gain is a group that is both shorter and level.
+   *
+   * Computed from the reported spans, which are content-derived, so the same
+   * content always produces the same columns. A full-width section levels every
+   * column, because nothing may be laid out beside it.
+   */
+  const placement = useMemo<readonly (number | null)[]>(() => {
+    const ready =
+      columns > 1 && spans.length === items.length && spans.every((span) => span !== undefined);
+    if (!ready) return items.map(() => null);
+
+    const heights = new Array<number>(columns).fill(0);
+
+    return items.map((_, index) => {
+      const span = spans[index] ?? 1;
+
+      if (wides[index] === true) {
+        const below = Math.max(...heights) + span;
+        heights.fill(below);
+        return null;
+      }
+
+      const shortest = heights.indexOf(Math.min(...heights));
+      heights[shortest] = (heights[shortest] ?? 0) + span;
+      return shortest + 1;
+    });
+  }, [columns, spans, wides, items.length]);
+
   return (
-    <div className="sections">
-      {flattenSections(children).map((child, index) => (
-        <SectionItem key={isValidElement(child) && child.key !== null ? child.key : index}>
+    <div className="sections" ref={container}>
+      {items.map((child, index) => (
+        <SectionItem
+          key={isValidElement(child) && child.key !== null ? child.key : index}
+          column={placement[index] ?? null}
+          onSpan={(span, wide) => {
+            report(index, span, wide);
+          }}
+        >
           {child}
         </SectionItem>
       ))}
     </div>
   );
 }
+
+/*
+ * Squaring the columns off was tried and abandoned, 27 August 2026.
+ *
+ * A column of sections ends wherever its content ends, so a group finishes at
+ * four different heights and the ragged edge reads as the page having run out.
+ * Growing the bottom card in each short column closes it - and looked worse.
+ * The space does not disappear, it moves inside the cards, and four cards each
+ * carrying two hundred pixels of empty interior read as bloated where the
+ * ragged bottom only read as uneven. A card's height should mean how much it
+ * has to say.
+ *
+ * Recorded here rather than deleted, because the ragged bottom is the obvious
+ * thing to want to fix and this is the second time it would have been tried.
+ */
 
 /**
  * Every section as its own item, fragments opened up.
@@ -1786,15 +1923,19 @@ export function CardDetail({
                 // A brief that stays on this screen is a brief the rest of the
                 // team never reads. The two exits are copy, for a pull request
                 // body or a message, and download, for something kept.
-                <div className="section flex items-center gap-2">
-                  <span className="eyebrow mr-1">Export</span>
+                //
+                // Wraps rather than squeezing: in a 320px column the label and
+                // two buttons on one line broke "Export" across two lines and
+                // left the buttons stacked mid-word.
+                <div className="section flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="eyebrow mr-1 whitespace-nowrap">Export</span>
                   <button
                     type="button"
                     className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
                     onClick={() => void copyMarkdown()}
                   >
                     <Copy size={13} aria-hidden />
-                    {copied ? 'Copied' : 'Copy markdown'}
+                    <span className="whitespace-nowrap">{copied ? 'Copied' : 'Copy markdown'}</span>
                   </button>
                   <a
                     className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
@@ -1802,7 +1943,7 @@ export function CardDetail({
                     download
                   >
                     <DownloadSimple size={13} aria-hidden />
-                    Download .md
+                    <span className="whitespace-nowrap">Download .md</span>
                   </a>
                 </div>
               )}

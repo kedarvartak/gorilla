@@ -160,17 +160,19 @@ body {
  */
 .sections {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  /* `auto-fit`, not `auto-fill`: a track with nothing in it collapses, so a
+     group of two sections spreads across the full width instead of sitting in
+     the first two of four columns with half the row empty beside it. Filling
+     the space by widening what is there beats leaving a hole. */
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   /* The unit the spans are counted in. Small enough that rounding a section up
      to the next row adds nothing anybody can see. */
   grid-auto-rows: 4px;
-  column-gap: 16px;
-  /* Backfills. Without it the placement cursor never goes back, so once a tall
-     section has been placed every later section lands under it in the same
-     column - eight boxes in the first column and one in the third, which is
-     the emptiness this layout exists to remove. Order across columns stops
-     matching DOM order, which is the price, and these are independent boxes
-     rather than a sequence to be read in turn. */
+  column-gap: 20px;
+  /* Columns are chosen in `SectionFlow`, shortest-first, which is the half of
+     masonry CSS will not do: `dense` fills holes but never picks a column on
+     the strength of how tall it already is. Kept as a fallback for the first
+     paint, before the spans have been measured. */
   grid-auto-flow: row dense;
 }
 
