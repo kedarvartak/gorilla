@@ -138,26 +138,31 @@ body {
  * surveyed at a glance, which is what an operator deciding whether to merge is
  * actually doing.
  */
+/*
+ * Column flow, once per group.
+ *
+ * Two layouts were tried and both failed in one direction. A grid keeps
+ * reading order but couples row heights, so a short section leaves a field of
+ * empty under it until the tallest box in its row ends. Column flow packs
+ * densely with no such gap, but balances across the whole container - which,
+ * when the container was one sparse tab, put two small boxes in the left
+ * column and left the right half of the flap empty. That was the emptiness
+ * that got reported.
+ *
+ * Neither layout was the problem: one container per tab was. Each group now
+ * flows on its own, so the packing is dense and the grouping survives, and
+ * `column-width` rather than `column-count` means the number of columns comes
+ * from the width available rather than from a guess about it.
+ */
 .sections {
+  columns: 360px;
   column-gap: 16px;
 }
 
-@media (min-width: 1100px) {
-  .sections {
-    column-count: 2;
-  }
-}
-
-@media (min-width: 1700px) {
-  .sections {
-    column-count: 3;
-  }
-}
-
 .section {
-  /* A section is never split down the middle by a column break: half a table
-     at the bottom of one column and half at the top of the next is worse than
-     an uneven column. */
+  /* Never split down the middle by a column break: half a table at the bottom
+     of one column and half at the top of the next is worse than an uneven
+     column. */
   break-inside: avoid;
   display: inline-block;
   width: 100%;
@@ -166,6 +171,18 @@ body {
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
   background: var(--color-surface);
+}
+
+/*
+ * For content the measure works against: a diff, or the context file handed to
+ * the agent, which is preformatted and cannot reflow into a column.
+ */
+.section--wide {
+  /* `column-span` is ignored on an inline-level box, and `.section` is
+     inline-block so that column breaking can avoid it. A spanning section is
+     never inside a column anyway, so it takes the block display back. */
+  display: block;
+  column-span: all;
 }
 
 /* Structure, not text. Tracked out so a label reads as a different kind of
