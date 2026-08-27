@@ -477,11 +477,15 @@ export function Board(): ReactElement {
       />
 
       <main className="relative flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-3 border-b border-line bg-surface px-4 py-2.5">
+        {/* Wraps rather than overflows. At 1024 the row was 130px wider than
+            the window, which put a horizontal scrollbar under every screen in
+            the app including the ones that have no width problem of their
+            own. */}
+        <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-surface px-4 py-2.5">
           {/* Search first and widest. On a board of sixty cards it is the
               fastest route to any of them, and it was previously one control
               among sixteen. */}
-          <div className="relative w-72">
+          <div className="relative w-72 min-w-[180px] flex-1">
             <MagnifyingGlass
               size={15}
               aria-hidden
@@ -677,36 +681,42 @@ export function Board(): ReactElement {
           <div className="border-b border-line bg-well px-4 py-2 text-danger">{error}</div>
         ) : null}
 
-        <DndContext
-          sensors={sensors}
-          collisionDetection={boardCollisions}
-          onDragEnd={(event) => void onDragEnd(event)}
-        >
-          <SortableContext
-            items={columns.map((column) => `${COLUMN_DRAG_PREFIX}${column.id}`)}
-            strategy={horizontalListSortingStrategy}
+        {/* The board yields rather than sitting behind the card.
+            A card is now a page, and leaving the columns mounted underneath it
+            would keep a scroll position, a drag context and five droppables
+            alive for a surface nobody can see or reach. */}
+        {openCardId !== null ? null : (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={boardCollisions}
+            onDragEnd={(event) => void onDragEnd(event)}
           >
-            <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-3 py-4">
-              {columns.map((column) => (
-                <ColumnView
-                  key={column.id}
-                  column={column}
-                  cards={byColumn.get(column.id) ?? []}
-                  runnable={runnable}
-                  collapsed={collapsed.has(column.id)}
-                  onToggle={(columnId) => {
-                    const next = toggle(collapsed, columnId);
-                    setCollapsed(next);
-                    if (board !== null) saveCollapsed(window.localStorage, board.id, next);
-                  }}
-                  onOpen={(card) => setOpenCardId(card.id)}
-                  onRun={(card) => void run(card)}
-                  onCancel={(card) => void cancel(card)}
-                />
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
+            <SortableContext
+              items={columns.map((column) => `${COLUMN_DRAG_PREFIX}${column.id}`)}
+              strategy={horizontalListSortingStrategy}
+            >
+              <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-3 py-4">
+                {columns.map((column) => (
+                  <ColumnView
+                    key={column.id}
+                    column={column}
+                    cards={byColumn.get(column.id) ?? []}
+                    runnable={runnable}
+                    collapsed={collapsed.has(column.id)}
+                    onToggle={(columnId) => {
+                      const next = toggle(collapsed, columnId);
+                      setCollapsed(next);
+                      if (board !== null) saveCollapsed(window.localStorage, board.id, next);
+                    }}
+                    onOpen={(card) => setOpenCardId(card.id)}
+                    onRun={(card) => void run(card)}
+                    onCancel={(card) => void cancel(card)}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
+        )}
 
         {view !== 'digest' ? null : (
           <Digest
