@@ -649,3 +649,146 @@ body {
 .dropdown-option.is-chosen {
   color: var(--color-brand);
 }
+
+/*
+ * A run, recorded.
+ *
+ * It was five lines of prose in a left-bordered block: a session id, a date, a
+ * cost summary, how it ended and a link, all at the same weight and all in the
+ * sans face - so the one thing a person scans a run list for, which ended
+ * badly, sat in the middle of four things they were not looking for.
+ *
+ * Now the identity leads in the machine's own face, and the measurements are
+ * cells: a row of readings a person can compare down the column when a card has
+ * been run more than once.
+ */
+.run {
+  padding: 12px 0;
+  border-top: 1px solid var(--color-line);
+}
+
+.run:first-child {
+  border-top: 0;
+  padding-top: 2px;
+}
+
+.run-id {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  color: var(--color-ink);
+}
+
+/* Inline measurements. Mono, because the machine produced every one of them. */
+.readout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-dim);
+}
+
+.readout > span {
+  white-space: nowrap;
+}
+
+/*
+ * What an operator does next.
+ *
+ * The primary action was a bordered button and the one beside it was bare
+ * underlined text, so "mark done" and "reopen" looked like different kinds of
+ * thing rather than two choices at the same fork.
+ */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.action {
+  padding: 7px 14px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.action:hover {
+  border-color: var(--color-dim);
+}
+
+/* Indigo is the operator's own colour on this page, and nothing the board says
+   is allowed to borrow it. */
+.action-primary {
+  border-color: var(--color-brand);
+  background: var(--color-brand);
+  color: #fff;
+}
+
+.action-primary:hover {
+  border-color: var(--color-brand);
+  filter: brightness(1.08);
+}
+
+.action-quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-dim);
+}
+
+.action-quiet:hover {
+  border-color: transparent;
+  color: var(--color-ink);
+  text-decoration: underline;
+}
+
+/*
+ * A guardrail is an instruction to a machine, so it is set in the machine's
+ * face: these are literally the strings handed to the agent, paths and shell
+ * patterns included, and reading `Bash(git push *)` in the prose face invites
+ * an operator to read it as a description of a rule rather than the rule.
+ */
+.rail-rule {
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--color-ink);
+}
+
+/*
+ * Editable values inside a ruled row.
+ *
+ * The same quiet-until-reached treatment the settings use. A filled, bordered
+ * box the full width of the page for a comma-separated list of four paths was
+ * the heaviest object on the page and the least important.
+ */
+.ruled textarea,
+.ruled input {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  padding: 2px 6px;
+  margin-left: -6px;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  color: var(--color-ink);
+  resize: none;
+}
+
+.ruled textarea:hover,
+.ruled input:hover {
+  border-color: var(--color-line);
+}
+
+.ruled textarea:focus,
+.ruled input:focus {
+  border-color: var(--color-brand);
+  background: var(--color-surface);
+  outline: none;
+}

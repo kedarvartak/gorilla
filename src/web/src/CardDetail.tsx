@@ -1605,7 +1605,7 @@ export function CardDetail({
           />
           <button
             type="button"
-            className="rounded border border-line px-2 py-1 text-[15px] text-ink hover:border-dim"
+            className="action action-primary"
             onClick={() => {
               void api
                 .retryCard(detail.card.boardId, cardId, retryNote.trim() === '' ? null : retryNote)
@@ -1618,11 +1618,7 @@ export function CardDetail({
           >
             send it back
           </button>
-          <button
-            type="button"
-            className="rounded border border-line px-2 py-1 text-[15px] text-dim hover:text-ink"
-            onClick={() => setRetrying(false)}
-          >
+          <button type="button" className="action action-quiet" onClick={() => setRetrying(false)}>
             cancel
           </button>
         </div>
@@ -1929,7 +1925,11 @@ export function CardDetail({
                         <dd>
                           <ul className="flex flex-col gap-1.5">
                             {rails.map((rail) => (
-                              <li key={`${rail.kind}:${rail.text}`} title={rail.because}>
+                              <li
+                                key={`${rail.kind}:${rail.text}`}
+                                className="rail-rule"
+                                title={rail.because}
+                              >
                                 {rail.text}
                               </li>
                             ))}
@@ -2547,38 +2547,39 @@ export function CardDetail({
                   </p>
                 </div>
               ) : (
-                <ul className="mb-3 flex flex-col gap-2 text-[15px]">
+                <ul className="mb-3 text-[15px]">
                   {detail.runs.map((run) => {
                     const ended = endedNote(run);
                     return (
-                      <li key={run.runId} className="border-l-2 border-line pl-2">
-                        <div className="text-ink">
-                          {run.sessionId.slice(0, 8)}
-                          <span className="ml-1.5 text-dim">
+                      <li key={run.runId} className="run">
+                        <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+                          <span className="run-id">{run.sessionId.slice(0, 8)}</span>
+                          <span className="text-[13.5px] text-faint">
                             {run.mode}
                             {run.runId === latest?.runId ? ' · latest' : ''}
                           </span>
+                          {/* How it ended, beside the identity rather than four
+                              lines below it. It is the one thing a person scans
+                              a run list for. */}
+                          <span className={`text-[13.5px] ${ended.tone}`}>{ended.text}</span>
+                          <button
+                            type="button"
+                            className="ml-auto text-[13.5px] text-brand hover:underline"
+                            onClick={() => setTimelineRunId(run.runId)}
+                          >
+                            timeline
+                          </button>
                         </div>
-                        <div className="text-dim">
-                          {new Date(run.startedAt).toLocaleString()} · {run.events} events
+
+                        <div className="readout">
+                          <span>{new Date(run.startedAt).toLocaleString()}</span>
+                          <span>{run.events} events</span>
+                          {/* Silent when nothing was recorded. A run with no
+                              usage and a run that cost nothing are different
+                              facts, and "0 tokens" would state the second. */}
+                          {run.cost === null ? null : <span>{run.cost.summary}</span>}
+                          {run.goalOutcome === null ? null : <span>goal {run.goalOutcome}</span>}
                         </div>
-                        {/* Silent when nothing was recorded. A run with no usage
-                          and a run that cost nothing are different facts, and
-                          printing "0 tokens" would state the second. */}
-                        {run.cost === null ? null : (
-                          <div className="text-dim">{run.cost.summary}</div>
-                        )}
-                        <div className={ended.tone}>{ended.text}</div>
-                        {run.goalOutcome === null ? null : (
-                          <div className="text-dim">goal: {run.goalOutcome}</div>
-                        )}
-                        <button
-                          type="button"
-                          className="text-info hover:underline"
-                          onClick={() => setTimelineRunId(run.runId)}
-                        >
-                          timeline
-                        </button>
                       </li>
                     );
                   })}
@@ -2637,21 +2638,31 @@ export function CardDetail({
                     reached the target some other way.
                   </p>
                 ) : (
-                  <div className="mb-2 text-[15px]">
-                    <div className="text-ink">{detail.workspace.branch}</div>
-                    <div className="text-dim">{detail.workspace.worktree}</div>
+                  <div className="mb-2">
+                    {/* Branch, worktree and what git says about them: all of it
+                        the machine's, so all of it in the machine's face. */}
+                    <div className="font-mono text-[15px] text-ink">{detail.workspace.branch}</div>
+                    <div className="readout">
+                      <span className="truncate" title={detail.workspace.worktree}>
+                        {detail.workspace.worktree}
+                      </span>
+                    </div>
                     {detail.workspace.git === null ? null : (
-                      <div className={detail.workspace.git.dirty > 0 ? 'text-danger' : 'text-dim'}>
-                        {detail.workspace.git.ahead} commit(s) ahead
-                        {detail.workspace.git.dirty > 0
-                          ? `, ${detail.workspace.git.dirty} uncommitted change(s) - these would not be merged`
-                          : ', working tree clean'}
+                      <div
+                        className={`readout ${detail.workspace.git.dirty > 0 ? 'text-danger' : ''}`}
+                      >
+                        <span>{detail.workspace.git.ahead} ahead</span>
+                        <span>
+                          {detail.workspace.git.dirty > 0
+                            ? `${detail.workspace.git.dirty} uncommitted, which would not be merged`
+                            : 'working tree clean'}
+                        </span>
                       </div>
                     )}
                   </div>
                 )}
 
-                <div className="flex flex-wrap gap-2">
+                <div className="actions">
                   {detail.workspace === null ||
                   detail.card.mergedAt !== null ? null : conflicted ? (
                     /* A conflict is the ordinary cost of two agents working in
@@ -2659,7 +2670,7 @@ export function CardDetail({
                      doing the work rather than reporting that it is needed. */
                     <button
                       type="button"
-                      className="rounded border border-brand/60 px-2 py-0.5 text-[15px] text-brand hover:bg-brand/10 disabled:opacity-40"
+                      className="action action-primary disabled:opacity-40"
                       disabled={merging}
                       title={
                         'Resolves the conflict, commits the merge, and runs the verify command. ' +
@@ -2672,7 +2683,7 @@ export function CardDetail({
                   ) : (
                     <button
                       type="button"
-                      className="rounded border border-ok/50 px-2 py-0.5 text-[15px] text-ok hover:bg-ok/10 disabled:opacity-40"
+                      className="action action-primary disabled:opacity-40"
                       // Disabled rather than left to fail. The gate refuses this
                       // request anyway, and a button that looks available and
                       // answers 409 teaches the operator that the board is
@@ -2699,7 +2710,7 @@ export function CardDetail({
 
                   <button
                     type="button"
-                    className="inline-flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[15px] text-dim transition-colors hover:bg-well hover:text-ink"
+                    className="action"
                     title="Marks the card finished without merging anything. Use when the work landed another way, or was not needed."
                     onClick={() => patch({ status: 'done' })}
                   >
@@ -2709,7 +2720,7 @@ export function CardDetail({
                   {detail.card.status === 'idle' ? null : (
                     <button
                       type="button"
-                      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[15px] text-dim transition-colors hover:bg-well hover:text-ink"
+                      className="action action-quiet"
                       title="Back to idle, which is the only status the queue will dispatch."
                       onClick={() => patch({ status: 'idle' })}
                     >
