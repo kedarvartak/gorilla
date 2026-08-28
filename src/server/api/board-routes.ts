@@ -5,7 +5,7 @@ import type { AppContext } from '../app.js';
 import { createDefaultColumns } from '../cards/defaults.js';
 import { reorderColumns } from '../cards/column-order.js';
 import { parseGuardrails } from '../cards/guardrails.js';
-import { blockersFor, dispatchableCards } from '../cards/eligibility.js';
+import { blockersFor, dispatchableCards, dispatchStanding } from '../cards/eligibility.js';
 import { executionOrder } from '../cards/order.js';
 import { proposeInvariants } from '../cards/invariant-proposals.js';
 import { searchCards } from '../cards/search.js';
@@ -417,6 +417,14 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
 
   app.get<{ Params: { boardId: string } }>('/api/boards/:boardId/dispatchable', (request) => {
     return dispatchableCards(context.database.db, request.params.boardId);
+  });
+
+  // The other half of the same question. The board draws a dispatch control on
+  // every idle card and needs to say why the ineligible ones cannot run,
+  // rather than omitting the control and leaving the operator to conclude it
+  // was removed.
+  app.get<{ Params: { boardId: string } }>('/api/boards/:boardId/dispatch-standing', (request) => {
+    return dispatchStanding(context.database.db, request.params.boardId);
   });
 
   app.post<{ Params: { boardId: string }; Body: Record<string, unknown> }>(
