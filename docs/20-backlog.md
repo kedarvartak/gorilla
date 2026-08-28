@@ -409,6 +409,7 @@ looked thin.
 | T80 | Report the build mismatch that actually 404s | The stamp reports both directions, and compares the running process against what is built rather than two files against each other. | open | [#151](https://github.com/kedarvartak/gorilla/issues/151) |
 | T81 | Test the tile and the board | `CardTile` and `Board` have tests covering rename, delete, dispatch and cancel, at the level the card-detail tests already work at. | open | [#152](https://github.com/kedarvartak/gorilla/issues/152) |
 | T82 | Put archive on the tile and delete out of reach | The tile's menu offers archive; delete is reachable only from the card detail, and asks through the shared panel frame. | open | [#153](https://github.com/kedarvartak/gorilla/issues/153) |
+| T84 | Catch the board up with work done in another harness | A control re-checks the cards that look finished against the repository, moves the confirmed ones to review with the evidence attached, and marks nothing done. | open | [#165](https://github.com/kedarvartak/gorilla/issues/165) |
 
 **T80.** `describe()` flags a mismatch only when `serverBuiltAt - webBuiltAt`
 is positive - an interface older than its server. The direction that actually
@@ -435,6 +436,13 @@ tile's menu, takes the card's runs and ledger with it, and asks through
 give every other dialog here. Archive is reversible, keeps everything, has been
 built since T77, and is a button at the bottom of the card detail. The
 recoverable action is the hard one to find.
+
+**T84.** The board only learns what its own hooks tell it, so work done in a
+second window, in Codex or by hand leaves the card where it was. `looksFinished`
+already marks the cheap half of this on every read - the card names files, they
+all exist, it has never run - and the module computing it says the signal is
+weak. Nothing acts on it. It is a chip telling an operator to go and check
+fifteen cards by hand.
 
 ## Still not on this list
 

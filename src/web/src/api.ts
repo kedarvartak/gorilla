@@ -13,6 +13,22 @@ export interface GuardrailDetail {
   readonly because: string;
 }
 
+export interface ResyncFinding {
+  readonly cardId: string;
+  readonly title: string;
+  readonly paths: readonly string[];
+  readonly commits: readonly { readonly hash: string; readonly subject: string }[];
+}
+
+/** What a resync found, and what it did about it. */
+export interface ResyncReport {
+  readonly candidates: number;
+  readonly movedTo: string | null;
+  readonly moved: readonly ResyncFinding[];
+  readonly unconfirmed: readonly ResyncFinding[];
+  readonly note: string;
+}
+
 export interface Card {
   readonly id: string;
   readonly boardId: string;
@@ -345,6 +361,15 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  /**
+   * Catches the board up with work done outside it.
+   *
+   * A POST because it moves cards. Costs a `git log`, which is why it is a
+   * button rather than part of the board read.
+   */
+  resync: (boardId: string) =>
+    request<ResyncReport>(`/api/boards/${boardId}/resync`, { method: 'POST' }),
 
   /** Puts a card away, or brings it back. Nothing is deleted (T77). */
   archiveCard: (cardId: string, archived: boolean) =>

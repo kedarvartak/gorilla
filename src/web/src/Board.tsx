@@ -34,6 +34,7 @@ import {
   type Card,
   type Column,
   type DispatchState,
+  type ResyncReport,
   type SearchHit,
 } from './api.js';
 import { CardDetail } from './CardDetail.js';
@@ -49,6 +50,7 @@ import {
   CaretLeft,
   CaretRight,
   DotsSixVertical,
+  ArrowsClockwise,
   MagnifyingGlass,
   Plus,
 } from '@phosphor-icons/react';
@@ -362,6 +364,9 @@ export function Board(): ReactElement {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   /** Each column's share of the board width, as the operator has dragged it. */
   const [columnShares, setColumnShares] = useState<Record<string, number>>({});
+  /** The last resync's report, kept until dismissed. */
+  const [resyncReport, setResyncReport] = useState<ResyncReport | null>(null);
+  const [resyncing, setResyncing] = useState(false);
   /** The row itself, so a drag in pixels can be turned into a share of it. */
   const boardRow = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -589,6 +594,26 @@ export function Board(): ReactElement {
     await load();
   }
 
+  /**
+   * Catches the board up with work done outside it.
+   *
+   * The report is kept on screen rather than flashed, because this moves cards
+   * and a change to the operator's queue that scrolls away unread is a change
+   * made behind their back.
+   */
+  async function runResync(): Promise<void> {
+    if (board === null || resyncing) return;
+    setResyncing(true);
+    try {
+      setResyncReport(await api.resync(board.id));
+      await load();
+    } catch (cause) {
+      setError((cause as Error).message);
+    } finally {
+      setResyncing(false);
+    }
+  }
+
   async function addCard(): Promise<void> {
     if (board === null || title.trim() === '') return;
     try {
@@ -742,6 +767,20 @@ export function Board(): ReactElement {
 
           {/* The composer. One cluster, so adding a card reads as one action
               rather than three adjacent controls. */}
+          {/* Beside the composer rather than among the dispatch selects: those
+              change what the board will do next, and this reconciles it with
+              what has already happened somewhere else. */}
+          <button
+            type="button"
+            disabled={resyncing}
+            title="Check cards that look finished against what the repository actually shows, and move the confirmed ones to review"
+            className="inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-dim transition-colors hover:bg-well hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={() => void runResync()}
+          >
+            <ArrowsClockwise size={14} className={resyncing ? 'animate-spin' : ''} aria-hidden />
+            {resyncing ? 'Checking' : 'Resync'}
+          </button>
+
           <div className="flex items-center rounded-md border border-line bg-surface">
             <select
               className="rounded-l-md bg-transparent py-1.5 pl-2 pr-1 text-dim focus:text-ink"
@@ -834,6 +873,40 @@ export function Board(): ReactElement {
         {error !== null ? (
           <div className="border-b border-line bg-well px-4 py-2 text-danger">{error}</div>
         ) : null}
+
+        {resyncReport === null ? null : (
+          <div className="border-b border-line bg-well px-4 py-2.5 text-[12.5px]">
+            <div className="flex items-start gap-3">
+              <p className="min-w-0 flex-1 text-dim">{resyncReport.note}</p>
+              <button
+                type="button"
+                className="shrink-0 text-faint transition-colors hover:text-ink"
+                onClick={() => setResyncReport(null)}
+              >
+                Dismiss
+              </button>
+            </div>
+
+            {/* The evidence, not just the count. A card was moved on the
+                strength of a particular commit, and an operator asked to
+                accept that should be able to go and read it. */}
+            {resyncReport.moved.length === 0 ? null : (
+              <ul className="mt-1.5 flex flex-col gap-1">
+                {resyncReport.moved.map((finding) => (
+                  <li key={finding.cardId} className="text-faint">
+                    <span className="text-ink">{finding.title}</span>
+                    {finding.commits.slice(0, 2).map((commit) => (
+                      <span key={commit.hash}>
+                        {' · '}
+                        <code className="font-mono">{commit.hash}</code> {commit.subject}
+                      </span>
+                    ))}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         {/* The board yields rather than sitting behind the card.
             A card is now a page, and leaving the columns mounted underneath it

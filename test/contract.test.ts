@@ -98,6 +98,25 @@ describe('the routes that tripped the inventory', () => {
     expect(keysAt(standing[0])).toEqual(['id', 'offer', 'reason']);
   });
 
+  it('reports a resync in a shape the header can render without guessing', async () => {
+    // Dry, because a contract test that reorganised the board would be a
+    // contract test with a side effect.
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/boards/${BOARD}/resync?dry=1`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    // Sorted, because that is what `shapeOf` does.
+    expect(keysAt(shapeOf(response.json()))).toEqual([
+      'candidates',
+      'moved',
+      'movedTo',
+      'note',
+      'unconfirmed',
+    ]);
+  });
+
   it('adopts a run into a card, and answers with the card', async () => {
     // No such run, so this asserts the refusal rather than the card: a route
     // that invented one would be worse than a 404, and the adopt path exists
