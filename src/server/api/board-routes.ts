@@ -8,6 +8,7 @@ import { parseGuardrails } from '../cards/guardrails.js';
 import { blockersFor, dispatchableCards, dispatchStanding } from '../cards/eligibility.js';
 import { executionOrder } from '../cards/order.js';
 import { proposeInvariants } from '../cards/invariant-proposals.js';
+import { resync } from '../cards/resync.js';
 import { searchCards } from '../cards/search.js';
 import { buildPlan, describePlan } from '../cards/plan.js';
 import { describeMetrics, readMetrics } from '../metrics.js';
@@ -764,6 +765,42 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
    * A title may be given, because "Unclaimed session 3f2a1b" is honest and
    * useless, and the operator adopting it knows what it was.
    */
+  /**
+   * Catches the board up with work done outside it.
+   *
+   * A separate button rather than part of the board read, because it costs a
+   * `git log` and the board is polled. The cheap half of this signal already
+   * runs on every read; this is the half that needs asking for.
+   *
+   * `?dry=1` reports without moving anything, which is what the tests use and
+   * what an operator who does not trust it yet should reach for.
+   */
+  app.post<{ Params: { boardId: string }; Querystring: { dry?: string } }>(
+    '/api/boards/:boardId/resync',
+    async (request, reply) => {
+      try {
+        const board = context.database.db
+          .select()
+          .from(boards)
+          .where(eq(boards.id, request.params.boardId))
+          .get();
+        if (board === undefined) return notFound(reply, 'No such board.');
+
+        const report = await resync(context.database, board.id, board.cwd, {
+          apply: request.query.dry !== '1',
+        });
+
+        // Only when something actually moved. A stream event per press would
+        // redraw every open board for a result that was "nothing changed".
+        if (report.moved.length > 0) publish('cards-resynced', report);
+
+        return reply.send(report);
+      } catch (error) {
+        return fail(reply, error);
+      }
+    },
+  );
+
   app.post<{ Params: { runId: string }; Body: { title?: unknown } }>(
     '/api/runs/:runId/adopt',
     (request, reply) => {
