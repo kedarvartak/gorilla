@@ -14,3 +14,22 @@ declare global {
 }
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+/**
+ * jsdom has no `ResizeObserver`, and the card detail measures every section
+ * with one to lay them out.
+ *
+ * A stub rather than a polyfill: nothing in jsdom has a height, so a real
+ * implementation would observe boxes that are all zero and report nothing the
+ * assertions could use. What the tests need is for the component to mount and
+ * commit, which is exactly what the absence of the constructor prevented.
+ */
+if (!('ResizeObserver' in globalThis)) {
+  globalThis.ResizeObserver = class {
+    observe(): void {
+      /* nothing in jsdom has a size to report */
+    }
+    unobserve(): void {}
+    disconnect(): void {}
+  } as unknown as typeof ResizeObserver;
+}

@@ -1,17 +1,26 @@
-import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
+import {
+  Children,
+  Fragment,
+  isValidElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 
 import { Timeline } from './Timeline.js';
 
 import {
   Archive,
-  ArrowsInSimple,
-  ArrowsOutSimple,
+  ArrowLeft,
   CheckCircle,
   Copy,
   DownloadSimple,
   Question,
   Warning,
-  X,
 } from '@phosphor-icons/react';
 
 import {
@@ -35,35 +44,6 @@ import {
  * exist (R10), so the kind is rendered beside every rule rather than being
  * available on hover.
  */
-
-/**
- * How tall the pane opens, remembered across cards and reloads.
- *
- * Stored as a fraction rather than pixels so it survives a window resize: an
- * operator who dragged the pane to two thirds of a large screen means two
- * thirds, not 800 pixels.
- */
-const HEIGHT_KEY = 'gorilla.detailHeightFraction';
-const MIN_FRACTION = 0.2;
-/** Never quite full: the board header is how you tell what else is running. */
-const MAX_FRACTION = 0.94;
-const DEFAULT_FRACTION = 0.48;
-const NUDGE = 0.06;
-
-function clampFraction(value: number): number {
-  return Math.min(MAX_FRACTION, Math.max(MIN_FRACTION, value));
-}
-
-function storedFraction(): number {
-  try {
-    const raw = window.localStorage.getItem(HEIGHT_KEY);
-    const value = raw === null ? Number.NaN : Number(raw);
-    return Number.isFinite(value) ? clampFraction(value) : DEFAULT_FRACTION;
-  } catch {
-    // Private browsing, or storage disabled. A forgotten height is not an error.
-    return DEFAULT_FRACTION;
-  }
-}
 
 /**
  * The per-card model controls.
@@ -494,7 +474,11 @@ function Rail({
   className?: string;
 }) {
   return (
-    <section className={`min-w-0 overflow-y-auto px-6 py-5 ${className}`}>
+    /* `min-h-0` and `h-full` together are what make this scroll rather than
+       grow: without them the section takes its content's height, the page
+       stretches past the window, and the document scrollbar appears instead of
+       this one - which loses the header and the group nav on the way down. */
+    <section className={`h-full min-h-0 min-w-0 overflow-y-auto px-6 py-5 ${className}`}>
       {/* Full width. A centred measure left a margin either side of a pane the
           operator had deliberately expanded, which reads as the pane failing to
           fill the space it was given. The measure is kept where it matters
@@ -514,6 +498,253 @@ function Rail({
  * between groups rather than as another section competing with the ones it
  * introduces. Carries the scroll target the tab bar jumps to.
  */
+/** The row unit the spans are counted in. Matches `grid-auto-rows` in index.css. */
+const ROW_PX = 4;
+/** The gap between sections, added to each span so it does not need a row-gap. */
+const SECTION_GAP_PX = 20;
+
+/**
+ * One section, given a row span from its own measured height.
+ *
+ * The measurement is the point: a grid row is as tall as the tallest thing in
+ * it, so laying sections out on a coarse grid puts empty under every short
+ * one. Counted against a four-pixel row instead, a section occupies exactly
+ * the rows it needs and the next section in that column starts immediately
+ * under it, which is what masonry is.
+ *
+ * Re-measured rather than measured once. Half the sections on this screen
+ * change height while it is open - a disclosure is expanded, a run arrives, a
+ * textarea is dragged taller - and a span fixed at first paint would leave a
+ * gap or an overlap the moment any of that happened.
+ */
+function SectionItem({
+  children,
+  column,
+  onSpan,
+}: {
+  children: ReactNode;
+  /** The column the group assigned, or null before it has decided. */
+  column: number | null;
+  onSpan: (span: number, wide: boolean) => void;
+}): ReactElement {
+  /**
+   * Measured on the inner element, never on the outer one.
+   *
+   * The outer div's height is the span, so measuring it would ask the layout
+   * what the layout already decided and freeze at whatever it guessed first.
+   * The inner div is unconstrained, so its height is the content's own - and
+   * because it exists from first paint, the observer is attached even for a
+   * section whose content arrives with the data. Attaching to the section
+   * itself missed exactly those, which left them at one row and overflowing
+   * into the group below.
+   */
+  const inner = useRef<HTMLDivElement>(null);
+  const [span, setSpan] = useState(1);
+  const [wide, setWide] = useState(false);
+
+  useEffect(() => {
+    const node = inner.current;
+    if (node === null) return;
+
+    const measure = (): void => {
+      const height = node.getBoundingClientRect().height;
+      // One row of slack on top of the rounding. A span that comes out even a
+      // pixel short lets the next section in the column sit on the bottom edge
+      // of this one, and a four-pixel overshoot is invisible where an overlap
+      // is the first thing anybody notices.
+      const rows =
+        height === 0 ? 1 : Math.max(1, Math.ceil((height + SECTION_GAP_PX) / ROW_PX) + 1);
+      const isWide = node.firstElementChild?.classList.contains('section--wide') ?? false;
+      setSpan(rows);
+      setWide(isWide);
+      // Reported up as the natural span so the group can choose columns from
+      // heights it knows before the browser has placed anything.
+      onSpan(rows, isWide);
+    };
+
+    measure();
+
+    // Again once the fonts are in. Text measured against a fallback face is a
+    // different height from the same text in IBM Plex, and every section
+    // measured before the swap would be short by that difference.
+    void document.fonts?.ready.then(measure).catch(() => {
+      /* no font loading API; the first measurement stands */
+    });
+
+    // Guarded because the span is a layout refinement, not a correctness
+    // requirement: without an observer every section keeps its first measured
+    // height, which is wrong only for the ones that change.
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+    };
+  }, [onSpan]);
+
+  return (
+    <div
+      className="min-w-0"
+      style={{
+        gridRowEnd: `span ${String(span)}`,
+        ...(wide
+          ? { gridColumn: '1 / -1' }
+          : column === null
+            ? {}
+            : { gridColumn: String(column) }),
+      }}
+    >
+      <div ref={inner} className="min-w-0">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A group's sections, each measured.
+ *
+ * Wrapped rather than cloned: a section is an ordinary element and should not
+ * have to accept a ref to be laid out. `Children.toArray` drops the nulls that
+ * every conditional section renders when it has nothing to say.
+ */
+function SectionFlow({ children }: { children: ReactNode }): ReactElement {
+  const items = flattenSections(children);
+  const container = useRef<HTMLDivElement>(null);
+  /** Natural spans, reported by each section once it has measured itself. */
+  const [spans, setSpans] = useState<readonly (number | undefined)[]>([]);
+  const [wides, setWides] = useState<readonly boolean[]>([]);
+  const [columns, setColumns] = useState(0);
+
+  const report = useCallback((index: number, span: number, wide: boolean): void => {
+    setSpans((current) => {
+      if (current[index] === span) return current;
+      const next = [...current];
+      next[index] = span;
+      return next;
+    });
+    setWides((current) => {
+      if (current[index] === wide) return current;
+      const next = [...current];
+      next[index] = wide;
+      return next;
+    });
+  }, []);
+
+  /** How many tracks the width gave us. Read from the grid rather than guessed. */
+  useEffect(() => {
+    const node = container.current;
+    if (node === null) return;
+
+    const read = (): void => {
+      setColumns(getComputedStyle(node).gridTemplateColumns.split(' ').filter(Boolean).length);
+    };
+
+    read();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(read);
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+    };
+    // Re-read as the sections report in. At first paint the container has no
+    // laid-out children and the computed tracks can come back as `none`, which
+    // reads as one column and would leave the placement switched off for good -
+    // the observer only fires when the box changes size, and it does not.
+  }, [spans.length]);
+
+  /**
+   * Each section into the column that is currently shortest.
+   *
+   * This is the half of masonry that CSS will not do. `grid-auto-flow: dense`
+   * fills holes but never chooses a column on the strength of how tall it
+   * already is, so two tall sections that happen to be adjacent in the DOM end
+   * up stacked in one column and the group finishes three hundred pixels
+   * taller than it needed to, ragged on three sides.
+   *
+   * Greedy shortest-first is the standard answer and it is enough here: the
+   * sections are independent boxes, so the only cost is that column order stops
+   * matching DOM order, and the gain is a group that is both shorter and level.
+   *
+   * Computed from the reported spans, which are content-derived, so the same
+   * content always produces the same columns. A full-width section levels every
+   * column, because nothing may be laid out beside it.
+   */
+  const placement = useMemo<readonly (number | null)[]>(() => {
+    const ready =
+      columns > 1 && spans.length === items.length && spans.every((span) => span !== undefined);
+    if (!ready) return items.map(() => null);
+
+    const heights = new Array<number>(columns).fill(0);
+
+    return items.map((_, index) => {
+      const span = spans[index] ?? 1;
+
+      if (wides[index] === true) {
+        const below = Math.max(...heights) + span;
+        heights.fill(below);
+        return null;
+      }
+
+      const shortest = heights.indexOf(Math.min(...heights));
+      heights[shortest] = (heights[shortest] ?? 0) + span;
+      return shortest + 1;
+    });
+  }, [columns, spans, wides, items.length]);
+
+  return (
+    <div className="sections" ref={container}>
+      {items.map((child, index) => (
+        <SectionItem
+          key={isValidElement(child) && child.key !== null ? child.key : index}
+          column={placement[index] ?? null}
+          onSpan={(span, wide) => {
+            report(index, span, wide);
+          }}
+        >
+          {child}
+        </SectionItem>
+      ))}
+    </div>
+  );
+}
+
+/*
+ * Squaring the columns off was tried and abandoned, 27 August 2026.
+ *
+ * A column of sections ends wherever its content ends, so a group finishes at
+ * four different heights and the ragged edge reads as the page having run out.
+ * Growing the bottom card in each short column closes it - and looked worse.
+ * The space does not disappear, it moves inside the cards, and four cards each
+ * carrying two hundred pixels of empty interior read as bloated where the
+ * ragged bottom only read as uneven. A card's height should mean how much it
+ * has to say.
+ *
+ * Recorded here rather than deleted, because the ragged bottom is the obvious
+ * thing to want to fix and this is the second time it would have been tried.
+ */
+
+/**
+ * Every section as its own item, fragments opened up.
+ *
+ * A fragment is one child to React and nine boxes to the reader. Left wrapped,
+ * the brief's nine sections were a single 640-pixel column that nothing could
+ * pack around - the tallest item in a group sets the group's height, so one
+ * fragment was setting it for all of them. Opening the fragments turns one
+ * indivisible block into nine placeable ones.
+ *
+ * Only fragments are opened. Anything else is a component that chose to render
+ * what it renders, and taking it apart would be this layout overruling it.
+ */
+function flattenSections(children: ReactNode): ReactNode[] {
+  return Children.toArray(children).flatMap((child) =>
+    isValidElement(child) && child.type === Fragment
+      ? flattenSections((child.props as { children?: ReactNode }).children)
+      : [child],
+  );
+}
+
 function GroupHeading({ id, label }: { id: string; label: string }): ReactElement {
   return (
     <h3
@@ -557,83 +788,6 @@ export function CardDetail({
   const [activePane, setActivePane] = useState<'brief' | 'specification' | 'review'>('brief');
   const [error, setError] = useState<string | null>(null);
   const [timelineRunId, setTimelineRunId] = useState<string | null>(null);
-  const [fraction, setFraction] = useState(storedFraction);
-  const [dragging, setDragging] = useState(false);
-  /** The height to come back to when the pane is un-maximised. */
-  const restoreTo = useRef(storedFraction());
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(HEIGHT_KEY, String(fraction));
-    } catch {
-      /* storage unavailable; the height simply is not remembered */
-    }
-  }, [fraction]);
-
-  /**
-   * Drag on the top edge to resize.
-   *
-   * Pointer capture rather than window listeners: the pointer keeps reporting to
-   * the handle even when it leaves it, so a fast drag past the edge of the pane
-   * does not silently stop resizing.
-   */
-  const startDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const handle = event.currentTarget;
-    handle.setPointerCapture(event.pointerId);
-    setDragging(true);
-
-    const move = (moved: PointerEvent): void => {
-      setFraction(clampFraction((window.innerHeight - moved.clientY) / window.innerHeight));
-    };
-
-    const stop = (): void => {
-      handle.removeEventListener('pointermove', move);
-      handle.removeEventListener('pointerup', stop);
-      handle.removeEventListener('pointercancel', stop);
-      try {
-        handle.releasePointerCapture(event.pointerId);
-      } catch {
-        /* already released */
-      }
-      setDragging(false);
-    };
-
-    handle.addEventListener('pointermove', move);
-    handle.addEventListener('pointerup', stop);
-    handle.addEventListener('pointercancel', stop);
-  }, []);
-
-  /** Dragging is not usable from a keyboard, so the separator takes arrow keys. */
-  const nudge = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
-    const step: Record<string, number> = { ArrowUp: NUDGE, ArrowDown: -NUDGE };
-    const delta = step[event.key];
-
-    if (delta !== undefined) {
-      event.preventDefault();
-      setFraction((current) => clampFraction(current + delta));
-      return;
-    }
-    if (event.key === 'Home') {
-      event.preventDefault();
-      setFraction(MAX_FRACTION);
-    }
-    if (event.key === 'End') {
-      event.preventDefault();
-      setFraction(MIN_FRACTION);
-    }
-  }, []);
-
-  const maximised = fraction >= MAX_FRACTION - 0.001;
-
-  const toggleMaximised = useCallback(() => {
-    setFraction((current) => {
-      if (current >= MAX_FRACTION - 0.001) return clampFraction(restoreTo.current);
-      restoreTo.current = current;
-      return MAX_FRACTION;
-    });
-  }, []);
-
   const [merging, setMerging] = useState(false);
   const [mergeReport, setMergeReport] = useState<MergeReport | null>(null);
   /** Set only when the gate declined. Judgement is offered here and nowhere else. */
@@ -869,33 +1023,35 @@ export function CardDetail({
   const latest = detail.runs[detail.runs.length - 1];
 
   return (
-    <div
-      className="flex flex-col border-t border-line bg-surface"
-      style={{ height: `${(fraction * 100).toFixed(2)}%` }}
-    >
-      {/* The resize handle. `separator` with an orientation and a value is what
-          makes this reachable without a pointer. */}
-      <div
-        role="separator"
-        aria-orientation="horizontal"
-        aria-label="Resize the card pane"
-        aria-valuenow={Math.round(fraction * 100)}
-        aria-valuemin={Math.round(MIN_FRACTION * 100)}
-        aria-valuemax={Math.round(MAX_FRACTION * 100)}
-        tabIndex={0}
-        onPointerDown={startDrag}
-        onKeyDown={nudge}
-        title="Drag, or focus and use the arrow keys, to resize"
-        className={`group -mt-1 h-2 shrink-0 cursor-ns-resize ${
-          dragging ? 'bg-brand/60' : 'bg-transparent hover:bg-brand/30'
-        } focus:bg-brand/50 focus:outline-none`}
-      >
-        <div className="mx-auto mt-0.5 h-0.5 w-10 rounded bg-line group-hover:bg-brand/60" />
-      </div>
-
-      <header className="flex items-baseline gap-3 border-b border-line px-5 py-3">
-        <h2 className="text-ink">{detail.card.title}</h2>
-        <span className="text-[12.5px] text-dim">{detail.card.status}</span>
+    /*
+     * A page, not a drawer.
+     *
+     * The pane opened over the board at 48% of the window and was draggable to
+     * 94%, which meant the operator resized it on the way in to almost every
+     * card and the content underneath was a strip either way. A card is not a
+     * peek at something else - reading one is the task, and it deserves the
+     * window rather than a share of it negotiated by hand each time.
+     *
+     * The height fraction, the drag handle and the expand toggle all went with
+     * it. A control whose only job was to recover space that is now given by
+     * default is a control that exists to work around its own layout.
+     */
+    <div className="flex min-h-0 flex-1 flex-col bg-surface">
+      <header className="flex shrink-0 items-baseline gap-3 border-b border-line px-5 py-3">
+        {/* First, and a back rather than a close: this replaced the board
+            rather than covering it, so leaving is a return to somewhere. */}
+        <button
+          type="button"
+          className="-ml-1 inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
+          onClick={onClose}
+        >
+          <ArrowLeft size={13} aria-hidden />
+          Board
+        </button>
+        <h2 className="min-w-0 truncate text-ink" title={detail.card.title}>
+          {detail.card.title}
+        </h2>
+        <span className="shrink-0 text-[12.5px] text-dim">{detail.card.status}</span>
         {/* Only on a card that stopped. Offering it on a running card would
             invite two runs in one worktree, and the server refuses that
             anyway - a button that returns 409 is worse than no button. */}
@@ -922,19 +1078,6 @@ export function CardDetail({
           <Copy size={13} aria-hidden />
           Clone
         </button>
-        <button
-          type="button"
-          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
-          onClick={toggleMaximised}
-          title={maximised ? 'Restore the previous height' : 'Stretch the pane over the board'}
-        >
-          {maximised ? (
-            <ArrowsInSimple size={13} aria-hidden />
-          ) : (
-            <ArrowsOutSimple size={13} aria-hidden />
-          )}
-          {maximised ? 'Restore' : 'Expand'}
-        </button>
         {/* Put away, not deleted. Deleting takes the runs, the ledger and the
             judgements with it - the history this product exists to keep. */}
         <button
@@ -950,15 +1093,6 @@ export function CardDetail({
         >
           <Archive size={13} aria-hidden />
           Archive
-        </button>
-        <button
-          type="button"
-          aria-label="Close"
-          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-dim transition-colors hover:bg-well hover:text-ink"
-          onClick={onClose}
-        >
-          <X size={13} aria-hidden />
-          Close
         </button>
       </header>
 
@@ -1056,7 +1190,7 @@ export function CardDetail({
         <Rail title="Card">
           <>
             <GroupHeading id="group-specification" label="Specification" />
-            <div className="sections">
+            <SectionFlow>
               <div className="section">
                 <h4 className="mb-2 eyebrow">What this card is</h4>
                 {detail.card.body === '' ? (
@@ -1306,7 +1440,7 @@ export function CardDetail({
               ) : (
                 <></>
               )}
-            </div>
+            </SectionFlow>
             <GroupHeading
               id="group-brief"
               label={
@@ -1315,7 +1449,7 @@ export function CardDetail({
                   : `What happened - ${String(brief.unseenCount)} new`
               }
             />
-            <div className="sections">
+            <SectionFlow>
               {/* Verify output only when it did not pass. When it passed, the
                 brief's one line is enough and a green box is just noise. */}
               {detail.verify === null || detail.verify.status === 'passed' ? null : (
@@ -1789,15 +1923,19 @@ export function CardDetail({
                 // A brief that stays on this screen is a brief the rest of the
                 // team never reads. The two exits are copy, for a pull request
                 // body or a message, and download, for something kept.
-                <div className="section flex items-center gap-2">
-                  <span className="eyebrow mr-1">Export</span>
+                //
+                // Wraps rather than squeezing: in a 320px column the label and
+                // two buttons on one line broke "Export" across two lines and
+                // left the buttons stacked mid-word.
+                <div className="section flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="eyebrow mr-1 whitespace-nowrap">Export</span>
                   <button
                     type="button"
                     className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
                     onClick={() => void copyMarkdown()}
                   >
                     <Copy size={13} aria-hidden />
-                    {copied ? 'Copied' : 'Copy markdown'}
+                    <span className="whitespace-nowrap">{copied ? 'Copied' : 'Copy markdown'}</span>
                   </button>
                   <a
                     className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
@@ -1805,13 +1943,13 @@ export function CardDetail({
                     download
                   >
                     <DownloadSimple size={13} aria-hidden />
-                    Download .md
+                    <span className="whitespace-nowrap">Download .md</span>
                   </a>
                 </div>
               )}
-            </div>
+            </SectionFlow>
             <GroupHeading id="group-review" label={runsTitle(detail.runs)} />
-            <div className="sections">
+            <SectionFlow>
               {detail.runs.length === 0 ? (
                 <div className="section">
                   <h4 className="mb-1 eyebrow">Nothing to review</h4>
@@ -2005,7 +2143,7 @@ export function CardDetail({
                   <p className="mt-2 text-[11.5px] leading-snug text-dim">{resolution}</p>
                 )}
               </div>
-            </div>
+            </SectionFlow>
           </>
         </Rail>
       </div>

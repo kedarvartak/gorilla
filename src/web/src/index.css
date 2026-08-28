@@ -139,38 +139,53 @@ body {
  * actually doing.
  */
 /*
- * Column flow, once per group.
+ * Measured masonry.
  *
- * Two layouts were tried and both failed in one direction. A grid keeps
- * reading order but couples row heights, so a short section leaves a field of
- * empty under it until the tallest box in its row ends. Column flow packs
- * densely with no such gap, but balances across the whole container - which,
- * when the container was one sparse tab, put two small boxes in the left
- * column and left the right half of the flap empty. That was the emptiness
- * that got reported.
+ * Three layouts were tried before this one and each failed the same test in a
+ * different place. A grid keeps reading order but couples row heights, so a
+ * short section leaves a field of empty under it until the tallest box in its
+ * row ends. Column flow packs densely but balances by height, and with blocks
+ * that refuse to split it balances badly - two short sections in the left
+ * column and nothing under them for four hundred pixels.
  *
- * Neither layout was the problem: one container per tab was. Each group now
- * flows on its own, so the packing is dense and the grouping survives, and
- * `column-width` rather than `column-count` means the number of columns comes
- * from the width available rather than from a guess about it.
+ * Neither can be fixed in CSS alone, because both need a height the browser
+ * only knows after layout. So the height is measured: every section is given a
+ * row span from its own measured height against a four-pixel row, which is the
+ * standard way to get true masonry out of grid. Reading order is the DOM
+ * order, packing is dense, and the only empty left is at the foot of the
+ * shortest column, which is as good as this gets without reordering content
+ * the operator is trying to read.
+ *
+ * `SectionFlow` in CardDetail.tsx owns the measuring.
  */
 .sections {
-  columns: 360px;
-  column-gap: 16px;
+  display: grid;
+  /* `auto-fit`, not `auto-fill`: a track with nothing in it collapses, so a
+     group of two sections spreads across the full width instead of sitting in
+     the first two of four columns with half the row empty beside it. Filling
+     the space by widening what is there beats leaving a hole. */
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  /* The unit the spans are counted in. Small enough that rounding a section up
+     to the next row adds nothing anybody can see. */
+  grid-auto-rows: 4px;
+  column-gap: 20px;
+  /* Columns are chosen in `SectionFlow`, shortest-first, which is the half of
+     masonry CSS will not do: `dense` fills holes but never picks a column on
+     the strength of how tall it already is. Kept as a fallback for the first
+     paint, before the spans have been measured. */
+  grid-auto-flow: row dense;
 }
 
 .section {
-  /* Never split down the middle by a column break: half a table at the bottom
-     of one column and half at the top of the next is worse than an uneven
-     column. */
-  break-inside: avoid;
-  display: inline-block;
-  width: 100%;
-  margin-bottom: 16px;
   padding: 14px 16px;
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
   background: var(--color-surface);
+  /* Nothing may push past its column: a long path or an unbroken command is
+     the usual cause of a horizontal scrollbar on a page that has no business
+     having one. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /*
@@ -178,11 +193,7 @@ body {
  * the agent, which is preformatted and cannot reflow into a column.
  */
 .section--wide {
-  /* `column-span` is ignored on an inline-level box, and `.section` is
-     inline-block so that column breaking can avoid it. A spanning section is
-     never inside a column anyway, so it takes the block display back. */
-  display: block;
-  column-span: all;
+  width: 100%;
 }
 
 /* Structure, not text. Tracked out so a label reads as a different kind of
