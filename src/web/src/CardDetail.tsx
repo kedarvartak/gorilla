@@ -16,6 +16,8 @@ import { Timeline } from './Timeline.js';
 import {
   Archive,
   ArrowLeft,
+  CaretDown,
+  Check,
   CheckCircle,
   Copy,
   DownloadSimple,
@@ -430,6 +432,142 @@ function TextField({
 }
 
 /** One labelled select over a nullable card field, saving on change. */
+/**
+ * A dropdown the page owns, rather than one the operating system draws.
+ *
+ * A native `select` renders its list at the system's font size, in the system's
+ * colours, positioned by the system - so on this page it was a 15px control
+ * that opened an 11px menu in a different typeface, which is exactly the
+ * moment an operator is trying to read a model name they only half remember.
+ *
+ * This one is set at reading size, aligned to the control it belongs to, and
+ * keeps the keyboard behaviour a select has: arrows move, Enter and Space
+ * choose, Escape closes and returns focus, and the open list is a listbox with
+ * the current option marked.
+ */
+function Dropdown({
+  label,
+  value,
+  options,
+  title,
+  neutralLabel,
+  onPick,
+}: {
+  label: string;
+  value: string | null;
+  options: readonly string[];
+  title: string;
+  neutralLabel: string;
+  onPick: (value: string | null) => void;
+}): ReactElement {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const box = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+
+  // A value set by /gorilla:plan or curl may not be in the list. Showing it is
+  // the difference between an honest control and one that lies about what the
+  // card will actually run.
+  const all: readonly (string | null)[] = [
+    null,
+    ...options,
+    ...(value !== null && !options.includes(value) ? [value] : []),
+  ];
+  const chosen = all.indexOf(value);
+
+  useEffect(() => {
+    if (!open) return;
+    setActive(chosen === -1 ? 0 : chosen);
+
+    function onAway(event: MouseEvent): void {
+      if (!box.current?.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onAway);
+    return () => {
+      document.removeEventListener('mousedown', onAway);
+    };
+  }, [open, chosen]);
+
+  const choose = (index: number): void => {
+    setOpen(false);
+    button.current?.focus();
+    onPick(all[index] ?? null);
+  };
+
+  return (
+    <div className="dropdown" ref={box}>
+      <button
+        ref={button}
+        type="button"
+        title={title}
+        aria-label={label}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="dropdown-button"
+        onClick={() => setOpen((was) => !was)}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
+      >
+        <span className={value === null ? 'text-dim' : undefined}>{value ?? neutralLabel}</span>
+        <CaretDown size={12} aria-hidden />
+      </button>
+
+      {!open ? null : (
+        <ul
+          role="listbox"
+          aria-label={label}
+          tabIndex={-1}
+          className="dropdown-list"
+          ref={(node) => node?.focus()}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              setOpen(false);
+              button.current?.focus();
+            }
+            if (event.key === 'ArrowDown') {
+              event.preventDefault();
+              setActive((at) => (at + 1) % all.length);
+            }
+            if (event.key === 'ArrowUp') {
+              event.preventDefault();
+              setActive((at) => (at - 1 + all.length) % all.length);
+            }
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              choose(active);
+            }
+          }}
+        >
+          {all.map((option, index) => (
+            <li key={option ?? '__default'}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={option === value}
+                className={`dropdown-option ${index === active ? 'is-active' : ''} ${
+                  option === value ? 'is-chosen' : ''
+                }`}
+                onMouseEnter={() => setActive(index)}
+                onClick={() => choose(index)}
+              >
+                <span className={option === null ? 'text-dim' : undefined}>
+                  {option ?? neutralLabel}
+                </span>
+                {option === value ? <Check size={13} aria-hidden /> : null}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function FieldSelect({
   label,
   value,
@@ -447,32 +585,22 @@ function FieldSelect({
   onPick: (value: string | null) => void;
 }): ReactElement {
   return (
-    <>
-      <dt className="text-dim" title={title}>
+    // One block, label above control. Laid out as a flat list of `dt`/`dd` in a
+    // multi-column grid, the pairs interleaved: a label landed in one column
+    // and its value in the next, and "model" sat above somebody else's value.
+    <div className="setting">
+      <span className="setting-label" title={title}>
         {label}
-      </dt>
-      <dd>
-        <select
-          className="w-full rounded-md border border-line bg-well px-2 py-1 text-ink"
-          value={value ?? ''}
-          aria-label={label}
-          onChange={(changed) => onPick(changed.target.value === '' ? null : changed.target.value)}
-        >
-          <option value="">{neutralLabel}</option>
-          {options.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-          {/* A value set by /gorilla:plan or curl may not be in the list. Showing
-              it is the difference between an honest control and one that lies
-              about what the card will actually run. */}
-          {value !== null && !options.includes(value) ? (
-            <option value={value}>{value}</option>
-          ) : null}
-        </select>
-      </dd>
-    </>
+      </span>
+      <Dropdown
+        label={label}
+        value={value}
+        options={options}
+        title={title}
+        neutralLabel={neutralLabel}
+        onPick={onPick}
+      />
+    </div>
   );
 }
 
@@ -917,19 +1045,89 @@ function NarrationLine({ entry }: { entry: NarrationEntry }): ReactElement {
  * its own. Set in the label's own line so the two read as a single mark.
  */
 /**
- * The colour of the rail's spine.
+ * Where this card stands, in the words an operator would use.
  *
- * The only colour on the page, so it has to mean something: where this card
- * stands. Amber for wanting a person, green for finished, blue while it is
- * working, and the ordinary hairline when it is simply waiting - which is most
- * cards, most of the time, and should not shout.
+ * The page's first sentence, so it answers the question they arrived with -
+ * is anything waiting on me - before they read a line of anything else. Built
+ * from the readiness checks the board already computes rather than a second
+ * opinion about them, so this and the list further down cannot disagree.
  */
-function spineFor(status: string): string {
-  if (status === 'running') return 'var(--color-info)';
-  if (status === 'awaiting-review' || status === 'blocked') return 'var(--color-attention)';
-  if (status === 'done') return 'var(--color-ok)';
-  if (status === 'abandoned') return 'var(--color-danger)';
-  return 'var(--color-line)';
+function verdictOf(
+  status: string,
+  needsYou: readonly { name: string }[],
+  runs: number,
+  hasGoal: boolean,
+): { state: string; because: string; tone: string } {
+  // The card's own state leads, and an outstanding check is said inside it.
+  // Ordered the other way round, a finished card whose last check was never
+  // settled announced "Waiting on you" beside a token reading "done" - two
+  // sentences on one line contradicting each other.
+  const outstanding =
+    needsYou.length === 0
+      ? ''
+      : ` ${needsYou.map((check) => check.name).join(', ')} still ${needsYou.length === 1 ? 'wants' : 'want'} a look.`;
+
+  if (status === 'running') {
+    return {
+      state: 'Running now',
+      because:
+        'A session is working on this card. What it says and does appears under Model thinking as it goes.',
+      tone: 'var(--color-info)',
+    };
+  }
+
+  if (status === 'done') {
+    return {
+      state: 'Done',
+      because: `Accepted and merged.${outstanding === '' ? ' Nothing here is waiting on you.' : outstanding}`,
+      tone: 'var(--color-ok)',
+    };
+  }
+
+  if (status === 'abandoned') {
+    return {
+      state: 'Abandoned',
+      because: 'Nobody is working on this. Its runs and ledger are kept.',
+      tone: 'var(--color-danger)',
+    };
+  }
+
+  if (status === 'awaiting-review') {
+    return {
+      state: needsYou.length === 0 ? 'Ready for your verdict' : 'Waiting on you',
+      because:
+        needsYou.length === 0
+          ? 'The run finished and nothing is outstanding. Read what it did, then accept it or send it back.'
+          : `The run finished, but${outstanding}`,
+      tone: 'var(--color-attention)',
+    };
+  }
+
+  if (status === 'blocked') {
+    return {
+      state: 'Blocked',
+      because: 'Something this card depends on has not happened yet.',
+      tone: 'var(--color-attention)',
+    };
+  }
+
+  if (!hasGoal) {
+    return {
+      state: 'Not dispatchable',
+      because:
+        'No goal condition, so the board has nothing to judge a run against and will not start one.',
+      tone: 'var(--color-danger)',
+    };
+  }
+
+  return {
+    state: runs === 0 ? 'Waiting to run' : 'Idle',
+    because:
+      runs === 0
+        ? `Nothing has been dispatched against this card yet.${outstanding}`
+        : `The last run ended and nothing is queued.${outstanding}`,
+    tone: 'var(--color-faint)',
+  };
 }
 
 function GroupHeading({ id, label }: { id: string; label: string }): ReactElement {
@@ -1265,6 +1463,15 @@ export function CardDetail({
   const entries = detail.runs.flatMap((run) => run.ledger.entries);
   const latest = detail.runs[detail.runs.length - 1];
 
+  /** What this card is waiting on, if anything, in the board's own reckoning. */
+  const needsYou = (detail.readiness?.checks ?? []).filter((check) => check.state === 'needs-you');
+  const verdict = verdictOf(
+    detail.card.status,
+    needsYou,
+    detail.runs.length,
+    detail.card.goalCondition !== null,
+  );
+
   return (
     /*
      * A page, not a drawer.
@@ -1436,1074 +1643,1098 @@ export function CardDetail({
          * to a group rather than hiding the other two, so nothing is ever
          * more than a scroll away and no group can be empty on its own.
          */}
-        <div className="card-page">
-          <aside
-            className="card-rail"
-            style={{
-              // The spine carries the card's state up the whole rail. One piece
-              // of colour, saying the only thing worth knowing at a glance.
-              ['--rail-spine' as string]: spineFor(detail.card.status),
-            }}
-          >
-            <dl>
-              <dt title="Where this card is in its life. The board sets it; it is not a preference.">
-                Status
-              </dt>
-              <dd>
-                <span className="font-mono text-[14.5px]">{detail.card.status}</span>
-              </dd>
-              <FieldSelect
-                label="Priority"
-                value={detail.card.priority === 'normal' ? null : detail.card.priority}
-                options={['high', 'low']}
-                title="Reorders the dispatch queue within this card's column."
-                neutralLabel="normal"
-                onPick={(priority) =>
-                  patch({ priority: (priority ?? 'normal') as Card['priority'] })
-                }
-              />
-              <FieldSelect
-                label="Agent"
-                value={detail.card.agentProvider}
-                options={['claude', 'codex']}
-                title="The coding CLI dispatched for this card. Claude sessions are observed through hooks; Codex output is captured from its JSON stream."
-                neutralLabel="claude"
-                onPick={(agentProvider) =>
-                  patch({ agentProvider: (agentProvider ?? 'claude') as Card['agentProvider'] })
-                }
-              />
-              <FieldSelect
-                label="Model"
-                value={detail.card.agentModel}
-                options={detail.card.agentProvider === 'codex' ? CODEX_MODELS : CLAUDE_MODELS}
-                title={`Reaches the selected ${detail.card.agentProvider} CLI for this card's run.`}
-                onPick={(agentModel) => patch({ agentModel })}
-              />
-              <FieldSelect
-                label="Effort"
-                value={detail.card.agentEffort}
-                options={EFFORTS}
-                title="Reaches `claude --effort` for this card's run."
-                onPick={(agentEffort) => patch({ agentEffort })}
-              />
-              <FieldSelect
-                label="Synthesis"
-                value={detail.card.synthesisModel}
-                options={CLAUDE_MODELS}
-                title="Used only for windows that escalate - compaction, and manual re-extraction. Not the model that does the work."
-                onPick={(synthesisModel) => patch({ synthesisModel })}
-              />
-              <dt
-                className="text-dim"
-                title="Tokens a run may spend before the board stops it. This one is enforced: the board terminates the session."
-              >
-                Ceiling
-              </dt>
-              <dd>
-                {/* Named as a hard limit rather than a preference. The board
+        <Rail title="Card">
+          <>
+            {/*
+             * The answer first.
+             *
+             * This page exists so one person can reach a verdict on work a
+             * machine did, and it opened with eleven settings controls -
+             * configuration, the least urgent thing on it. It opens with
+             * where the card stands, and what is waiting on them.
+             */}
+            <section className="verdict -mx-6 -mt-4 mb-8">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <h2 className="verdict-state">{verdict.state}</h2>
+                <span className="verdict-token" style={{ color: verdict.tone }}>
+                  {detail.card.status}
+                </span>
+              </div>
+              <p className="verdict-because mt-2">{verdict.because}</p>
+
+              {/*
+               * The run as a reading off an instrument.
+               *
+               * A machine worked for nineteen turns, spent 593k tokens and
+               * ninety-seven cents, and says it is finished. That is the most
+               * characteristic object this product has and it was three lines
+               * of grey prose in a box near the bottom of the page.
+               *
+               * All of it is set in the mono face, which is the rule this
+               * page follows throughout: mono is what the machine produced,
+               * sans is what a person wrote.
+               */}
+              <dl className="instrument">
+                <div>
+                  <dt>Runs</dt>
+                  <dd className={detail.runs.length === 0 ? 'is-quiet' : ''}>
+                    {detail.runs.length}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Turns</dt>
+                  <dd className={latest?.cost?.turns === undefined ? 'is-quiet' : ''}>
+                    {latest?.cost?.turns ?? '\u2014'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Spent</dt>
+                  <dd className={latest?.cost === undefined ? 'is-quiet' : ''}>
+                    {latest?.cost?.summary.split(' \u00b7 ')[1] ?? '\u2014'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Account</dt>
+                  <dd className={narration === null || narration.total === 0 ? 'is-quiet' : ''}>
+                    {narration === null || narration.total === 0 ? '\u2014' : narration.total}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Verify</dt>
+                  <dd
+                    className={detail.verify === null ? 'is-quiet' : ''}
+                    title={detail.verify?.command}
+                  >
+                    {detail.verify?.status ?? 'not run'}
+                  </dd>
+                </div>
+              </dl>
+
+              {/* Folded, because settings are consulted when something needs
+                    changing, which is rarely, and they took a permanent column
+                    beside the reading column to say so. */}
+              <details className="settings">
+                <summary>How it runs</summary>
+                <div className="settings-grid">
+                  <FieldSelect
+                    label="Priority"
+                    value={detail.card.priority === 'normal' ? null : detail.card.priority}
+                    options={['high', 'low']}
+                    title="Reorders the dispatch queue within this card's column."
+                    neutralLabel="normal"
+                    onPick={(priority) =>
+                      patch({ priority: (priority ?? 'normal') as Card['priority'] })
+                    }
+                  />
+                  <FieldSelect
+                    label="Agent"
+                    value={detail.card.agentProvider}
+                    options={['claude', 'codex']}
+                    title="The coding CLI dispatched for this card. Claude sessions are observed through hooks; Codex output is captured from its JSON stream."
+                    neutralLabel="claude"
+                    onPick={(agentProvider) =>
+                      patch({ agentProvider: (agentProvider ?? 'claude') as Card['agentProvider'] })
+                    }
+                  />
+                  <FieldSelect
+                    label="Model"
+                    value={detail.card.agentModel}
+                    options={detail.card.agentProvider === 'codex' ? CODEX_MODELS : CLAUDE_MODELS}
+                    title={`Reaches the selected ${detail.card.agentProvider} CLI for this card's run.`}
+                    onPick={(agentModel) => patch({ agentModel })}
+                  />
+                  <FieldSelect
+                    label="Effort"
+                    value={detail.card.agentEffort}
+                    options={EFFORTS}
+                    title="Reaches `claude --effort` for this card's run."
+                    onPick={(agentEffort) => patch({ agentEffort })}
+                  />
+                  <FieldSelect
+                    label="Synthesis"
+                    value={detail.card.synthesisModel}
+                    options={CLAUDE_MODELS}
+                    title="Used only for windows that escalate - compaction, and manual re-extraction. Not the model that does the work."
+                    onPick={(synthesisModel) => patch({ synthesisModel })}
+                  />
+                  <div className="setting">
+                    <span
+                      className="setting-label"
+                      title="Tokens a run may spend before the board stops it. This one is enforced: the board terminates the session."
+                    >
+                      Ceiling
+                    </span>
+                    {/* Named as a hard limit rather than a preference. The board
               kills the process when it is crossed, unlike the guardrails
               below, which are written into settings and can be argued
               with. */}
-                <TextField
-                  label="token ceiling"
-                  value={detail.card.tokenCeiling === null ? '' : String(detail.card.tokenCeiling)}
-                  placeholder="no ceiling"
-                  onSave={(next) =>
-                    patch({ tokenCeiling: next.trim() === '' ? null : Number(next) })
-                  }
-                />
-              </dd>
-              <dt
-                className="text-dim"
-                title="A command the board runs itself after the run. Hard: the card halts if it does not pass."
-              >
-                Verify
-              </dt>
-              <dd>
-                <TextField
-                  label="verify command"
-                  value={detail.verifyCommand ?? ''}
-                  placeholder="npm test"
-                  onSave={(next) =>
-                    patch({
-                      guardrails: { ...rails, verify: next === '' ? null : next },
-                    })
-                  }
-                />
-              </dd>
-              {latest?.cost === null || latest?.cost === undefined ? null : (
-                <>
-                  <dt title="What this card has cost so far.">Spent</dt>
-                  <dd className="font-mono text-[14.5px]">{latest.cost.summary}</dd>
-                </>
-              )}
-              {detail.workspace === null || detail.workspace.branch === null ? null : (
-                <>
-                  <dt title="The branch this card's work is on.">Branch</dt>
-                  <dd className="truncate font-mono text-[14.5px]" title={detail.workspace.branch}>
-                    {detail.workspace.branch}
-                  </dd>
-                </>
-              )}
-              <dt title="How many times this card has been dispatched.">Runs</dt>
-              <dd className="font-mono text-[14.5px]">{detail.runs.length}</dd>
-            </dl>
-          </aside>
+                    <TextField
+                      label="token ceiling"
+                      value={
+                        detail.card.tokenCeiling === null ? '' : String(detail.card.tokenCeiling)
+                      }
+                      placeholder="no ceiling"
+                      onSave={(next) =>
+                        patch({ tokenCeiling: next.trim() === '' ? null : Number(next) })
+                      }
+                    />
+                  </div>
+                  <div className="setting">
+                    <span
+                      className="setting-label"
+                      title="A command the board runs itself after the run. Hard: the card halts if it does not pass."
+                    >
+                      Verify
+                    </span>
+                    <TextField
+                      label="verify command"
+                      value={detail.verifyCommand ?? ''}
+                      placeholder="npm test"
+                      onSave={(next) =>
+                        patch({
+                          guardrails: { ...rails, verify: next === '' ? null : next },
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              </details>
+            </section>
 
-          <Rail title="Card">
-            <>
-              {/*
-               * The sentence the whole card turns on, at the size it deserves.
-               *
-               * It was a truncated one-line input in the middle of a settings
-               * box: the measurable end state every run is judged against, shown
-               * forty characters at a time.
-               */}
-              <div className="mb-7">
-                <h4 className="section-label">Done when</h4>
+            {/*
+             * The sentence the whole card turns on, at the size it deserves.
+             *
+             * It was a truncated one-line input in the middle of a settings
+             * box: the measurable end state every run is judged against, shown
+             * forty characters at a time.
+             */}
+            <div className="mb-7">
+              <h4 className="section-label">Done when</h4>
 
-                {/* Editable, because a card added from the board header has no
+              {/* Editable, because a card added from the board header has no
                 goal and therefore cannot be dispatched - the Add button led
                 to a dead end, and every real card had to be made by curl. */}
-                <TextField
-                  label="goal condition"
-                  value={detail.card.goalCondition ?? ''}
-                  placeholder="measurable end state, a stated check, and a turn bound"
-                  invalid={detail.card.goalCondition === null}
-                  invalidNote="Not set, so this card cannot be dispatched."
-                  tone="statement"
-                  onSave={(next) => patch({ goalCondition: next === '' ? null : next })}
-                />
+              <TextField
+                label="goal condition"
+                value={detail.card.goalCondition ?? ''}
+                placeholder="measurable end state, a stated check, and a turn bound"
+                invalid={detail.card.goalCondition === null}
+                invalidNote="Not set, so this card cannot be dispatched."
+                tone="statement"
+                onSave={(next) => patch({ goalCondition: next === '' ? null : next })}
+              />
+            </div>
+
+            <GroupHeading id="group-specification" label="Specification" />
+            <SectionFlow>
+              <div className="section">
+                <h4 className="section-label">What this card is</h4>
+                {detail.card.body === '' ? (
+                  <p className="text-dim">
+                    No description. An agent reads this before anything else, so a card with none is
+                    a card that starts from its title alone.
+                  </p>
+                ) : (
+                  <p className="whitespace-pre-wrap text-ink">{detail.card.body}</p>
+                )}
               </div>
 
-              <GroupHeading id="group-specification" label="Specification" />
-              <SectionFlow>
-                <div className="section">
-                  <h4 className="section-label">What this card is</h4>
-                  {detail.card.body === '' ? (
-                    <p className="text-dim">
-                      No description. An agent reads this before anything else, so a card with none
-                      is a card that starts from its title alone.
-                    </p>
-                  ) : (
-                    <p className="whitespace-pre-wrap text-ink">{detail.card.body}</p>
+              {/*
+               * What the agent will actually be handed.
+               *
+               * The literal text of `card-context.md`, not a description of it.
+               * A screen that paraphrased the context would be a second
+               * description to keep in step with the first, and on the day the
+               * two disagreed the operator would review against the wrong one.
+               *
+               * Wide, because it is preformatted and cannot reflow into a
+               * column, and closed by default, because it is long and the
+               * question it answers - "what does the agent know?" - is one an
+               * operator asks occasionally rather than every time they open a
+               * card. The summary line carries the answer for the other times.
+               */}
+              {agentContext === null ? null : (
+                <div className={`section ${contextOpen ? 'section--wide' : ''}`}>
+                  <h4 className="section-label">What the agent will be told</h4>
+                  <p className="mb-2 text-dim">
+                    The context file handed to the session, as it would be written if this card were
+                    dispatched now. Not a record of what an earlier run received: the ledger, the
+                    dependencies and the subsystem map all move.
+                  </p>
+                  <p className="mb-3 text-[15px] text-faint">
+                    {`${String(agentContext.split('\n').length)} lines, ${String(agentContext.length)} characters. Sections: ${
+                      agentContext
+                        .split('\n')
+                        .filter((line) => line.startsWith('## '))
+                        .map((line) => line.slice(3))
+                        .join(', ') || 'the card body alone'
+                    }.`}
+                  </p>
+                  <button
+                    type="button"
+                    className="rounded-md border border-line px-2.5 py-1 text-[15px] text-ink transition-colors hover:border-dim"
+                    onClick={() => setContextOpen((open) => !open)}
+                    aria-expanded={contextOpen}
+                  >
+                    {contextOpen ? 'Hide it' : 'Read it'}
+                  </button>
+                  {!contextOpen ? null : (
+                    <pre className="mt-3 max-h-[420px] overflow-auto whitespace-pre-wrap rounded-md border border-line bg-well p-3 font-mono text-[14.5px] leading-[1.5] text-ink">
+                      {agentContext}
+                    </pre>
                   )}
                 </div>
+              )}
 
-                {/*
-                 * What the agent will actually be handed.
-                 *
-                 * The literal text of `card-context.md`, not a description of it.
-                 * A screen that paraphrased the context would be a second
-                 * description to keep in step with the first, and on the day the
-                 * two disagreed the operator would review against the wrong one.
-                 *
-                 * Wide, because it is preformatted and cannot reflow into a
-                 * column, and closed by default, because it is long and the
-                 * question it answers - "what does the agent know?" - is one an
-                 * operator asks occasionally rather than every time they open a
-                 * card. The summary line carries the answer for the other times.
-                 */}
-                {agentContext === null ? null : (
-                  <div className={`section ${contextOpen ? 'section--wide' : ''}`}>
-                    <h4 className="section-label">What the agent will be told</h4>
-                    <p className="mb-2 text-dim">
-                      The context file handed to the session, as it would be written if this card
-                      were dispatched now. Not a record of what an earlier run received: the ledger,
-                      the dependencies and the subsystem map all move.
-                    </p>
-                    <p className="mb-3 text-[15px] text-faint">
-                      {`${String(agentContext.split('\n').length)} lines, ${String(agentContext.length)} characters. Sections: ${
-                        agentContext
-                          .split('\n')
-                          .filter((line) => line.startsWith('## '))
-                          .map((line) => line.slice(3))
-                          .join(', ') || 'the card body alone'
-                      }.`}
-                    </p>
-                    <button
-                      type="button"
-                      className="rounded-md border border-line px-2.5 py-1 text-[15px] text-ink transition-colors hover:border-dim"
-                      onClick={() => setContextOpen((open) => !open)}
-                      aria-expanded={contextOpen}
-                    >
-                      {contextOpen ? 'Hide it' : 'Read it'}
-                    </button>
-                    {!contextOpen ? null : (
-                      <pre className="mt-3 max-h-[420px] overflow-auto whitespace-pre-wrap rounded-md border border-line bg-well p-3 font-mono text-[14.5px] leading-[1.5] text-ink">
-                        {agentContext}
-                      </pre>
-                    )}
-                  </div>
-                )}
-
-                {/* Full measure. Its rows are a label beside a list, which a
+              {/* Full measure. Its rows are a label beside a list, which a
                     340px masonry column wraps into confetti. */}
-                <div className="section section--wide">
-                  <h4 className="section-label">Guardrails</h4>
-                  {/*
-                   * Grouped by the promise, not one chip per line.
-                   *
-                   * A rail the board enforces and one it merely asks for are
-                   * different promises (R10), and that difference was carried
-                   * by a chip repeated beside every entry - the same word
-                   * printed nine times down the left of a list. It is the
-                   * heading now, said once, with its rules under it. The rows
-                   * that follow are the two the operator can edit, in the same
-                   * shape as the ones they cannot.
-                   */}
-                  <dl className="ruled">
-                    {detail.guardrailDetail.length === 0 ? (
-                      <>
-                        <dt>None</dt>
-                        <dd className="text-dim">
-                          Nothing constrains what this card&rsquo;s run may touch.
-                        </dd>
-                      </>
-                    ) : null}
+              <div className="section section--wide">
+                <h4 className="section-label">Guardrails</h4>
+                {/*
+                 * Grouped by the promise, not one chip per line.
+                 *
+                 * A rail the board enforces and one it merely asks for are
+                 * different promises (R10), and that difference was carried
+                 * by a chip repeated beside every entry - the same word
+                 * printed nine times down the left of a list. It is the
+                 * heading now, said once, with its rules under it. The rows
+                 * that follow are the two the operator can edit, in the same
+                 * shape as the ones they cannot.
+                 */}
+                <dl className="ruled">
+                  {detail.guardrailDetail.length === 0 ? (
+                    <>
+                      <dt>None</dt>
+                      <dd className="text-dim">
+                        Nothing constrains what this card&rsquo;s run may touch.
+                      </dd>
+                    </>
+                  ) : null}
 
-                    {/* The values are 'hard' and 'advisory'. Writing 'soft'
+                  {/* The values are 'hard' and 'advisory'. Writing 'soft'
                         here dropped every advisory rail and still typechecked,
                         because the two unions overlap on 'hard' - so the
                         comparison was legal and simply never true. */}
-                    {(['hard', 'advisory'] as const).map((enforcement) => {
-                      const rails = detail.guardrailDetail.filter(
-                        (rail) => rail.enforcement === enforcement,
-                      );
-                      if (rails.length === 0) return null;
+                  {(['hard', 'advisory'] as const).map((enforcement) => {
+                    const rails = detail.guardrailDetail.filter(
+                      (rail) => rail.enforcement === enforcement,
+                    );
+                    if (rails.length === 0) return null;
 
-                      return (
-                        <Fragment key={enforcement}>
-                          <dt className={enforcement === 'hard' ? 'text-ok' : undefined}>
-                            {enforcement === 'hard' ? 'Enforced' : 'Asked for'}
-                          </dt>
-                          <dd>
-                            <ul className="flex flex-col gap-1.5">
-                              {rails.map((rail) => (
-                                <li key={`${rail.kind}:${rail.text}`} title={rail.because}>
-                                  {rail.text}
-                                </li>
-                              ))}
-                            </ul>
-                          </dd>
-                        </Fragment>
-                      );
-                    })}
+                    return (
+                      <Fragment key={enforcement}>
+                        <dt className={enforcement === 'hard' ? 'text-ok' : undefined}>
+                          {enforcement === 'hard' ? 'Enforced' : 'Asked for'}
+                        </dt>
+                        <dd>
+                          <ul className="flex flex-col gap-1.5">
+                            {rails.map((rail) => (
+                              <li key={`${rail.kind}:${rail.text}`} title={rail.because}>
+                                {rail.text}
+                              </li>
+                            ))}
+                          </ul>
+                        </dd>
+                      </Fragment>
+                    );
+                  })}
 
-                    <dt
-                      className="text-dim"
-                      title="Paths the agent should confine itself to. Advisory: it is prompt text, not a rule."
-                    >
-                      Scope
-                    </dt>
-                    <dd>
-                      <TextField
-                        label="scope paths"
-                        value={rails.scope.join(', ')}
-                        placeholder="src/server/, test/"
-                        onSave={(next) => patch({ guardrails: { ...rails, scope: asList(next) } })}
-                      />
-                    </dd>
-                    <dt
-                      className="text-dim"
-                      title="Hard where a rule names a path or a command pattern, advisory otherwise. The list below says which."
-                    >
-                      Prohibit
-                    </dt>
-                    <dd>
-                      <TextField
-                        label="prohibitions"
-                        value={rails.prohibit.join(', ')}
-                        placeholder="src/db/schema.ts, Bash(git push *)"
-                        onSave={(next) =>
-                          patch({ guardrails: { ...rails, prohibit: asList(next) } })
-                        }
-                      />
-                    </dd>
-                  </dl>
-                </div>
+                  <dt
+                    className="text-dim"
+                    title="Paths the agent should confine itself to. Advisory: it is prompt text, not a rule."
+                  >
+                    Scope
+                  </dt>
+                  <dd>
+                    <TextField
+                      label="scope paths"
+                      value={rails.scope.join(', ')}
+                      placeholder="src/server/, test/"
+                      onSave={(next) => patch({ guardrails: { ...rails, scope: asList(next) } })}
+                    />
+                  </dd>
+                  <dt
+                    className="text-dim"
+                    title="Hard where a rule names a path or a command pattern, advisory otherwise. The list below says which."
+                  >
+                    Prohibit
+                  </dt>
+                  <dd>
+                    <TextField
+                      label="prohibitions"
+                      value={rails.prohibit.join(', ')}
+                      placeholder="src/db/schema.ts, Bash(git push *)"
+                      onSave={(next) => patch({ guardrails: { ...rails, prohibit: asList(next) } })}
+                    />
+                  </dd>
+                </dl>
+              </div>
 
-                {detail.staleness?.suspect !== true ? null : (
-                  /* A suspicion, never a verdict. The board says what it noticed and
+              {detail.staleness?.suspect !== true ? null : (
+                /* A suspicion, never a verdict. The board says what it noticed and
                  what to look at; archiving a card it believed was finished would
                  eventually archive one that was not, and an operator burned that
                  way stops trusting the surface. */
-                  <div className="mb-3 rounded border border-brand/50 bg-brand/5 px-2 py-1.5">
-                    <h4 className="mb-1 eyebrow text-attention">This card may already be done</h4>
-                    {detail.staleness.findings.map((finding) => (
-                      <p key={finding.signal} className="mb-1 leading-snug text-ink">
-                        {finding.detail}
-                        {finding.evidence.length === 0 ? null : (
-                          <span className="ml-1 text-[13.5px] text-dim">
-                            ({finding.evidence.slice(0, 4).join(', ')})
-                          </span>
-                        )}
-                      </p>
-                    ))}
-                    {detail.staleness.advice === null ? null : (
-                      <p className="text-[13.5px] text-dim">{detail.staleness.advice}</p>
-                    )}
-                  </div>
-                )}
+                <div className="mb-3 rounded border border-brand/50 bg-brand/5 px-2 py-1.5">
+                  <h4 className="mb-1 eyebrow text-attention">This card may already be done</h4>
+                  {detail.staleness.findings.map((finding) => (
+                    <p key={finding.signal} className="mb-1 leading-snug text-ink">
+                      {finding.detail}
+                      {finding.evidence.length === 0 ? null : (
+                        <span className="ml-1 text-[13.5px] text-dim">
+                          ({finding.evidence.slice(0, 4).join(', ')})
+                        </span>
+                      )}
+                    </p>
+                  ))}
+                  {detail.staleness.advice === null ? null : (
+                    <p className="text-[13.5px] text-dim">{detail.staleness.advice}</p>
+                  )}
+                </div>
+              )}
 
-                {detail.blockers.length > 0 ? (
-                  <p className="mt-3 text-danger">
-                    Blocked by: {detail.blockers.map((blocker) => blocker.title).join(', ')}
-                  </p>
-                ) : (
-                  <></>
-                )}
-              </SectionFlow>
-              <GroupHeading
-                id="group-brief"
-                label={
-                  brief === null || brief.nothingNew
-                    ? 'What happened'
-                    : `What happened - ${String(brief.unseenCount)} new`
-                }
-              />
-              <SectionFlow>
-                {/* Verify output only when it did not pass. When it passed, the
+              {detail.blockers.length > 0 ? (
+                <p className="mt-3 text-danger">
+                  Blocked by: {detail.blockers.map((blocker) => blocker.title).join(', ')}
+                </p>
+              ) : (
+                <></>
+              )}
+            </SectionFlow>
+            <GroupHeading
+              id="group-brief"
+              label={
+                brief === null || brief.nothingNew
+                  ? 'What happened'
+                  : `What happened - ${String(brief.unseenCount)} new`
+              }
+            />
+            <SectionFlow>
+              {/* Verify output only when it did not pass. When it passed, the
                 brief's one line is enough and a green box is just noise. */}
-                {detail.verify === null || detail.verify.status === 'passed' ? null : (
-                  <div className="mb-3 rounded border border-danger/40 bg-danger/10 px-2 py-1.5 text-danger">
-                    {/* The board ran this. It does not depend on the agent
+              {detail.verify === null || detail.verify.status === 'passed' ? null : (
+                <div className="mb-3 rounded border border-danger/40 bg-danger/10 px-2 py-1.5 text-danger">
+                  {/* The board ran this. It does not depend on the agent
                     reporting honestly, which is the whole point (R10). */}
-                    <div className="text-[15px]">{detail.verifyNote}</div>
-                    <pre className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap font-mono text-[13.5px] text-dim">
-                      {detail.verify.output}
-                    </pre>
-                  </div>
-                )}
+                  <div className="text-[15px]">{detail.verifyNote}</div>
+                  <pre className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap font-mono text-[13.5px] text-dim">
+                    {detail.verify.output}
+                  </pre>
+                </div>
+              )}
 
-                {brief === null ? (
-                  <p className="text-dim">The brief could not be loaded.</p>
-                ) : (
-                  <>
-                    {brief.extraction.note === null ? null : (
-                      <p className="mb-3 rounded border border-danger/40 bg-danger/10 px-2 py-1.5 text-[15px] text-danger">
-                        {brief.extraction.note}
+              {brief === null ? (
+                <p className="text-dim">The brief could not be loaded.</p>
+              ) : (
+                <>
+                  {brief.extraction.note === null ? null : (
+                    <p className="mb-3 rounded border border-danger/40 bg-danger/10 px-2 py-1.5 text-[15px] text-danger">
+                      {brief.extraction.note}
+                    </p>
+                  )}
+
+                  {mergeRefusal === null && !mergeBlocked ? null : (
+                    <div className="mb-3 rounded border border-danger/50 bg-danger/10 px-2 py-1.5">
+                      <h4 className="mb-1 eyebrow text-danger">
+                        {mergeRefusal === null
+                          ? `Merge is blocked: ${String(outstanding)} to read`
+                          : 'The merge was refused'}
+                      </h4>
+                      <p className="mb-1 leading-snug text-ink">
+                        {mergeRefusal?.summary ??
+                          'These have not been read yet. Accept or reject each and the merge becomes available.'}
                       </p>
-                    )}
+                      <p className="mb-2 text-[13.5px] text-dim">
+                        {mergeRefusal?.reach ??
+                          'This is the board declining to merge for you, not a lock on the repository. ' +
+                            'A `git merge` run in a terminal will merge this branch with nothing to stop it.'}
+                      </p>
 
-                    {mergeRefusal === null && !mergeBlocked ? null : (
-                      <div className="mb-3 rounded border border-danger/50 bg-danger/10 px-2 py-1.5">
-                        <h4 className="mb-1 eyebrow text-danger">
-                          {mergeRefusal === null
-                            ? `Merge is blocked: ${String(outstanding)} to read`
-                            : 'The merge was refused'}
-                        </h4>
-                        <p className="mb-1 leading-snug text-ink">
-                          {mergeRefusal?.summary ??
-                            'These have not been read yet. Accept or reject each and the merge becomes available.'}
-                        </p>
-                        <p className="mb-2 text-[13.5px] text-dim">
-                          {mergeRefusal?.reach ??
-                            'This is the board declining to merge for you, not a lock on the repository. ' +
-                              'A `git merge` run in a terminal will merge this branch with nothing to stop it.'}
-                        </p>
-
-                        {/* Shown when it is stopping something, and not otherwise.
+                      {/* Shown when it is stopping something, and not otherwise.
                         Asking on every card view is a standing request the
                         operator learns to scroll past; asking beside a disabled
                         button is a question with its reason attached - and
                         without it, the disabled button would be a wall. */}
-                        <ul className="flex flex-col gap-2">
-                          {brief.surprises.map((surprise) => (
-                            <li key={surprise.id} className="leading-snug">
-                              <div className="text-ink">{surprise.headline}</div>
-                              <div className="text-[13.5px] text-dim">{surprise.why}</div>
-                              {surprise.target.type === 'path' ? (
-                                <div className="text-[13.5px] text-dim">
-                                  Not an entry, so there is nothing to accept: open the file.
-                                </div>
-                              ) : (
-                                <div className="mt-0.5 flex gap-2">
-                                  <button
-                                    type="button"
-                                    className="rounded border border-ok/50 px-1.5 text-[13.5px] text-ok hover:bg-ok/10"
-                                    onClick={() => judge(surprise.target, 'accepted')}
-                                  >
-                                    accept
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="rounded border border-danger/50 px-1.5 text-[13.5px] text-danger hover:bg-danger/10"
-                                    title="Kept on the card, but no longer stated as fact in the brief."
-                                    onClick={() => judge(surprise.target, 'rejected')}
-                                  >
-                                    reject
-                                  </button>
-                                  {/* Rejecting says the run got something wrong.
+                      <ul className="flex flex-col gap-2">
+                        {brief.surprises.map((surprise) => (
+                          <li key={surprise.id} className="leading-snug">
+                            <div className="text-ink">{surprise.headline}</div>
+                            <div className="text-[13.5px] text-dim">{surprise.why}</div>
+                            {surprise.target.type === 'path' ? (
+                              <div className="text-[13.5px] text-dim">
+                                Not an entry, so there is nothing to accept: open the file.
+                              </div>
+                            ) : (
+                              <div className="mt-0.5 flex gap-2">
+                                <button
+                                  type="button"
+                                  className="rounded border border-ok/50 px-1.5 text-[13.5px] text-ok hover:bg-ok/10"
+                                  onClick={() => judge(surprise.target, 'accepted')}
+                                >
+                                  accept
+                                </button>
+                                <button
+                                  type="button"
+                                  className="rounded border border-danger/50 px-1.5 text-[13.5px] text-danger hover:bg-danger/10"
+                                  title="Kept on the card, but no longer stated as fact in the brief."
+                                  onClick={() => judge(surprise.target, 'rejected')}
+                                >
+                                  reject
+                                </button>
+                                {/* Rejecting says the run got something wrong.
                                   Without this the work that implies lives in
                                   the operator's head until they forget it. */}
-                                  <button
-                                    type="button"
-                                    className="rounded border border-line px-1.5 text-[13.5px] text-dim hover:text-ink"
-                                    title="Rejects this and raises a card to address it, linked back to here."
-                                    onClick={() => {
-                                      const entryId =
-                                        surprise.target.type === 'entry'
-                                          ? surprise.target.entryId
-                                          : null;
-                                      if (entryId === null) return;
+                                <button
+                                  type="button"
+                                  className="rounded border border-line px-1.5 text-[13.5px] text-dim hover:text-ink"
+                                  title="Rejects this and raises a card to address it, linked back to here."
+                                  onClick={() => {
+                                    const entryId =
+                                      surprise.target.type === 'entry'
+                                        ? surprise.target.entryId
+                                        : null;
+                                    if (entryId === null) return;
 
-                                      judge(surprise.target, 'rejected');
-                                      void api
-                                        .followUp(entryId)
-                                        .catch((cause: Error) => setError(cause.message));
-                                    }}
-                                  >
-                                    reject and raise a card
-                                  </button>
-                                </div>
-                              )}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {/*
-                     * One list, not a tile each.
-                     *
-                     * Every heading the brief can produce got a bordered box
-                     * whether or not it had anything in it, so a quiet card
-                     * showed six boxes reading "No decisions recorded", "No
-                     * assumptions recorded", "Nothing has changed" - the empty
-                     * ones took the same room as the full ones and made the
-                     * page look like the board had nothing to say. As rows they
-                     * cost one line each, and what is there stands out because
-                     * what is not has stopped competing with it.
-                     */}
-                    <div className="section section--wide">
-                      <dl className="ruled">
-                        {brief.sections.map((section) => (
-                          <Fragment key={section.title}>
-                            <dt>{section.title}</dt>
-                            <dd className={section.empty ? 'text-faint' : undefined}>
-                              {section.lines.map((line, index) => (
-                                <p
-                                  key={`${section.title}-${String(index)}`}
-                                  className={`whitespace-pre-wrap leading-snug ${
-                                    section.empty
-                                      ? ''
-                                      : line.startsWith('REVERSED:')
-                                        ? 'text-danger'
-                                        : line.startsWith('Needs you:')
-                                          ? 'text-brand'
-                                          : 'text-ink'
-                                  }`}
+                                    judge(surprise.target, 'rejected');
+                                    void api
+                                      .followUp(entryId)
+                                      .catch((cause: Error) => setError(cause.message));
+                                  }}
                                 >
-                                  {line}
-                                </p>
-                              ))}
-                            </dd>
-                          </Fragment>
-                        ))}
-                      </dl>
-                    </div>
-                  </>
-                )}
-
-                {entries.length === 0 ? (
-                  <></>
-                ) : (
-                  <div className="section">
-                    <button
-                      type="button"
-                      className="text-[15px] text-info hover:underline"
-                      onClick={() => setShowEntries(!showEntries)}
-                    >
-                      {showEntries ? 'hide' : 'show'} the {entries.length} underlying entr
-                      {entries.length === 1 ? 'y' : 'ies'}
-                    </button>
-
-                    {!showEntries ? null : (
-                      <ul className="mt-2 flex flex-col gap-2">
-                        {entries.map((entry, index) => (
-                          <li
-                            key={`${entry.kind}-${index}`}
-                            className="border-l-2 border-line pl-2"
-                          >
-                            <span
-                              className={`mr-1.5 text-[13.5px] uppercase ${
-                                KIND_COLOUR[entry.kind] ?? 'text-dim'
-                              }`}
-                            >
-                              {entry.kind}
-                            </span>
-                            <span className="text-ink">{entry.statement}</span>
-                            {entry.detail === undefined ? null : (
-                              <div className="mt-0.5 text-[15px] text-dim">{entry.detail}</div>
+                                  reject and raise a card
+                                </button>
+                              </div>
                             )}
-                            <div className="text-[13.5px] text-dim">
-                              {/* Every entry names its evidence; nothing here is
-                              unfalsifiable (doc 08). */}
-                              {entry.sourceEventIds.length} source event(s)
-                            </div>
                           </li>
                         ))}
                       </ul>
-                    )}
-                  </div>
-                )}
+                    </div>
+                  )}
 
-                {detail.workspace === null || onCompare === undefined ? null : (
-                  <div className="section">
-                    {/* Most useful straight after cloning, which is why it sits on
+                  {/*
+                   * One list, not a tile each.
+                   *
+                   * Every heading the brief can produce got a bordered box
+                   * whether or not it had anything in it, so a quiet card
+                   * showed six boxes reading "No decisions recorded", "No
+                   * assumptions recorded", "Nothing has changed" - the empty
+                   * ones took the same room as the full ones and made the
+                   * page look like the board had nothing to say. As rows they
+                   * cost one line each, and what is there stands out because
+                   * what is not has stopped competing with it.
+                   */}
+                  <div className="section section--wide">
+                    <dl className="ruled">
+                      {brief.sections.map((section) => (
+                        <Fragment key={section.title}>
+                          <dt>{section.title}</dt>
+                          <dd className={section.empty ? 'text-faint' : undefined}>
+                            {section.lines.map((line, index) => (
+                              <p
+                                key={`${section.title}-${String(index)}`}
+                                className={`whitespace-pre-wrap leading-snug ${
+                                  section.empty
+                                    ? ''
+                                    : line.startsWith('REVERSED:')
+                                      ? 'text-danger'
+                                      : line.startsWith('Needs you:')
+                                        ? 'text-brand'
+                                        : 'text-ink'
+                                }`}
+                              >
+                                {line}
+                              </p>
+                            ))}
+                          </dd>
+                        </Fragment>
+                      ))}
+                    </dl>
+                  </div>
+                </>
+              )}
+
+              {entries.length === 0 ? (
+                <></>
+              ) : (
+                <div className="section">
+                  <button
+                    type="button"
+                    className="text-[15px] text-info hover:underline"
+                    onClick={() => setShowEntries(!showEntries)}
+                  >
+                    {showEntries ? 'hide' : 'show'} the {entries.length} underlying entr
+                    {entries.length === 1 ? 'y' : 'ies'}
+                  </button>
+
+                  {!showEntries ? null : (
+                    <ul className="mt-2 flex flex-col gap-2">
+                      {entries.map((entry, index) => (
+                        <li key={`${entry.kind}-${index}`} className="border-l-2 border-line pl-2">
+                          <span
+                            className={`mr-1.5 text-[13.5px] uppercase ${
+                              KIND_COLOUR[entry.kind] ?? 'text-dim'
+                            }`}
+                          >
+                            {entry.kind}
+                          </span>
+                          <span className="text-ink">{entry.statement}</span>
+                          {entry.detail === undefined ? null : (
+                            <div className="mt-0.5 text-[15px] text-dim">{entry.detail}</div>
+                          )}
+                          <div className="text-[13.5px] text-dim">
+                            {/* Every entry names its evidence; nothing here is
+                              unfalsifiable (doc 08). */}
+                            {entry.sourceEventIds.length} source event(s)
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
+              {detail.workspace === null || onCompare === undefined ? null : (
+                <div className="section">
+                  {/* Most useful straight after cloning, which is why it sits on
                     the card rather than behind a selection on the board. */}
-                    <label className="text-[15px] text-dim">
-                      compare with{' '}
-                      <select
-                        className="rounded border border-line bg-well px-1 py-0.5 text-ink"
-                        value=""
-                        onFocus={() => {
-                          if (siblings.length > 0) return;
-                          void api
-                            .cards(detail.card.boardId)
-                            .then((cards) =>
-                              setSiblings(cards.filter((card) => card.id !== cardId)),
-                            )
-                            .catch((cause: Error) => setError(cause.message));
-                        }}
-                        onChange={(changed) => {
-                          if (changed.target.value !== '') onCompare(changed.target.value);
-                        }}
-                      >
-                        <option value="">another card</option>
-                        {siblings.map((sibling) => (
-                          <option key={sibling.id} value={sibling.id}>
-                            {sibling.title}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                )}
-
-                {detail.workspace === null ? null : (
-                  <div className="section">
-                    {/* What it costs, before it is pressed. A button that quietly
-                    spends a model call is one an operator presses twice. */}
-                    <button
-                      type="button"
-                      className="rounded border border-line px-2 py-0.5 text-[15px] text-dim hover:text-ink disabled:opacity-50"
-                      disabled={reviewing}
-                      title="Asks a session that did not write this branch to read it. One model call on your Claude Code quota. Anything it raises has to be judged before this merges."
-                      onClick={() => {
-                        setReviewing(true);
-                        setReviewNote(null);
+                  <label className="text-[15px] text-dim">
+                    compare with{' '}
+                    <select
+                      className="rounded border border-line bg-well px-1 py-0.5 text-ink"
+                      value=""
+                      onFocus={() => {
+                        if (siblings.length > 0) return;
                         void api
-                          .secondOpinion(cardId)
-                          .then((result) => setReviewNote(result.note))
-                          .catch((cause: Error) => setError(cause.message))
-                          .finally(() => setReviewing(false));
+                          .cards(detail.card.boardId)
+                          .then((cards) => setSiblings(cards.filter((card) => card.id !== cardId)))
+                          .catch((cause: Error) => setError(cause.message));
+                      }}
+                      onChange={(changed) => {
+                        if (changed.target.value !== '') onCompare(changed.target.value);
                       }}
                     >
-                      {reviewing ? 'reading the branch…' : 'ask for a second opinion'}
-                    </button>
-                    {reviewNote === null ? null : (
-                      <p className="mt-1 text-[15px] text-dim">{reviewNote}</p>
-                    )}
-                  </div>
-                )}
+                      <option value="">another card</option>
+                      {siblings.map((sibling) => (
+                        <option key={sibling.id} value={sibling.id}>
+                          {sibling.title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              )}
 
-                {(detail.readiness?.checks ?? []).length === 0 ? null : (
-                  <div className="section">
-                    <h4 className="section-label">Before you merge</h4>
-                    <ul className="flex flex-col gap-0.5 text-[15px]">
-                      {(detail.readiness?.checks ?? []).map((check) => (
-                        <li key={check.name} className="flex items-start gap-2 text-dim">
-                          {/* Three states, not two. A check the board could not run
+              {detail.workspace === null ? null : (
+                <div className="section">
+                  {/* What it costs, before it is pressed. A button that quietly
+                    spends a model call is one an operator presses twice. */}
+                  <button
+                    type="button"
+                    className="rounded border border-line px-2 py-0.5 text-[15px] text-dim hover:text-ink disabled:opacity-50"
+                    disabled={reviewing}
+                    title="Asks a session that did not write this branch to read it. One model call on your Claude Code quota. Anything it raises has to be judged before this merges."
+                    onClick={() => {
+                      setReviewing(true);
+                      setReviewNote(null);
+                      void api
+                        .secondOpinion(cardId)
+                        .then((result) => setReviewNote(result.note))
+                        .catch((cause: Error) => setError(cause.message))
+                        .finally(() => setReviewing(false));
+                    }}
+                  >
+                    {reviewing ? 'reading the branch…' : 'ask for a second opinion'}
+                  </button>
+                  {reviewNote === null ? null : (
+                    <p className="mt-1 text-[15px] text-dim">{reviewNote}</p>
+                  )}
+                </div>
+              )}
+
+              {(detail.readiness?.checks ?? []).length === 0 ? null : (
+                <div className="section">
+                  <h4 className="section-label">Before you merge</h4>
+                  <ul className="flex flex-col gap-0.5 text-[15px]">
+                    {(detail.readiness?.checks ?? []).map((check) => (
+                      <li key={check.name} className="flex items-start gap-2 text-dim">
+                        {/* Three states, not two. A check the board could not run
                           and a check that passed are the two things this list
                           exists to keep apart, so the third has its own mark
                           rather than borrowing one of the others. */}
-                          {check.state === 'settled' ? (
-                            <CheckCircle
-                              size={15}
-                              className="mt-0.5 shrink-0 text-ok"
-                              aria-label="Settled"
-                            />
-                          ) : check.state === 'needs-you' ? (
-                            <Warning
-                              size={15}
-                              className="mt-0.5 shrink-0 text-danger"
-                              aria-label="Needs you"
-                            />
-                          ) : (
-                            <Question
-                              size={15}
-                              className="mt-0.5 shrink-0 text-faint"
-                              aria-label="Not known"
-                            />
-                          )}
-                          <span>
-                            <span className="text-ink">{check.name}</span> {check.detail}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+                        {check.state === 'settled' ? (
+                          <CheckCircle
+                            size={15}
+                            className="mt-0.5 shrink-0 text-ok"
+                            aria-label="Settled"
+                          />
+                        ) : check.state === 'needs-you' ? (
+                          <Warning
+                            size={15}
+                            className="mt-0.5 shrink-0 text-danger"
+                            aria-label="Needs you"
+                          />
+                        ) : (
+                          <Question
+                            size={15}
+                            className="mt-0.5 shrink-0 text-faint"
+                            aria-label="Not known"
+                          />
+                        )}
+                        <span>
+                          <span className="text-ink">{check.name}</span> {check.detail}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
-                {detail.mergeForecast === undefined || !detail.mergeForecast.readable ? null : (
-                  <p
-                    className={`mt-3 ${detail.mergeForecast.clean ? 'text-dim' : 'text-danger'}`}
-                    title="Asked with git merge-tree, which touches neither the working tree nor HEAD."
-                  >
-                    {detail.mergeForecast.note}
-                  </p>
-                )}
+              {detail.mergeForecast === undefined || !detail.mergeForecast.readable ? null : (
+                <p
+                  className={`mt-3 ${detail.mergeForecast.clean ? 'text-dim' : 'text-danger'}`}
+                  title="Asked with git merge-tree, which touches neither the working tree nor HEAD."
+                >
+                  {detail.mergeForecast.note}
+                </p>
+              )}
 
-                {detail.diff === undefined || !detail.diff.readable ? null : (
-                  <div className="section">
-                    <h4 className="section-label">
-                      Diff ({detail.diff.files.length} file(s), +{detail.diff.insertions} −
-                      {detail.diff.deletions})
-                    </h4>
-                    {/* Reviewing used to mean leaving the board for a terminal,
+              {detail.diff === undefined || !detail.diff.readable ? null : (
+                <div className="section">
+                  <h4 className="section-label">
+                    Diff ({detail.diff.files.length} file(s), +{detail.diff.insertions} −
+                    {detail.diff.deletions})
+                  </h4>
+                  {/* Reviewing used to mean leaving the board for a terminal,
                     which is where the operator loses the context the board
                     exists to hold. */}
-                    <ul className="flex flex-col gap-0.5 text-[15px]">
-                      {detail.diff.files.map((file) => (
-                        <li key={file.path}>
-                          <button
-                            type="button"
-                            className="text-left text-dim hover:text-ink"
-                            onClick={() => {
-                              void api
-                                .cardDiff(cardId, file.path)
-                                .then((text) => setOpenDiff({ path: file.path, text }))
-                                .catch((cause: Error) => setError(cause.message));
-                            }}
-                          >
-                            <span className="text-ink">{file.path}</span>{' '}
-                            {/* Git reports no line counts for a binary file.
+                  <ul className="flex flex-col gap-0.5 text-[15px]">
+                    {detail.diff.files.map((file) => (
+                      <li key={file.path}>
+                        <button
+                          type="button"
+                          className="text-left text-dim hover:text-ink"
+                          onClick={() => {
+                            void api
+                              .cardDiff(cardId, file.path)
+                              .then((text) => setOpenDiff({ path: file.path, text }))
+                              .catch((cause: Error) => setError(cause.message));
+                          }}
+                        >
+                          <span className="text-ink">{file.path}</span>{' '}
+                          {/* Git reports no line counts for a binary file.
                             Printing zeroes would read as 'changed nothing'. */}
-                            {file.binary ? (
-                              'binary'
-                            ) : (
-                              <>
-                                <span className="text-ok">+{file.insertions}</span>{' '}
-                                <span className="text-danger">−{file.deletions}</span>
-                              </>
-                            )}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
+                          {file.binary ? (
+                            'binary'
+                          ) : (
+                            <>
+                              <span className="text-ok">+{file.insertions}</span>{' '}
+                              <span className="text-danger">−{file.deletions}</span>
+                            </>
+                          )}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
 
-                    {openDiff === null ? null : (
-                      <div className="mt-2 border-t border-line pt-2">
-                        <div className="mb-1 flex items-baseline gap-2">
-                          <span className="font-mono text-[15px] text-ink">{openDiff.path}</span>
-                          <button
-                            type="button"
-                            className="text-[15px] text-dim hover:text-ink"
-                            onClick={() => setOpenDiff(null)}
+                  {openDiff === null ? null : (
+                    <div className="mt-2 border-t border-line pt-2">
+                      <div className="mb-1 flex items-baseline gap-2">
+                        <span className="font-mono text-[15px] text-ink">{openDiff.path}</span>
+                        <button
+                          type="button"
+                          className="text-[15px] text-dim hover:text-ink"
+                          onClick={() => setOpenDiff(null)}
+                        >
+                          close
+                        </button>
+                      </div>
+                      <pre className="max-h-96 overflow-auto whitespace-pre bg-well p-2 font-mono text-[15px] text-dim">
+                        {openDiff.text}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {proposals.length === 0 ? null : (
+                <div className="section">
+                  <h4 className="section-label">Worth making a rule ({proposals.length})</h4>
+                  {/* Proposals, never applied on their own. An entry becoming a
+                    rule without a human reading it would let the ledger
+                    constrain the agent by itself, which doc 12 never allows. */}
+                  <ul className="flex flex-col gap-2 text-[15px]">
+                    {proposals.map((proposal) => (
+                      <li key={proposal.entryId} className="border-l-2 border-line pl-2">
+                        <div className="text-ink">{proposal.statement}</div>
+                        <div className="text-dim">
+                          {proposal.target}
+                          {' · '}
+                          {/* Stated before the operator commits, not after. */}
+                          <span
+                            className={proposal.enforcement === 'hard' ? 'text-ok' : 'text-danger'}
                           >
-                            close
-                          </button>
+                            {proposal.enforcement}
+                          </span>
+                          {' · '}
+                          {proposal.why}
                         </div>
-                        <pre className="max-h-96 overflow-auto whitespace-pre bg-well p-2 font-mono text-[15px] text-dim">
-                          {openDiff.text}
-                        </pre>
+                        <button
+                          type="button"
+                          className="text-info hover:underline"
+                          onClick={() => {
+                            void api
+                              .promoteEntry(proposal.entryId, {
+                                target: proposal.target,
+                                rule: proposal.rule,
+                              })
+                              .then((result) => {
+                                setProposals((current) =>
+                                  current.filter((entry) => entry.entryId !== proposal.entryId),
+                                );
+                                setDetail((current) =>
+                                  current === null ? current : { ...current, card: result.card },
+                                );
+                              })
+                              .catch((cause: Error) => setError(cause.message));
+                          }}
+                        >
+                          make it a {proposal.target} rule
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {(detail.contradictions ?? []).length === 0 ? null : (
+                <div className="section">
+                  <h4 className="mb-1 eyebrow text-danger">Runs into a project rule</h4>
+                  <ul className="flex flex-col gap-1 text-[15px]">
+                    {(detail.contradictions ?? []).map((entry) => (
+                      <li key={`${entry.invariant}-${entry.conflict}`} className="text-dim">
+                        {/* Scope is a claim about where the work will happen. A
+                          mention in the body is weaker - a card can name a file
+                          it intends to leave alone - so which it is gets said. */}
+                        {entry.where === 'scope' ? 'scoped to' : 'mentions'}{' '}
+                        <span className="text-ink">{entry.conflict}</span>, against “
+                        {entry.invariant}”
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {(detail.blastRadius?.paths ?? []).length === 0 ? null : (
+                <div className="section">
+                  <h4 className="section-label">Cards like this touched</h4>
+                  {/* A guess from similar wording, said as one. 'These files'
+                    invites acceptance; 'these files, because these cards
+                    touched them' invites checking, which is what an operator
+                    should do with a guess. */}
+                  <ul className="flex flex-col gap-0.5 text-[15px]">
+                    {(detail.blastRadius?.paths ?? []).slice(0, 8).map((entry) => (
+                      <li key={entry.path} className="text-dim">
+                        <span className="text-ink">{entry.path}</span> · {entry.cards} card(s)
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-1 text-dim">
+                    From{' '}
+                    {(detail.blastRadius?.from ?? []).map((card) => `“${card.title}”`).join(', ')}.
+                  </p>
+                </div>
+              )}
+
+              {(detail.subsystems ?? []).length === 0 ? null : (
+                <div className="section">
+                  <h4 className="section-label">Touched</h4>
+                  <ul className="flex flex-col gap-0.5 text-[15px]">
+                    {(detail.subsystems ?? []).map((entry) => (
+                      <li key={entry.subsystem} className="text-dim">
+                        <span className="text-ink">{entry.subsystem}</span> · {entry.paths} file(s)
+                      </li>
+                    ))}
+                  </ul>
+
+                  {(detail.claimedNotInGit ?? []).length === 0 ? null : (
+                    <p className="mt-1 text-dim">
+                      {/* Phrased as a question. Work reverted before the commit
+                        and files written outside the worktree both land here,
+                        and neither is a run lying. */}
+                      {(detail.claimedNotInGit ?? []).length} path(s) the run mentioned are not in
+                      the branch: {(detail.claimedNotInGit ?? []).join(', ')}.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {(detail.relatedCards ?? []).length === 0 ? null : (
+                <div className="section">
+                  <h4 className="section-label">Also worked here</h4>
+                  {/* The point of the map: whatever an earlier card learned about
+                    these files was learned the expensive way. */}
+                  <ul className="flex flex-col gap-0.5 text-[15px]">
+                    {(detail.relatedCards ?? []).map((related) => (
+                      <li key={related.cardId} className="text-dim">
+                        <span className="text-ink">{related.title}</span> · {related.shared.length}{' '}
+                        shared file(s)
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {detail.realityNotes.length > 0 ? (
+                <div className="section">
+                  <h4 className="section-label">Claim versus reality</h4>
+                  {detail.realityNotes.map((note) => (
+                    <p key={note} className="text-dim">
+                      {note}
+                    </p>
+                  ))}
+                </div>
+              ) : (
+                <></>
+              )}
+
+              {brief === null ? null : (
+                // A brief that stays on this screen is a brief the rest of the
+                // team never reads. The two exits are copy, for a pull request
+                // body or a message, and download, for something kept.
+                //
+                // Wraps rather than squeezing: in a 320px column the label and
+                // two buttons on one line broke "Export" across two lines and
+                // left the buttons stacked mid-word.
+                <div className="section flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="eyebrow mr-1 whitespace-nowrap">Export</span>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[15px] text-dim transition-colors hover:bg-well hover:text-ink"
+                    onClick={() => void copyMarkdown()}
+                  >
+                    <Copy size={13} aria-hidden />
+                    <span className="whitespace-nowrap">{copied ? 'Copied' : 'Copy markdown'}</span>
+                  </button>
+                  <a
+                    className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[15px] text-dim transition-colors hover:bg-well hover:text-ink"
+                    href={`/api/cards/${cardId}/brief.md`}
+                    download
+                  >
+                    <DownloadSimple size={13} aria-hidden />
+                    <span className="whitespace-nowrap">Download .md</span>
+                  </a>
+                </div>
+              )}
+            </SectionFlow>
+            <GroupHeading id="group-thinking" label="Model thinking" />
+            <SectionFlow>
+              <Narration
+                narration={narration}
+                error={narrationError}
+                running={detail.card.status === 'running'}
+                limit={narrationLimit}
+                onMore={() => setNarrationLimit((current) => Math.min(current * 4, 5_000))}
+              />
+            </SectionFlow>
+
+            <GroupHeading id="group-review" label={runsTitle(detail.runs)} />
+            <SectionFlow>
+              {detail.runs.length === 0 ? (
+                <div className="section">
+                  <h4 className="section-label">Nothing to review</h4>
+                  <p className="text-dim">
+                    Nothing has been dispatched against this card, so there is no run to read.
+                  </p>
+                </div>
+              ) : (
+                <ul className="mb-3 flex flex-col gap-2 text-[15px]">
+                  {detail.runs.map((run) => {
+                    const ended = endedNote(run);
+                    return (
+                      <li key={run.runId} className="border-l-2 border-line pl-2">
+                        <div className="text-ink">
+                          {run.sessionId.slice(0, 8)}
+                          <span className="ml-1.5 text-dim">
+                            {run.mode}
+                            {run.runId === latest?.runId ? ' · latest' : ''}
+                          </span>
+                        </div>
+                        <div className="text-dim">
+                          {new Date(run.startedAt).toLocaleString()} · {run.events} events
+                        </div>
+                        {/* Silent when nothing was recorded. A run with no usage
+                          and a run that cost nothing are different facts, and
+                          printing "0 tokens" would state the second. */}
+                        {run.cost === null ? null : (
+                          <div className="text-dim">{run.cost.summary}</div>
+                        )}
+                        <div className={ended.tone}>{ended.text}</div>
+                        {run.goalOutcome === null ? null : (
+                          <div className="text-dim">goal: {run.goalOutcome}</div>
+                        )}
+                        <button
+                          type="button"
+                          className="text-info hover:underline"
+                          onClick={() => setTimelineRunId(run.runId)}
+                        >
+                          timeline
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+
+              {subagents.length === 0 ? null : (
+                <div className="section">
+                  <h4 className="section-label">Subagents ({subagents.length})</h4>
+                  {/* Shown as work in its own right. A subagent's context is
+                    discarded when it stops, so these files would otherwise
+                    appear in the blast radius with nothing accounting for them. */}
+                  <ul className="flex flex-col gap-3 text-[15px]">
+                    {subagents.map((agent) => (
+                      <li key={agent.agentId} className="border-l-2 border-info/40 pl-2">
+                        <div className="text-ink">
+                          {agent.agentType ?? 'subagent'}
+                          <span className="ml-1.5 text-dim">
+                            {agent.toolCalls} tool call(s)
+                            {/* Absent rather than estimated: most subagents have
+                              no start event, and a duration derived from the
+                              first tool call would look measured and be
+                              guessed. */}
+                            {agent.durationMs === null
+                              ? ''
+                              : ` · ${(agent.durationMs / 1000).toFixed(1)}s`}
+                            {agent.finished ? '' : ' · running'}
+                          </span>
+                        </div>
+                        {agent.files.length === 0 ? null : (
+                          <div className="text-dim">{agent.files.join(', ')}</div>
+                        )}
+                        {agent.result === null ? null : (
+                          <div className="mt-0.5 whitespace-pre-wrap text-dim">{agent.result}</div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* The close-out. Everything the operator needs in order to decide
+                is above; this is the decision, named rather than implied. */}
+              <div className="section">
+                <h4 className="section-label">Review and close</h4>
+
+                {detail.card.mergedAt !== null ? (
+                  <p className="mb-2 text-[15px] text-ok">
+                    Merged into {detail.card.mergedInto ?? 'the target branch'} from{' '}
+                    {detail.card.mergedBranch ?? 'its branch'} on{' '}
+                    {new Date(detail.card.mergedAt).toLocaleString()}.
+                  </p>
+                ) : detail.workspace === null ? (
+                  <p className="text-[15px] text-dim">
+                    No worktree, and the board has not merged this card. If it is finished, the work
+                    reached the target some other way.
+                  </p>
+                ) : (
+                  <div className="mb-2 text-[15px]">
+                    <div className="text-ink">{detail.workspace.branch}</div>
+                    <div className="text-dim">{detail.workspace.worktree}</div>
+                    {detail.workspace.git === null ? null : (
+                      <div className={detail.workspace.git.dirty > 0 ? 'text-danger' : 'text-dim'}>
+                        {detail.workspace.git.ahead} commit(s) ahead
+                        {detail.workspace.git.dirty > 0
+                          ? `, ${detail.workspace.git.dirty} uncommitted change(s) - these would not be merged`
+                          : ', working tree clean'}
                       </div>
                     )}
                   </div>
                 )}
 
-                {proposals.length === 0 ? null : (
-                  <div className="section">
-                    <h4 className="section-label">Worth making a rule ({proposals.length})</h4>
-                    {/* Proposals, never applied on their own. An entry becoming a
-                    rule without a human reading it would let the ledger
-                    constrain the agent by itself, which doc 12 never allows. */}
-                    <ul className="flex flex-col gap-2 text-[15px]">
-                      {proposals.map((proposal) => (
-                        <li key={proposal.entryId} className="border-l-2 border-line pl-2">
-                          <div className="text-ink">{proposal.statement}</div>
-                          <div className="text-dim">
-                            {proposal.target}
-                            {' · '}
-                            {/* Stated before the operator commits, not after. */}
-                            <span
-                              className={
-                                proposal.enforcement === 'hard' ? 'text-ok' : 'text-danger'
-                              }
-                            >
-                              {proposal.enforcement}
-                            </span>
-                            {' · '}
-                            {proposal.why}
-                          </div>
-                          <button
-                            type="button"
-                            className="text-info hover:underline"
-                            onClick={() => {
-                              void api
-                                .promoteEntry(proposal.entryId, {
-                                  target: proposal.target,
-                                  rule: proposal.rule,
-                                })
-                                .then((result) => {
-                                  setProposals((current) =>
-                                    current.filter((entry) => entry.entryId !== proposal.entryId),
-                                  );
-                                  setDetail((current) =>
-                                    current === null ? current : { ...current, card: result.card },
-                                  );
-                                })
-                                .catch((cause: Error) => setError(cause.message));
-                            }}
-                          >
-                            make it a {proposal.target} rule
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {(detail.contradictions ?? []).length === 0 ? null : (
-                  <div className="section">
-                    <h4 className="mb-1 eyebrow text-danger">Runs into a project rule</h4>
-                    <ul className="flex flex-col gap-1 text-[15px]">
-                      {(detail.contradictions ?? []).map((entry) => (
-                        <li key={`${entry.invariant}-${entry.conflict}`} className="text-dim">
-                          {/* Scope is a claim about where the work will happen. A
-                          mention in the body is weaker - a card can name a file
-                          it intends to leave alone - so which it is gets said. */}
-                          {entry.where === 'scope' ? 'scoped to' : 'mentions'}{' '}
-                          <span className="text-ink">{entry.conflict}</span>, against “
-                          {entry.invariant}”
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {(detail.blastRadius?.paths ?? []).length === 0 ? null : (
-                  <div className="section">
-                    <h4 className="section-label">Cards like this touched</h4>
-                    {/* A guess from similar wording, said as one. 'These files'
-                    invites acceptance; 'these files, because these cards
-                    touched them' invites checking, which is what an operator
-                    should do with a guess. */}
-                    <ul className="flex flex-col gap-0.5 text-[15px]">
-                      {(detail.blastRadius?.paths ?? []).slice(0, 8).map((entry) => (
-                        <li key={entry.path} className="text-dim">
-                          <span className="text-ink">{entry.path}</span> · {entry.cards} card(s)
-                        </li>
-                      ))}
-                    </ul>
-                    <p className="mt-1 text-dim">
-                      From{' '}
-                      {(detail.blastRadius?.from ?? []).map((card) => `“${card.title}”`).join(', ')}
-                      .
-                    </p>
-                  </div>
-                )}
-
-                {(detail.subsystems ?? []).length === 0 ? null : (
-                  <div className="section">
-                    <h4 className="section-label">Touched</h4>
-                    <ul className="flex flex-col gap-0.5 text-[15px]">
-                      {(detail.subsystems ?? []).map((entry) => (
-                        <li key={entry.subsystem} className="text-dim">
-                          <span className="text-ink">{entry.subsystem}</span> · {entry.paths}{' '}
-                          file(s)
-                        </li>
-                      ))}
-                    </ul>
-
-                    {(detail.claimedNotInGit ?? []).length === 0 ? null : (
-                      <p className="mt-1 text-dim">
-                        {/* Phrased as a question. Work reverted before the commit
-                        and files written outside the worktree both land here,
-                        and neither is a run lying. */}
-                        {(detail.claimedNotInGit ?? []).length} path(s) the run mentioned are not in
-                        the branch: {(detail.claimedNotInGit ?? []).join(', ')}.
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {(detail.relatedCards ?? []).length === 0 ? null : (
-                  <div className="section">
-                    <h4 className="section-label">Also worked here</h4>
-                    {/* The point of the map: whatever an earlier card learned about
-                    these files was learned the expensive way. */}
-                    <ul className="flex flex-col gap-0.5 text-[15px]">
-                      {(detail.relatedCards ?? []).map((related) => (
-                        <li key={related.cardId} className="text-dim">
-                          <span className="text-ink">{related.title}</span> ·{' '}
-                          {related.shared.length} shared file(s)
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {detail.realityNotes.length > 0 ? (
-                  <div className="section">
-                    <h4 className="section-label">Claim versus reality</h4>
-                    {detail.realityNotes.map((note) => (
-                      <p key={note} className="text-dim">
-                        {note}
-                      </p>
-                    ))}
-                  </div>
-                ) : (
-                  <></>
-                )}
-
-                {brief === null ? null : (
-                  // A brief that stays on this screen is a brief the rest of the
-                  // team never reads. The two exits are copy, for a pull request
-                  // body or a message, and download, for something kept.
-                  //
-                  // Wraps rather than squeezing: in a 320px column the label and
-                  // two buttons on one line broke "Export" across two lines and
-                  // left the buttons stacked mid-word.
-                  <div className="section flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="eyebrow mr-1 whitespace-nowrap">Export</span>
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[15px] text-dim transition-colors hover:bg-well hover:text-ink"
-                      onClick={() => void copyMarkdown()}
-                    >
-                      <Copy size={13} aria-hidden />
-                      <span className="whitespace-nowrap">
-                        {copied ? 'Copied' : 'Copy markdown'}
-                      </span>
-                    </button>
-                    <a
-                      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[15px] text-dim transition-colors hover:bg-well hover:text-ink"
-                      href={`/api/cards/${cardId}/brief.md`}
-                      download
-                    >
-                      <DownloadSimple size={13} aria-hidden />
-                      <span className="whitespace-nowrap">Download .md</span>
-                    </a>
-                  </div>
-                )}
-              </SectionFlow>
-              <GroupHeading id="group-thinking" label="Model thinking" />
-              <SectionFlow>
-                <Narration
-                  narration={narration}
-                  error={narrationError}
-                  running={detail.card.status === 'running'}
-                  limit={narrationLimit}
-                  onMore={() => setNarrationLimit((current) => Math.min(current * 4, 5_000))}
-                />
-              </SectionFlow>
-
-              <GroupHeading id="group-review" label={runsTitle(detail.runs)} />
-              <SectionFlow>
-                {detail.runs.length === 0 ? (
-                  <div className="section">
-                    <h4 className="section-label">Nothing to review</h4>
-                    <p className="text-dim">
-                      Nothing has been dispatched against this card, so there is no run to read.
-                    </p>
-                  </div>
-                ) : (
-                  <ul className="mb-3 flex flex-col gap-2 text-[15px]">
-                    {detail.runs.map((run) => {
-                      const ended = endedNote(run);
-                      return (
-                        <li key={run.runId} className="border-l-2 border-line pl-2">
-                          <div className="text-ink">
-                            {run.sessionId.slice(0, 8)}
-                            <span className="ml-1.5 text-dim">
-                              {run.mode}
-                              {run.runId === latest?.runId ? ' · latest' : ''}
-                            </span>
-                          </div>
-                          <div className="text-dim">
-                            {new Date(run.startedAt).toLocaleString()} · {run.events} events
-                          </div>
-                          {/* Silent when nothing was recorded. A run with no usage
-                          and a run that cost nothing are different facts, and
-                          printing "0 tokens" would state the second. */}
-                          {run.cost === null ? null : (
-                            <div className="text-dim">{run.cost.summary}</div>
-                          )}
-                          <div className={ended.tone}>{ended.text}</div>
-                          {run.goalOutcome === null ? null : (
-                            <div className="text-dim">goal: {run.goalOutcome}</div>
-                          )}
-                          <button
-                            type="button"
-                            className="text-info hover:underline"
-                            onClick={() => setTimelineRunId(run.runId)}
-                          >
-                            timeline
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-
-                {subagents.length === 0 ? null : (
-                  <div className="section">
-                    <h4 className="section-label">Subagents ({subagents.length})</h4>
-                    {/* Shown as work in its own right. A subagent's context is
-                    discarded when it stops, so these files would otherwise
-                    appear in the blast radius with nothing accounting for them. */}
-                    <ul className="flex flex-col gap-3 text-[15px]">
-                      {subagents.map((agent) => (
-                        <li key={agent.agentId} className="border-l-2 border-info/40 pl-2">
-                          <div className="text-ink">
-                            {agent.agentType ?? 'subagent'}
-                            <span className="ml-1.5 text-dim">
-                              {agent.toolCalls} tool call(s)
-                              {/* Absent rather than estimated: most subagents have
-                              no start event, and a duration derived from the
-                              first tool call would look measured and be
-                              guessed. */}
-                              {agent.durationMs === null
-                                ? ''
-                                : ` · ${(agent.durationMs / 1000).toFixed(1)}s`}
-                              {agent.finished ? '' : ' · running'}
-                            </span>
-                          </div>
-                          {agent.files.length === 0 ? null : (
-                            <div className="text-dim">{agent.files.join(', ')}</div>
-                          )}
-                          {agent.result === null ? null : (
-                            <div className="mt-0.5 whitespace-pre-wrap text-dim">
-                              {agent.result}
-                            </div>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {/* The close-out. Everything the operator needs in order to decide
-                is above; this is the decision, named rather than implied. */}
-                <div className="section">
-                  <h4 className="section-label">Review and close</h4>
-
-                  {detail.card.mergedAt !== null ? (
-                    <p className="mb-2 text-[15px] text-ok">
-                      Merged into {detail.card.mergedInto ?? 'the target branch'} from{' '}
-                      {detail.card.mergedBranch ?? 'its branch'} on{' '}
-                      {new Date(detail.card.mergedAt).toLocaleString()}.
-                    </p>
-                  ) : detail.workspace === null ? (
-                    <p className="text-[15px] text-dim">
-                      No worktree, and the board has not merged this card. If it is finished, the
-                      work reached the target some other way.
-                    </p>
-                  ) : (
-                    <div className="mb-2 text-[15px]">
-                      <div className="text-ink">{detail.workspace.branch}</div>
-                      <div className="text-dim">{detail.workspace.worktree}</div>
-                      {detail.workspace.git === null ? null : (
-                        <div
-                          className={detail.workspace.git.dirty > 0 ? 'text-danger' : 'text-dim'}
-                        >
-                          {detail.workspace.git.ahead} commit(s) ahead
-                          {detail.workspace.git.dirty > 0
-                            ? `, ${detail.workspace.git.dirty} uncommitted change(s) - these would not be merged`
-                            : ', working tree clean'}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="flex flex-wrap gap-2">
-                    {detail.workspace === null ||
-                    detail.card.mergedAt !== null ? null : conflicted ? (
-                      /* A conflict is the ordinary cost of two agents working in
+                <div className="flex flex-wrap gap-2">
+                  {detail.workspace === null ||
+                  detail.card.mergedAt !== null ? null : conflicted ? (
+                    /* A conflict is the ordinary cost of two agents working in
                      parallel, not an exceptional event, so the action becomes
                      doing the work rather than reporting that it is needed. */
-                      <button
-                        type="button"
-                        className="rounded border border-brand/60 px-2 py-0.5 text-[15px] text-brand hover:bg-brand/10 disabled:opacity-40"
-                        disabled={merging}
-                        title={
-                          'Resolves the conflict, commits the merge, and runs the verify command. ' +
-                          'Judged from git afterwards, not from what the resolver says about itself.'
-                        }
-                        onClick={resolveThisConflict}
-                      >
-                        {merging ? 'resolving…' : 'solve conflicts and merge'}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="rounded border border-ok/50 px-2 py-0.5 text-[15px] text-ok hover:bg-ok/10 disabled:opacity-40"
-                        // Disabled rather than left to fail. The gate refuses this
-                        // request anyway, and a button that looks available and
-                        // answers 409 teaches the operator that the board is
-                        // unreliable rather than that something needs reading.
-                        disabled={merging || outstanding > 0}
-                        title={
-                          outstanding > 0
-                            ? `${String(outstanding)} thing(s) on this card have not been read yet. ` +
-                              'Accept or reject each below and this becomes available. ' +
-                              'A `git merge` run in a terminal is not prevented by this.'
-                            : detail.verifyCommand === null
-                              ? 'Merges without running anything afterwards: this card has no verify command.'
-                              : `Merges, then runs ${detail.verifyCommand}. Stops and leaves the conflict in place if it does not pass.`
-                        }
-                        onClick={mergeThisCard}
-                      >
-                        {merging
-                          ? 'merging…'
-                          : outstanding > 0
-                            ? `merge blocked - ${String(outstanding)} to read`
-                            : `merge into ${detail.mergeTarget ?? 'the current branch'}`}
-                      </button>
-                    )}
-
                     <button
                       type="button"
-                      className="inline-flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[15px] text-dim transition-colors hover:bg-well hover:text-ink"
-                      title="Marks the card finished without merging anything. Use when the work landed another way, or was not needed."
-                      onClick={() => patch({ status: 'done' })}
+                      className="rounded border border-brand/60 px-2 py-0.5 text-[15px] text-brand hover:bg-brand/10 disabled:opacity-40"
+                      disabled={merging}
+                      title={
+                        'Resolves the conflict, commits the merge, and runs the verify command. ' +
+                        'Judged from git afterwards, not from what the resolver says about itself.'
+                      }
+                      onClick={resolveThisConflict}
                     >
-                      Mark done
+                      {merging ? 'resolving…' : 'solve conflicts and merge'}
                     </button>
-
-                    {detail.card.status === 'idle' ? null : (
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[15px] text-dim transition-colors hover:bg-well hover:text-ink"
-                        title="Back to idle, which is the only status the queue will dispatch."
-                        onClick={() => patch({ status: 'idle' })}
-                      >
-                        reopen
-                      </button>
-                    )}
-                  </div>
-
-                  {mergeReport === null ? null : (
-                    <pre
-                      className={`mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-[13.5px] ${
-                        mergeReport.clean ? 'text-ok' : 'text-danger'
-                      }`}
+                  ) : (
+                    <button
+                      type="button"
+                      className="rounded border border-ok/50 px-2 py-0.5 text-[15px] text-ok hover:bg-ok/10 disabled:opacity-40"
+                      // Disabled rather than left to fail. The gate refuses this
+                      // request anyway, and a button that looks available and
+                      // answers 409 teaches the operator that the board is
+                      // unreliable rather than that something needs reading.
+                      disabled={merging || outstanding > 0}
+                      title={
+                        outstanding > 0
+                          ? `${String(outstanding)} thing(s) on this card have not been read yet. ` +
+                            'Accept or reject each below and this becomes available. ' +
+                            'A `git merge` run in a terminal is not prevented by this.'
+                          : detail.verifyCommand === null
+                            ? 'Merges without running anything afterwards: this card has no verify command.'
+                            : `Merges, then runs ${detail.verifyCommand}. Stops and leaves the conflict in place if it does not pass.`
+                      }
+                      onClick={mergeThisCard}
                     >
-                      {mergeReport.summary.join('\n')}
-                    </pre>
+                      {merging
+                        ? 'merging…'
+                        : outstanding > 0
+                          ? `merge blocked - ${String(outstanding)} to read`
+                          : `merge into ${detail.mergeTarget ?? 'the current branch'}`}
+                    </button>
                   )}
 
-                  {resolution === null ? null : (
-                    <p className="mt-2 text-[13.5px] leading-snug text-dim">{resolution}</p>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[15px] text-dim transition-colors hover:bg-well hover:text-ink"
+                    title="Marks the card finished without merging anything. Use when the work landed another way, or was not needed."
+                    onClick={() => patch({ status: 'done' })}
+                  >
+                    Mark done
+                  </button>
+
+                  {detail.card.status === 'idle' ? null : (
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[15px] text-dim transition-colors hover:bg-well hover:text-ink"
+                      title="Back to idle, which is the only status the queue will dispatch."
+                      onClick={() => patch({ status: 'idle' })}
+                    >
+                      reopen
+                    </button>
                   )}
                 </div>
-              </SectionFlow>
-            </>
-          </Rail>
-        </div>
+
+                {mergeReport === null ? null : (
+                  <pre
+                    className={`mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-[13.5px] ${
+                      mergeReport.clean ? 'text-ok' : 'text-danger'
+                    }`}
+                  >
+                    {mergeReport.summary.join('\n')}
+                  </pre>
+                )}
+
+                {resolution === null ? null : (
+                  <p className="mt-2 text-[13.5px] leading-snug text-dim">{resolution}</p>
+                )}
+              </div>
+            </SectionFlow>
+          </>
+        </Rail>
       </div>
 
       {timelineRunId === null ? null : (
