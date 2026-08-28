@@ -99,6 +99,42 @@ export function createPlan(handle: DatabaseHandle, boardId: string, input: PlanI
     throw new CardError(`Board ${boardId} has no columns.`, 404, 'boardId');
   }
 
+  // Refused before anything is written, not warned about afterwards.
+  //
+  // A card declared through the harness with no goal condition is a card the
+  // dispatcher will never run: `dispatchableCards` excludes it, so it sits in
+  // the board looking like work and is not work the queue can take. Returning
+  // that as a warning made the planning agent responsible for noticing, and
+  // an agent that has just finished decomposing is the least likely reader to
+  // stop and re-post. So the endpoint refuses the plan and says which cards
+  // and why, which is the same information arriving where it can still be
+  // acted on.
+  //
+  // Only error-severity problems refuse. A missing bound or an unverifiable
+  // check are real and stay warnings, because a card can be worth landing
+  // while its condition is still being sharpened - and refusing on those
+  // would put this endpoint's judgement above the operator's.
+  const unusable = (input.cards as PlanCardInput[])
+    .map((raw) => ({
+      title: asString(raw.title) ?? '(untitled)',
+      errors: checkCondition(asString(raw.goalCondition) ?? '').filter(
+        (warning) => warning.severity === 'error',
+      ),
+    }))
+    .filter((entry) => entry.errors.length > 0);
+
+  if (unusable.length > 0) {
+    const detail = unusable
+      .map((entry) => `${entry.title}: ${entry.errors.map((e) => e.remedy).join(' ')}`)
+      .join('; ');
+    throw new CardError(
+      `Every card in a plan needs a usable goal condition, and ${String(unusable.length)} do not. ` +
+        `Fix them here, while the context that produced them is loaded, then re-post. ${detail}`,
+      400,
+      'goalCondition',
+    );
+  }
+
   const planId = randomUUID();
 
   const created: Card[] = [];

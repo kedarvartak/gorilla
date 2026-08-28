@@ -134,12 +134,37 @@ describe('validation warnings', () => {
     expect(codes).toContain('asks-for-judgement');
   });
 
-  it('flags a card with no goal condition as an error', async () => {
+  /**
+   * Changed deliberately, 27 August 2026. This used to land the card and
+   * return the error as a warning, on the reasoning that the operator might
+   * fill the condition in on the board. They do not: a card with no goal
+   * condition is excluded from dispatch, so it sits there looking like queued
+   * work that the queue cannot take, and the only signal was a warning
+   * returned to an agent that had just finished planning.
+   */
+  it('refuses a card with no goal condition rather than landing one that cannot run', async () => {
     const result = await postPlan([{ title: 'No condition' }]);
 
-    const warning = result.body.warnings[0]?.warnings[0];
-    expect(warning?.severity).toBe('error');
-    // It still lands - the operator may want to fill it in on the board.
+    expect(result.status).toBe(400);
+    expect(result.body.error).toContain('goal condition');
+  });
+
+  it('refuses the whole plan, so a file does not half-land', async () => {
+    const result = await postPlan([
+      { title: 'Fine', goalCondition: GOOD_CONDITION },
+      { title: 'No condition' },
+    ]);
+
+    expect(result.status).toBe(400);
+    // Named, because the fix is per card and a count would leave the agent
+    // diffing its own output against the board.
+    expect(result.body.error).toContain('No condition');
+  });
+
+  it('still lands a card whose condition is merely weak', async () => {
+    const result = await postPlan([{ title: 'Vague', goalCondition: 'make it nice' }]);
+
+    expect(result.status).toBe(201);
     expect(result.body.created).toHaveLength(1);
   });
 
