@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactElement,
+} from 'react';
 import {
   DndContext,
   KeyboardSensor,
@@ -45,7 +53,17 @@ import {
   Plus,
 } from '@phosphor-icons/react';
 
-import { loadCollapsed, reorder, saveCollapsed, toggle } from './column-view-state.js';
+import {
+  DEFAULT_COLUMN_SHARE,
+  loadCollapsed,
+  loadColumnWidths,
+  reorder,
+  resizeColumnShares,
+  saveCollapsed,
+  saveColumnWidths,
+  toggle,
+  totalColumnShares,
+} from './column-view-state.js';
 
 /**
  * The board (doc 09, screen 1).
@@ -94,20 +112,31 @@ function ColumnView({
   runnable,
   whyNotRunnable,
   collapsed,
+  share,
+  totalShares,
   onToggle,
+  onResize,
   onOpen,
   onRun,
   onCancel,
+  onRename,
+  onArchive,
 }: {
   column: Column;
   cards: Card[];
   runnable: ReadonlySet<string>;
   whyNotRunnable: ReadonlyMap<string, string>;
   collapsed: boolean;
+  /** This column's share of the board width, against `totalShares`. */
+  share: number;
+  totalShares: number;
   onToggle: (columnId: string) => void;
+  onResize: (columnId: string, deltaPixels: number, finished: boolean) => void;
   onOpen: (card: Card) => void;
   onRun: (card: Card) => void;
   onCancel: (card: Card) => void;
+  onRename: (card: Card, title: string) => void;
+  onArchive: (card: Card) => void;
 }): ReactElement {
   const { setNodeRef, isOver } = useDroppable({ id: `column:${column.id}` });
 
@@ -129,6 +158,32 @@ function ColumnView({
       : undefined;
 
   const style = { transform: CSS.Transform.toString(transform), transition };
+
+  const startResize = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    event.preventDefault();
+    // Stopped, or the header's drag sensor claims the pointer and the column
+    // is reordered instead of resized.
+    event.stopPropagation();
+    const handle = event.currentTarget;
+    let lastX = event.clientX;
+    handle.setPointerCapture(event.pointerId);
+
+    const move = (moved: PointerEvent): void => {
+      const delta = moved.clientX - lastX;
+      lastX = moved.clientX;
+      onResize(column.id, delta, false);
+    };
+    const stop = (): void => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', stop);
+      handle.removeEventListener('pointercancel', stop);
+      onResize(column.id, 0, true);
+    };
+
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', stop);
+    handle.addEventListener('pointercancel', stop);
+  };
 
   if (collapsed) {
     // A folded column keeps its count and its name. Dropped entirely it would
@@ -170,12 +225,23 @@ function ColumnView({
   return (
     <section
       ref={setColumnRef}
-      style={style}
+      style={{ ...style, flexGrow: share }}
       // A floor, not a fixed width. Five columns sharing a narrow window each
       // ended up about a hundred pixels wide, which turns every title into an
       // ellipsis; the row scrolls instead, and folding what is not in use is
       // the way to get the width back.
-      className={`flex min-h-0 w-[280px] min-w-[280px] flex-1 basis-0 flex-col ${
+      // `relative` so the resize handle can sit on the right edge. The floor
+      // stays: five columns sharing a narrow window each ended up about a
+      // hundred pixels wide, which turns every title into an ellipsis, and the
+      // row scrolls instead. `flexGrow` is the operator's share on top of it.
+      //
+      // The two interact, and the interaction is deliberate. Once every column
+      // is at the floor the row overflows and scrolls, and there is no spare
+      // width left for a share to divide - so dragging does nothing until the
+      // row fits again, by widening the window or folding a column. Resizing
+      // within a row that already overruns would mean growing the board rather
+      // than redistributing it, which is not what the handle says it does.
+      className={`relative flex min-h-0 w-[280px] min-w-[280px] basis-0 flex-col ${
         isDragging ? 'opacity-70' : ''
       }`}
       aria-label={column.name}
@@ -253,10 +319,36 @@ function ColumnView({
               onOpen={onOpen}
               onRun={onRun}
               onCancel={onCancel}
+              onRename={onRename}
+              onArchive={onArchive}
             />
           ))}
         </ul>
       </SortableContext>
+
+      {/* A width control of its own, separate from the header grip that
+          reorders the pipeline. One pixel of rule with a wider invisible hit
+          area: usable without drawing a second border down the board. */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={`Resize ${column.name}`}
+        aria-valuemin={10}
+        aria-valuemax={90}
+        aria-valuenow={Math.round((share / totalShares) * 100)}
+        tabIndex={0}
+        className="group/resize absolute inset-y-0 -right-2 z-10 w-4 cursor-col-resize touch-none"
+        title={`Drag to resize ${column.name}`}
+        onPointerDown={startResize}
+        onKeyDown={(event) => {
+          const delta = event.key === 'ArrowLeft' ? -24 : event.key === 'ArrowRight' ? 24 : 0;
+          if (delta === 0) return;
+          event.preventDefault();
+          onResize(column.id, delta, true);
+        }}
+      >
+        <span className="mx-auto block h-full w-px bg-line transition-colors group-focus/resize:bg-brand group-hover/resize:bg-brand" />
+      </div>
     </section>
   );
 }
@@ -268,6 +360,10 @@ export function Board(): ReactElement {
   const [dispatch, setDispatch] = useState<DispatchState | null>(null);
   const [live, setLive] = useState(false);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  /** Each column's share of the board width, as the operator has dragged it. */
+  const [columnShares, setColumnShares] = useState<Record<string, number>>({});
+  /** The row itself, so a drag in pixels can be turned into a share of it. */
+  const boardRow = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   /** Set when the served bundle is older than the server serving it (T1, T2). */
   const [staleBuild, setStaleBuild] = useState<string | null>(null);
@@ -297,6 +393,11 @@ export function Board(): ReactElement {
       }
 
       setBoard(first);
+      // Only on the first load. Re-reading storage on every refresh would
+      // throw away a drag still in progress.
+      setColumnShares((current) =>
+        Object.keys(current).length > 0 ? current : loadColumnWidths(window.localStorage, first.id),
+      );
       // Read once the board is known, because what is folded is per board.
       setCollapsed(loadCollapsed(window.localStorage, first.id));
 
@@ -447,6 +548,41 @@ export function Board(): ReactElement {
     if (board === null) return;
     try {
       await api.cancelCard(board.id, card.id);
+    } catch (cause) {
+      setError((cause as Error).message);
+    }
+    await load();
+  }
+
+  /**
+   * Renamed in place, from the tile.
+   *
+   * Optimistic, then reloaded. A title that only changes after a round trip
+   * reads as the edit having been dropped, and this one is typed rather than
+   * clicked - the operator is already looking at the words.
+   */
+  async function rename(card: Card, title: string): Promise<void> {
+    setCards((current) =>
+      current.map((entry) => (entry.id === card.id ? { ...entry, title } : entry)),
+    );
+    try {
+      await api.updateCard(card.id, { title });
+    } catch (cause) {
+      setError((cause as Error).message);
+    }
+    await load();
+  }
+
+  /**
+   * Put away, not deleted.
+   *
+   * Archiving keeps the runs, the ledger and the operator's judgements, which
+   * is the history this product exists to hold, and it can be undone. That is
+   * why it is the action on the tile and deleting is not offered here at all.
+   */
+  async function archive(card: Card): Promise<void> {
+    try {
+      await api.archiveCard(card.id, true);
     } catch (cause) {
       setError((cause as Error).message);
     }
@@ -713,7 +849,7 @@ export function Board(): ReactElement {
               items={columns.map((column) => `${COLUMN_DRAG_PREFIX}${column.id}`)}
               strategy={horizontalListSortingStrategy}
             >
-              <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-3 py-4">
+              <div ref={boardRow} className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-3 py-4">
                 {columns.map((column) => (
                   <ColumnView
                     key={column.id}
@@ -722,6 +858,29 @@ export function Board(): ReactElement {
                     runnable={runnable}
                     whyNotRunnable={whyNotRunnable}
                     collapsed={collapsed.has(column.id)}
+                    share={columnShares[column.id] ?? DEFAULT_COLUMN_SHARE}
+                    totalShares={totalColumnShares(
+                      columnShares,
+                      columns.map((item) => item.id),
+                    )}
+                    onResize={(columnId, deltaPixels, finished) => {
+                      setColumnShares((current) => {
+                        const ids = columns.map((item) => item.id);
+                        const available = boardRow.current?.clientWidth ?? 1;
+                        const total = totalColumnShares(current, ids);
+                        // Pixels are what the pointer reports and shares are what
+                        // the layout takes, so the conversion has to happen here,
+                        // against the row's actual width.
+                        const deltaShares = (deltaPixels / available) * total;
+                        const next = resizeColumnShares(current, ids, columnId, deltaShares);
+                        // Written only when the drag ends. Saving per pointermove
+                        // would write to storage sixty times a second.
+                        if (finished && board !== null) {
+                          saveColumnWidths(window.localStorage, board.id, next);
+                        }
+                        return next;
+                      });
+                    }}
                     onToggle={(columnId) => {
                       const next = toggle(collapsed, columnId);
                       setCollapsed(next);
@@ -730,6 +889,8 @@ export function Board(): ReactElement {
                     onOpen={(card) => setOpenCardId(card.id)}
                     onRun={(card) => void run(card)}
                     onCancel={(card) => void cancel(card)}
+                    onRename={(card, title) => void rename(card, title)}
+                    onArchive={(card) => void archive(card)}
                   />
                 ))}
               </div>

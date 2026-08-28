@@ -219,6 +219,25 @@ body {
   border-radius: 3px;
 }
 
+/*
+ * Renaming in place, where the ring above is wrong.
+ *
+ * A card has one box, which is the card. The focus ring drew a second one
+ * around the title and turned a rename into a form sitting on top of the thing
+ * being renamed - and an offset rectangle around a two-line title is the
+ * largest object on the tile.
+ *
+ * The indicator is not dropped, only changed: this field is rendered only
+ * while it holds focus, so the brand underline beneath it is always the
+ * focused state, and it is the whole affordance rather than a decoration on
+ * top of one. Written here rather than as a utility class because the rule it
+ * has to beat is unlayered, and Tailwind's `outline-none` sits in the
+ * utilities layer where it loses the cascade no matter what order it is in.
+ */
+.inline-edit:focus-visible {
+  outline: none;
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

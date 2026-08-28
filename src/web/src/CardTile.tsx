@@ -1,8 +1,8 @@
-import type { ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
 
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Play, Stop } from '@phosphor-icons/react';
+import { DotsThreeVertical, Play, Stop } from '@phosphor-icons/react';
 
 import claudeLogo from './assets/claude-color.webp';
 import codexLogo from './assets/codex.webp';
@@ -79,6 +79,8 @@ export interface CardTileProps {
   readonly onOpen: (card: Card) => void;
   readonly onRun: (card: Card) => void;
   readonly onCancel: (card: Card) => void;
+  readonly onRename: (card: Card, title: string) => void;
+  readonly onArchive: (card: Card) => void;
 }
 
 export function CardTile({
@@ -90,7 +92,12 @@ export function CardTile({
   onOpen,
   onRun,
   onCancel,
+  onRename,
+  onArchive,
 }: CardTileProps): ReactElement {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(card.title);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: card.id,
   });
@@ -171,15 +178,101 @@ export function CardTile({
 
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex items-start gap-2">
-            {/* Two lines, always. A card three lines tall beside one that is
-                one line makes a column nobody can scan; the rest is a hover
-                away. */}
-            <span
-              className="line-clamp-2 min-h-[2.6em] min-w-0 flex-1 text-[15.5px] font-semibold leading-[1.3] text-ink"
-              title={card.title}
-            >
-              {card.title}
-            </span>
+            {/* Edit mode replaces the title itself. Renaming should not make
+                a second miniature card, or a detached form the operator has to
+                associate with the thing being renamed. */}
+            {renaming ? (
+              <input
+                autoFocus
+                aria-label="Card name"
+                className="inline-edit min-w-0 flex-1 border-b-2 border-brand bg-transparent px-0 py-0 text-[15.5px] font-semibold leading-[1.3] text-ink"
+                value={draftTitle}
+                // Focus lands at the end of the value, which on a title longer
+                // than the field scrolls the start out of sight - the operator
+                // is then editing a name they cannot read. Selecting it puts
+                // the caret where retyping works, and the rewind puts the
+                // first word back on screen.
+                onFocus={(event) => {
+                  event.currentTarget.select();
+                  event.currentTarget.scrollLeft = 0;
+                }}
+                onPointerDown={(event) => event.stopPropagation()}
+                onChange={(changed) => setDraftTitle(changed.target.value)}
+                onBlur={() => {
+                  const title = draftTitle.trim();
+                  setRenaming(false);
+                  if (title !== '' && title !== card.title) onRename(card, title);
+                  else setDraftTitle(card.title);
+                }}
+                onKeyDown={(event) => {
+                  event.stopPropagation();
+                  if (event.key === 'Enter') event.currentTarget.blur();
+                  if (event.key === 'Escape') {
+                    setDraftTitle(card.title);
+                    setRenaming(false);
+                  }
+                }}
+              />
+            ) : (
+              /* Two lines, always. A card three lines tall beside one that is
+                 one line makes a column nobody can scan; the rest is a hover
+                 away. */
+              <span
+                className="line-clamp-2 min-h-[2.6em] min-w-0 flex-1 text-[15.5px] font-semibold leading-[1.3] text-ink"
+                title={card.title}
+              >
+                {card.title}
+              </span>
+            )}
+
+            {/* Appears on hover or focus. A column of idle cards each showing a
+                permanent control is a column of controls. */}
+            <div className="relative shrink-0" onPointerDown={(event) => event.stopPropagation()}>
+              <button
+                type="button"
+                className="rounded p-1 text-faint opacity-0 transition-colors group-hover:opacity-100 hover:bg-well hover:text-ink focus-visible:opacity-100"
+                title="Card actions"
+                aria-label={`Actions for ${card.title}`}
+                aria-expanded={menuOpen}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setMenuOpen((open) => !open);
+                  setDraftTitle(card.title);
+                }}
+              >
+                <DotsThreeVertical size={16} weight="bold" aria-hidden />
+              </button>
+              {!menuOpen ? null : (
+                <div className="absolute top-full right-0 z-30 mt-1 w-44 rounded-md border border-line bg-surface p-1 shadow-lg">
+                  <button
+                    type="button"
+                    className="w-full rounded px-2 py-1.5 text-left text-[12.5px] text-dim hover:bg-well hover:text-ink"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setRenaming(true);
+                    }}
+                  >
+                    Edit name
+                  </button>
+                  {/* Archive, not delete. Deleting takes the card's runs, its
+                      ledger and the operator's judgements with it - the history
+                      this product exists to keep - and the reversible action is
+                      the one that belongs on a control this easy to reach. See
+                      the correction on issue #153. */}
+                  <button
+                    type="button"
+                    className="w-full rounded px-2 py-1.5 text-left text-[12.5px] text-dim hover:bg-well hover:text-ink"
+                    title="Takes this off the board and out of the queue. Its runs, ledger and judgements stay, and it can be brought back."
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onArchive(card);
+                    }}
+                  >
+                    Archive
+                  </button>
+                </div>
+              )}
+            </div>
 
             {unseen ? (
               <span
