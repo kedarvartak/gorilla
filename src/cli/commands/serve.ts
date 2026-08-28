@@ -17,6 +17,41 @@ function parsePort(args: readonly string[]): number {
   return port;
 }
 
+/**
+ * What is already on the port, said in a way the operator can act on.
+ *
+ * Asks the thing that answered, because "port in use" and "your board is
+ * already running" call for opposite reactions: the first wants a different
+ * port, and the second wants the browser.
+ */
+async function occupiedBy(port: number): Promise<string> {
+  const url = `http://${DEFAULT_HOST}:${String(port)}`;
+  try {
+    const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(1_500) });
+    // The shape, not just the status. Anything at all can answer 200 on a
+    // loopback port, and telling the operator their board is already running
+    // when it is some other server would send them to a page that is not
+    // there.
+    const body: unknown = await response.json();
+    if (
+      response.ok &&
+      typeof body === 'object' &&
+      body !== null &&
+      'uptimeMs' in body &&
+      'boards' in body
+    ) {
+      return `A Gorilla board is already serving on ${url}. Open it, or stop it first.\n`;
+    }
+  } catch {
+    // Not a board, not answering, or not answering JSON. Either way the port
+    // is taken and the operator needs a different one.
+  }
+  return (
+    `Port ${String(port)} is in use by something that is not a Gorilla board.\n` +
+    `Serve somewhere else with: gorilla serve --port ${String(port + 1)}\n`
+  );
+}
+
 export const serveCommand: Command = {
   name: 'serve',
   summary: 'Run the board server and receive hook events',
@@ -44,12 +79,24 @@ export const serveCommand: Command = {
     // anything by merely constructing an app.
     const extraction = resolveExtractionBackend();
 
-    const server = await startServer({
-      port,
-      logger: !args.includes('--quiet'),
-      ...(recorder === undefined ? {} : { recorder }),
-      ...(extraction.model === undefined ? {} : { extractionModel: extraction.model }),
-    });
+    let server;
+    try {
+      server = await startServer({
+        port,
+        logger: !args.includes('--quiet'),
+        ...(recorder === undefined ? {} : { recorder }),
+        ...(extraction.model === undefined ? {} : { extractionModel: extraction.model }),
+      });
+    } catch (error) {
+      // The most common way this command fails, and until now it failed as a
+      // stack trace. An operator who starts the board twice - which is the
+      // obvious thing to do when you cannot remember whether it is running -
+      // deserves to be told that it already is, and where.
+      if ((error as { code?: string }).code === 'EADDRINUSE') {
+        return { exitCode: 1, stdout: '', stderr: await occupiedBy(port) };
+      }
+      throw error;
+    }
 
     // Printed to stderr so it survives --quiet: an operator who cannot find
     // the board has no way to use any of this.

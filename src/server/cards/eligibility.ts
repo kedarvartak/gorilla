@@ -153,3 +153,95 @@ export function wouldCycle(db: Db, cardId: string, dependsOnCardId: string): boo
 
   return false;
 }
+
+/**
+ * Why a card cannot be dispatched, or null when it can.
+ *
+ * `dispatchableCards` answers "which cards may run" and the interface used it
+ * to decide whether to draw a run button. That made four separate rules -
+ * ready column, idle, unarchived, goal condition, unblocked - share a single
+ * invisible outcome: the button was simply absent, which reads as the button
+ * having been removed rather than as the card being ineligible. It was
+ * reported as exactly that.
+ *
+ * So the same predicates answer the other half of the question. Deliberately
+ * built from the same rows as `dispatchableCards` rather than from a second
+ * description of the rule: a reason that disagreed with the rule would be
+ * worse than no reason, because the operator would act on it.
+ */
+export interface DispatchStanding {
+  readonly id: string;
+  /** Null when the card is dispatchable. */
+  readonly reason: string | null;
+  /**
+   * Whether to draw a dispatch control at all.
+   *
+   * False in a terminal column. Restoring the button everywhere put a greyed
+   * Run on twenty-four finished cards, which is not an explanation of
+   * anything - nobody expects to dispatch a card in Done, so there is no
+   * absence to account for. The rule is "explain a control the operator
+   * expected", not "draw a control everywhere".
+   */
+  readonly offer: boolean;
+}
+
+/** The order matters: the first unmet condition is the one worth reporting. */
+export function dispatchStanding(db: Db, boardId: string): DispatchStanding[] {
+  const rows = db
+    .select({
+      id: cards.id,
+      status: cards.status,
+      archivedAt: cards.archivedAt,
+      goalCondition: cards.goalCondition,
+      isReady: columns.isReady,
+      isTerminal: columns.isTerminal,
+      columnName: columns.name,
+    })
+    .from(cards)
+    .innerJoin(columns, eq(cards.columnId, columns.id))
+    .where(eq(cards.boardId, boardId))
+    .all();
+
+  return rows.map((row) => ({
+    id: row.id,
+    reason: standingFor(db, row),
+    offer: !row.isTerminal,
+  }));
+}
+
+function standingFor(
+  db: Db,
+  row: {
+    id: string;
+    status: string;
+    archivedAt: number | null;
+    goalCondition: string | null;
+    isReady: boolean;
+    isTerminal: boolean;
+    columnName: string;
+  },
+): string | null {
+  // Running and archived first, because neither is a fault to be corrected -
+  // one is already happening and the other was a decision.
+  if (row.status === 'running') return null;
+  if (row.archivedAt !== null) return 'This card is archived. Bring it back to dispatch it.';
+  if (row.status !== 'idle') return `This card is ${row.status}, not idle.`;
+
+  if (!row.isReady) {
+    return `Only cards in a ready column can be dispatched. Move it out of ${row.columnName}.`;
+  }
+
+  // Said plainly and with the fix in it. A card dispatched without one halts
+  // the queue with `no-goal`, so this is the check that saves a batch rather
+  // than one card.
+  if ((row.goalCondition ?? '').trim() === '') {
+    return 'This card has no goal condition, so a run would have nothing to finish against. Write one in the specification.';
+  }
+
+  const blockers = blockersFor(db, row.id);
+  if (blockers.length > 0) {
+    return `Waiting on ${blockers.map((blocker) => `${blocker.title} (${blocker.status})`).join(', ')}.`;
+  }
+
+  return null;
+}

@@ -5,7 +5,7 @@ import type { AppContext } from '../app.js';
 import { createDefaultColumns } from '../cards/defaults.js';
 import { reorderColumns } from '../cards/column-order.js';
 import { parseGuardrails } from '../cards/guardrails.js';
-import { blockersFor, dispatchableCards } from '../cards/eligibility.js';
+import { blockersFor, dispatchableCards, dispatchStanding } from '../cards/eligibility.js';
 import { executionOrder } from '../cards/order.js';
 import { proposeInvariants } from '../cards/invariant-proposals.js';
 import { searchCards } from '../cards/search.js';
@@ -25,8 +25,10 @@ import {
   runs,
   type Card,
 } from '../db/schema.js';
+import { inferCard } from '../binding/attach.js';
 import {
   addDependency,
+  CardError,
   createCard,
   deleteCard,
   getCard,
@@ -419,6 +421,14 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
     return dispatchableCards(context.database.db, request.params.boardId);
   });
 
+  // The other half of the same question. The board draws a dispatch control on
+  // every idle card and needs to say why the ineligible ones cannot run,
+  // rather than omitting the control and leaving the operator to conclude it
+  // was removed.
+  app.get<{ Params: { boardId: string } }>('/api/boards/:boardId/dispatch-standing', (request) => {
+    return dispatchStanding(context.database.db, request.params.boardId);
+  });
+
   app.post<{ Params: { boardId: string }; Body: Record<string, unknown> }>(
     '/api/boards/:boardId/cards',
     (request, reply) => {
@@ -736,6 +746,36 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
         );
         publish('card-moved', present(card));
         return reply.send(present(card));
+      } catch (error) {
+        return fail(reply, error);
+      }
+    },
+  );
+
+  /**
+   * Turns an unclaimed session into a card, when the operator asks.
+   *
+   * The board used to do this by itself on every terminal session, which put
+   * the operator's own planning conversations in Intake as work the queue
+   * could never take (#160). Nothing was lost by stopping - the run holds its
+   * events either way - but the door has to stay open: a session that turned
+   * out to matter should be adoptable without going through the database.
+   *
+   * A title may be given, because "Unclaimed session 3f2a1b" is honest and
+   * useless, and the operator adopting it knows what it was.
+   */
+  app.post<{ Params: { runId: string }; Body: { title?: unknown } }>(
+    '/api/runs/:runId/adopt',
+    (request, reply) => {
+      try {
+        const title = request.body?.title;
+        if (title !== undefined && typeof title !== 'string') {
+          return fail(reply, new CardError('title must be a string.', 400, 'title'));
+        }
+
+        const card = inferCard(context.database, request.params.runId, title ?? null);
+        publish('card-created', present(card));
+        return reply.code(201).send(present(card));
       } catch (error) {
         return fail(reply, error);
       }

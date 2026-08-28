@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { addCommand } from '../src/cli/commands/add.js';
-import { describePlan, parseCardList } from '../src/server/cards/intake.js';
+import { describePlan, missingGoals, parseCardList } from '../src/server/cards/intake.js';
 import { listCards } from '../src/server/api/cards.js';
 import { startServer, type RunningServer } from '../src/server/start.js';
 
@@ -17,6 +17,18 @@ import { startServer, type RunningServer } from '../src/server/start.js';
  */
 
 const PORT = 4489;
+
+/**
+ * A list item as the command now requires one: a title and a goal condition.
+ *
+ * Written as a helper rather than inline so that the requirement is stated
+ * once. Every fixture below carries a goal because a card without one cannot
+ * be dispatched, and a file of them adds work to the board in appearance only.
+ */
+const GOAL = '`npm test` exits 0, or stop after 20 turns';
+function item(title: string): string {
+  return `- ${title}\n  goal: ${GOAL}\n`;
+}
 
 let dir: string;
 let file: string;
@@ -58,6 +70,24 @@ describe('reading a list', () => {
     expect(describePlan(parseCardList('just prose')).join(' ')).toContain('nothing to add');
   });
 
+  it('reads a goal condition from an indented goal: line', () => {
+    const parsed = parseCardList(`- a card\n  goal: ${GOAL}\n`);
+
+    expect(parsed.cards[0]?.goalCondition).toBe(GOAL);
+  });
+
+  it('keeps the goal line out of the body, so the agent is not told twice', () => {
+    const parsed = parseCardList(`- a card\n  some context\n  goal: ${GOAL}\n`);
+
+    expect(parsed.cards[0]?.body).toBe('some context');
+  });
+
+  it('names every item that has no goal condition', () => {
+    const parsed = parseCardList(`- has one\n  goal: ${GOAL}\n- has none\n`);
+
+    expect(missingGoals(parsed).map((card) => card.title)).toEqual(['has none']);
+  });
+
   it('does not infer structure from prose', () => {
     // A parser that guessed would put cards on the board nobody wrote, and the
     // operator would have to read all ten to find out which.
@@ -80,7 +110,7 @@ describe('adding them', () => {
   });
 
   it('puts every item on the board', async () => {
-    writeFileSync(file, '- first card\n- second card\n');
+    writeFileSync(file, `${item('first card')}${item('second card')}`);
 
     const result = await addCommand.run(['--file', file, '--port', String(PORT)]);
 
@@ -98,12 +128,34 @@ describe('adding them', () => {
   });
 
   it('reports a duplicate rather than hiding it', async () => {
-    writeFileSync(file, '- Record what a run cost\n- Record what a run costs\n');
+    writeFileSync(file, `${item('Record what a run cost')}${item('Record what a run costs')}`);
 
     const result = await addCommand.run(['--file', file, '--port', String(PORT)]);
 
     // The board added it anyway, and the operator should know it did.
     expect(result.stdout).toContain('Added anyway');
+  });
+
+  it('refuses a file whole when any item has no goal condition', async () => {
+    writeFileSync(file, `${item('has one')}- has none\n`);
+
+    const result = await addCommand.run(['--file', file, '--port', String(PORT)]);
+
+    // Whole, not partly. Adding the good ones and skipping the rest leaves the
+    // operator reconciling a file against a board, and a card that is absent
+    // looks exactly like a card that was never written.
+    expect(result.exitCode).toBe(1);
+    expect(listCards(server.database, server.board?.id ?? '')).toHaveLength(0);
+    expect(result.stderr).toContain('has none');
+  });
+
+  it('carries the goal condition through to the card', async () => {
+    writeFileSync(file, item('a card that can run'));
+
+    await addCommand.run(['--file', file, '--port', String(PORT)]);
+
+    const created = listCards(server.database, server.board?.id ?? '')[0];
+    expect(created?.goalCondition).toBe(GOAL);
   });
 
   it('asks for a file when none was named', async () => {
@@ -117,7 +169,7 @@ describe('with no board running', () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'gorilla-intake-off-'));
     file = join(dir, 'plan.md');
-    writeFileSync(file, '- a card\n');
+    writeFileSync(file, item('a card'));
   });
 
   afterEach(() => {
