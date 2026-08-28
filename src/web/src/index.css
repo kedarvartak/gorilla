@@ -164,7 +164,12 @@ body {
      group of two sections spreads across the full width instead of sitting in
      the first two of four columns with half the row empty beside it. Filling
      the space by widening what is there beats leaving a hole. */
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  /* 380, not 320. With the rail taking 296px the document is about 1,065 wide
+     at a common window, and a 320 floor asks for three tracks - so two prose
+     sections sat in the first two and left a third of the row white. A wider
+     floor fits two tracks that share the whole width, and still gives three on
+     a screen actually wide enough for them. */
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
   /* The unit the spans are counted in. Small enough that rounding a section up
      to the next row adds nothing anybody can see. */
   grid-auto-rows: 4px;
@@ -176,16 +181,224 @@ body {
   grid-auto-flow: row dense;
 }
 
+/*
+ * A band in a document, not a card on a wall.
+ *
+ * Every section used to be a bordered, rounded, filled box. Twenty-one of them
+ * in a masonry, and the operator reported the result as empty space - correctly,
+ * but the emptiness was not only the packing. A border draws the exact outline
+ * of where content stopped, so a column that ends early ends *visibly*, and the
+ * chrome itself - a rule, sixteen pixels of padding and a fill, per section -
+ * spends on decoration the room the content wanted.
+ *
+ * Bands have no outline to fall short of. What separates them is a hairline
+ * above and the rhythm of the page, which is how a specification, a lab record
+ * and a code review have always been set.
+ */
 .section {
-  padding: 14px 16px;
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
+  padding: 0 0 4px;
+  min-width: 0;
   /* Nothing may push past its column: a long path or an unbroken command is
      the usual cause of a horizontal scrollbar on a page that has no business
      having one. */
-  min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/*
+ * The instrument rail.
+ *
+ * Everything on this page that is a *value* rather than a sentence: what the
+ * card will be dispatched as, what it cost, where its branch is. It used to be
+ * eleven full-width form controls inside a box in the middle of the reading
+ * column, which is the widest possible way to render a column of short values
+ * and left the words competing with the settings for the same space.
+ *
+ * Sticky, because these are what the rest of the page is read against.
+ */
+/*
+ * The reading size for this page, raised deliberately.
+ *
+ * The board is scanned and can be small; this page is *read*, at length, and
+ * was set at the board's density - 12.5px for prose an operator works through
+ * paragraph by paragraph. Everything here is one step up from the rest of the
+ * product, which is a difference in what the two screens are for rather than an
+ * inconsistency.
+ */
+.card-page {
+  font-size: 15px;
+  line-height: 1.55;
+  display: grid;
+  grid-template-columns: 296px minmax(0, 1fr);
+  align-items: start;
+  min-height: 0;
+}
+
+@media (max-width: 900px) {
+  .card-page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.card-rail {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  padding: 18px 20px 24px;
+  border-right: 1px solid var(--color-line);
+  /* A spine that carries the card's state up the whole rail. The one piece of
+     colour on the page, and it says the only thing worth knowing at a glance. */
+  box-shadow: inset 3px 0 0 0 var(--rail-spine, var(--color-line));
+}
+
+/* Label and value, hairline between rows. A spec sheet, read top to bottom. */
+.card-rail dl {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 12px;
+}
+
+.card-rail dt {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-faint);
+  padding: 6px 0;
+}
+
+.card-rail dd {
+  font-size: 15px;
+  color: var(--color-ink);
+  /* Left, not right. Right-aligned values of very different lengths - "done",
+     "board default", "593k tokens · $0.97 · 19 turns" - put a ragged edge down
+     the middle of the rail, which is the shape this page exists to remove. */
+  text-align: left;
+  padding: 6px 0;
+  min-width: 0;
+}
+
+/* The rule belongs to the row, so the last row does not draw one into space. */
+.card-rail dt:not(:first-of-type),
+.card-rail dt:not(:first-of-type) + dd {
+  border-top: 1px solid var(--color-line);
+}
+
+/*
+ * Controls that do not look like controls until you reach for them.
+ *
+ * A rail of eleven bordered selects reads as a form to be filled in. These are
+ * settings that are almost always already right, so they are set as values and
+ * earn their outline on hover and focus.
+ */
+.card-rail select,
+.card-rail input,
+.card-rail textarea {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  padding: 2px 4px;
+  text-align: left;
+  color: var(--color-ink);
+  font-size: 15px;
+}
+
+.card-rail select:hover,
+.card-rail input:hover,
+.card-rail textarea:hover {
+  border-color: var(--color-line);
+}
+
+.card-rail select:focus,
+.card-rail input:focus,
+.card-rail textarea:focus {
+  border-color: var(--color-brand);
+  background: var(--color-surface);
+  outline: none;
+}
+
+/*
+ * Rows of a label and what it labels, hairline between.
+ *
+ * The page's one structural device, shared by the rail, the guardrails and the
+ * brief. It replaces three different shapes that were doing the same job -
+ * chips in a box, tiles with headings, and a form - with a single reading
+ * pattern, and it cannot go ragged: rows are as tall as their content and stack.
+ */
+.ruled {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  column-gap: 18px;
+  align-items: baseline;
+}
+
+.ruled > dt {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-faint);
+  padding: 9px 0;
+}
+
+.ruled > dd {
+  padding: 9px 0;
+  min-width: 0;
+  color: var(--color-ink);
+}
+
+/* The rule belongs to the row, so the first draws none above the band. */
+.ruled > dt:not(:first-of-type),
+.ruled > dt:not(:first-of-type) + dd {
+  border-top: 1px solid var(--color-line);
+}
+
+@media (max-width: 620px) {
+  .ruled {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ruled > dt:not(:first-of-type) + dd {
+    border-top: 0;
+  }
+  .ruled > dd {
+    padding-top: 0;
+  }
+}
+
+/*
+ * The one sentence the whole card turns on.
+ *
+ * It was a one-line text input, truncated, in the middle of a settings box -
+ * the measurable end state a run is judged against, shown as much of it as
+ * forty characters allowed.
+ */
+.goal-statement {
+  font-size: 20px;
+  line-height: 1.45;
+  color: var(--color-ink);
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  padding: 6px 8px;
+  margin: -6px -8px;
+  resize: none;
+  overflow: hidden;
+  font-family: inherit;
+  /* Where it is supported this is exact, and the row count above is only a
+     floor. Where it is not, the row count carries it. */
+  field-sizing: content;
+}
+
+.goal-statement:hover {
+  border-color: var(--color-line);
+}
+
+.goal-statement:focus {
+  border-color: var(--color-brand);
+  background: var(--color-surface);
+  outline: none;
 }
 
 /*
@@ -204,6 +417,24 @@ body {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--color-faint);
+}
+
+/*
+ * A section's own name, inside a band.
+ *
+ * Set in the mono face and small, so that the band heading above it is the only
+ * strong mark in the hierarchy. Two competing headings was what made a page of
+ * twenty-one boxes read as twenty-one separate things rather than one document
+ * about one card.
+ */
+.section-label {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-faint);
+  margin-bottom: 6px;
 }
 
 /* Identifiers only: branches, session ids, paths, command output. Status words
