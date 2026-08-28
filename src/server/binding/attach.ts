@@ -15,8 +15,16 @@ import { owningBoardCwd } from '../ingest/binding.js';
  * operator starts in their terminal has no such link - and if those produce
  * nothing, the tool has created exactly the blind spot it exists to remove.
  *
- * So an unclaimed session gets a provisional card. It can be claimed
- * explicitly, or merged into an existing card afterwards.
+ * So an unclaimed session's events are kept against its run, which exists from
+ * the first event and carries the board with it. What it does not get any more
+ * is a card: the board is the list of work the operator intends to dispatch,
+ * and a planning conversation is not that. Two of them reached a real board
+ * before this changed, both sessions in which that board's backlog was
+ * written (#160).
+ *
+ * A session can be claimed onto an existing card, or adopted into a new one
+ * through `POST /api/runs/:runId/adopt` - which is `inferCard` below, now
+ * reached only when somebody asks for it.
  */
 
 export interface ClaimResult {
@@ -61,10 +69,15 @@ export function sessionStartContext(
       ? 'There are no open cards yet.'
       : `Open cards: ${open.map((card) => `${card.title} (${card.id.slice(0, 8)})`).join('; ')}.`;
 
+  // Says what is true. It used to say the events were "being held against a
+  // provisional card", which stopped being true when the board stopped
+  // inventing one (#160) - and a greeting that describes a card the operator
+  // will not find is worse than no greeting.
   return (
     `Gorilla board "${boardName}" is observing this directory. No card is claimed for this ` +
-    `session, so its events are being held against a provisional card. ` +
-    `To bind it, run /gorilla:claim <card-id>. ${list}`
+    `session, so nothing here is attributed to one - its events are recorded against the ` +
+    `session itself and the board shows it as an unbound session. ` +
+    `To attribute this work, run /gorilla:claim <card-id>. ${list}`
   );
 }
 
@@ -90,12 +103,17 @@ function titleFor(sessionId: string, hint: string | null): string {
 }
 
 /**
- * Creates a provisional card for a run that nobody claimed.
+ * Creates a card for a run that nobody claimed.
+ *
+ * No longer automatic: the ingest path called this on every terminal session
+ * and filled the board with conversations nobody meant to dispatch. It is now
+ * reached only from the adopt route, when the operator decides a session was
+ * worth a card after all.
  *
  * Titled from whatever the session revealed about itself - Claude Code's own
- * `ai-title`, or the first user prompt. A card called "Unclaimed session
- * 3f2a1b" is honest but useless, so it is the last resort rather than the
- * default.
+ * `ai-title`, or the first user prompt, or a title the operator supplies. A
+ * card called "Unclaimed session 3f2a1b" is honest but useless, so it is the
+ * last resort rather than the default.
  */
 export function inferCard(handle: DatabaseHandle, runId: string, titleHint: string | null): Card {
   const run = handle.db.select().from(runs).where(eq(runs.id, runId)).get();

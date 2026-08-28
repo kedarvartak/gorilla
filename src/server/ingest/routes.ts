@@ -3,7 +3,7 @@ import { performance } from 'node:perf_hooks';
 import type { FastifyInstance } from 'fastify';
 
 import type { AppContext } from '../app.js';
-import { boardForCwd, claim, inferCard, sessionStartContext } from '../binding/attach.js';
+import { boardForCwd, claim, sessionStartContext } from '../binding/attach.js';
 import { getCard } from '../api/cards.js';
 import { canonicaliseCwd } from './binding.js';
 import { triggerFor } from '../ledger/service.js';
@@ -269,11 +269,24 @@ function sessionStartResponse(
       if (expected !== null) {
         claim(context.database, sessionId, expected);
         claimed = getCard(context.database, expected);
-      } else {
-        // Otherwise it is a terminal session, and an event with nowhere to go
-        // is the blind spot this product exists to remove (doc 05).
-        inferCard(context.database, run.id, null);
       }
+
+      // Otherwise it is a terminal session, and nothing is created for it.
+      //
+      // This used to invent a provisional card, on the reasoning in
+      // `attach.ts` that a session producing nothing is the blind spot this
+      // product exists to remove. The concern is right and the board was the
+      // wrong place to answer it. Nothing is lost: `schema.ts` already says a
+      // run is created the instant an event arrives, before anything knows its
+      // card, so the run exists either way, carries its board, and holds every
+      // event. The provisional card added no data - it added a row to the list
+      // of work the operator intends to dispatch, which is exactly what a
+      // planning conversation is not. Two of them reached this board, both
+      // conversations in which its own backlog was written (#160).
+      //
+      // An unbound run is still visible: the activity view renders it as
+      // "unbound session", and `POST /api/runs/:runId/adopt` turns one into a
+      // card when the operator decides it is worth one.
     }
 
     const repair =
