@@ -78,7 +78,7 @@ export interface RunningServer {
   readonly reconciled: string | null;
   /** Cards that were mid-run when the board last stopped. */
   readonly reconciledCards: string | null;
-  /** Set when the served interface is older than the server serving it. */
+  /** Set when the interface and this running process were built apart (T80). */
   readonly staleBuild: string | null;
   /** Worktrees rediscovered on disk. */
   readonly adopted: number;
