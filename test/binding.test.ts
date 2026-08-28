@@ -85,15 +85,34 @@ describe('SessionStart', () => {
     expect(context).toContain('Refactor ingest');
   });
 
-  it('creates a provisional card so an unclaimed session is never a blind spot', async () => {
+  /**
+   * Changed deliberately, 28 August 2026 (#160). This used to assert that an
+   * unclaimed session got a card invented for it. It did, and they were the
+   * operator's own planning conversations: undispatchable, goal-less, and
+   * sitting in Intake looking like queued work.
+   *
+   * Nothing is lost by stopping, which is what the second half asserts. The
+   * run exists from the first event and holds them all; only the row on the
+   * board is gone.
+   */
+  it('creates no card for a session nobody claimed', async () => {
     await hook('SessionStart', { source: 'startup' });
 
-    const all = database.db.select().from(cards).all();
-    expect(all).toHaveLength(1);
-    expect(all[0]?.title).toContain('Unclaimed session');
+    expect(database.db.select().from(cards).all()).toHaveLength(0);
+  });
 
-    // And the run points at it, so its events are attributed.
-    expect(unattributedRuns(database, boardId)).toHaveLength(0);
+  it('still records the session, so its events are never lost', async () => {
+    await hook('SessionStart', { source: 'startup' });
+    await hook('PostToolUse', { tool_name: 'Edit' });
+
+    const run = database.db.select().from(runs).where(eq(runs.sessionId, SESSION)).get();
+    expect(run).toBeDefined();
+    expect(run?.cardId).toBeNull();
+    expect(database.db.select().from(events).all().length).toBeGreaterThan(0);
+
+    // Unattributed on purpose, and reported as such rather than hidden behind
+    // a card that was never asked for.
+    expect(unattributedRuns(database, boardId)).toHaveLength(1);
   });
 
   it('says which card a bound session belongs to', async () => {
@@ -114,7 +133,20 @@ describe('SessionStart', () => {
     expect(context).not.toContain('/gorilla:claim');
   });
 
-  it('answers plainly when no board watches the directory', async () => {
+  /**
+   * Rewritten, 28 August 2026, because it was passing for the wrong reason.
+   *
+   * It asserted that a hook from an unwatched directory answers `{}`. It does
+   * not: the hook path creates a board for whatever directory it is called
+   * from, so `/somewhere/else` got one named "else". The empty answer came
+   * from `inferCard` throwing 409 on that brand-new board's missing columns,
+   * which the handler's own catch swallowed. Removing the inference removed
+   * the exception and the test's premise with it.
+   *
+   * What is worth asserting is that the hook always answers and never fails a
+   * session, which is the property the handler exists to guarantee.
+   */
+  it('answers a session from a directory it has never seen, without failing it', async () => {
     const response = await app.inject({
       method: 'POST',
       url: '/hooks/SessionStart',
@@ -122,7 +154,7 @@ describe('SessionStart', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({});
+    expect(database.db.select().from(cards).all()).toHaveLength(0);
   });
 
   it('never fails the hook, whatever the payload', async () => {
@@ -211,13 +243,26 @@ describe('inferred cards', () => {
   });
 });
 
+/**
+ * Merging an adopted session into a real card.
+ *
+ * These used to lean on the board inventing the provisional card for them.
+ * Since #160 it does not, so they adopt one the way an operator now would -
+ * which is also what keeps the adopt route honest, because nothing else
+ * exercises it end to end.
+ */
 describe('merging', () => {
+  function adopt(): { id: string } {
+    const run = database.db.select().from(runs).where(eq(runs.sessionId, SESSION)).get();
+    return inferCard(database, run?.id ?? '', null);
+  }
+
   it('moves runs and their events onto the target card', async () => {
     await hook('SessionStart', { source: 'startup' });
     await hook('PostToolUse', { tool_name: 'Edit' });
     await hook('Stop', {});
 
-    const provisional = database.db.select().from(cards).all()[0];
+    const provisional = adopt();
     const target = await makeCard('The real card');
 
     const result = mergeCard(database, provisional?.id ?? '', target);
@@ -234,7 +279,7 @@ describe('merging', () => {
   it('removes the provisional card once folded in', async () => {
     await hook('SessionStart', { source: 'startup' });
 
-    const provisional = database.db.select().from(cards).all()[0];
+    const provisional = adopt();
     const target = await makeCard('target');
 
     mergeCard(database, provisional?.id ?? '', target);
@@ -255,7 +300,7 @@ describe('merging', () => {
 
   it('is reachable over the API', async () => {
     await hook('SessionStart', { source: 'startup' });
-    const provisional = database.db.select().from(cards).all()[0];
+    const provisional = adopt();
     const target = await makeCard('target');
 
     const response = await app.inject({
@@ -268,12 +313,62 @@ describe('merging', () => {
   });
 });
 
+describe('adopting a session', () => {
+  it('turns an unclaimed session into a card, when asked', async () => {
+    await hook('SessionStart', { source: 'startup' });
+    await hook('PostToolUse', { tool_name: 'Edit' });
+
+    const run = database.db.select().from(runs).where(eq(runs.sessionId, SESSION)).get();
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/runs/${run?.id ?? ''}/adopt`,
+      payload: { title: 'The thing that turned out to matter' },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect((response.json() as { title: string }).title).toBe(
+      'The thing that turned out to matter',
+    );
+
+    // The run it came from is attributed to it, so the events it already held
+    // arrive with the card rather than being left behind.
+    const bound = database.db.select().from(runs).where(eq(runs.sessionId, SESSION)).get();
+    expect(bound?.cardId).toBe((response.json() as { id: string }).id);
+  });
+
+  it('falls back to naming the session when nothing better is offered', async () => {
+    await hook('SessionStart', { source: 'startup' });
+    const run = database.db.select().from(runs).where(eq(runs.sessionId, SESSION)).get();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/runs/${run?.id ?? ''}/adopt`,
+      payload: {},
+    });
+
+    expect((response.json() as { title: string }).title).toContain('Unclaimed session');
+  });
+
+  it('reports an unknown run rather than inventing one', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/runs/never-seen/adopt',
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+});
+
 describe('sessionStartContext', () => {
   it('reads as instruction, not decoration', () => {
     const context = sessionStartContext(database, boardId, 'my-board', null);
 
     expect(context).toContain('my-board');
-    expect(context).toContain('provisional card');
+    // Says what is true. It used to promise a provisional card, which the
+    // board no longer makes (#160).
+    expect(context).toContain('unbound session');
+    expect(context).not.toContain('provisional card');
     expect(context).toContain('/gorilla:claim');
   });
 
