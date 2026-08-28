@@ -15,6 +15,8 @@ import { outstandingSurprises } from '../ledger/outstanding.js';
 import { storedEntriesFor } from '../ledger/store.js';
 import { proposeBlastRadius, NOTHING as NOTHING_TOUCHED } from '../cards/blast-radius.js';
 import { getCard } from './cards.js';
+import { cardContextInput } from '../cards/card-context.js';
+import { renderCardContext } from '../launcher/args.js';
 import { buildMechanicalLedger } from '../ledger/mechanical.js';
 import { checkReality, describeReality } from '../ledger/reality.js';
 import { describeVerify } from '../verify/run.js';
@@ -61,6 +63,40 @@ function costOf(run: {
 }
 
 export function registerCardDetailRoutes(app: FastifyInstance, context: AppContext): void {
+  /**
+   * The context file a session dispatched now would be handed, rendered.
+   *
+   * The literal text, not a description of it. The card detail shows this so
+   * the operator can read what the agent will read - a screen that
+   * paraphrased it would be a second description to keep in step, and on the
+   * day the two disagreed the operator would review against the wrong one.
+   *
+   * `asOfNow` is not decoration. The ledger, the dependencies and the
+   * subsystem map all move, so this is what a run would get if dispatched
+   * this second, and is not a record of what any past run received.
+   */
+  app.get<{ Params: { cardId: string } }>('/api/cards/:cardId/context', (request, reply) => {
+    try {
+      const card = getCard(context.database, request.params.cardId);
+      const board = context.database.db
+        .select()
+        .from(boards)
+        .where(eq(boards.id, card.boardId))
+        .get();
+      const branch =
+        board === undefined
+          ? null
+          : (context.dispatcher.worktreesFor(board.cwd).workspaceFor(card.id)?.branch ?? null);
+
+      return reply.send({
+        context: renderCardContext(cardContextInput(context.database, card, { branch })),
+        asOfNow: true,
+      });
+    } catch (error) {
+      return fail(reply, error);
+    }
+  });
+
   app.get<{ Params: { cardId: string } }>('/api/cards/:cardId/detail', async (request, reply) => {
     try {
       const card = getCard(context.database, request.params.cardId);

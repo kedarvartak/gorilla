@@ -3,6 +3,7 @@ import {
   prohibitionIsExpressible,
   type GuardrailSet,
 } from '../cards/guardrails.js';
+import { isEmpty, type CardBackground } from '../cards/background.js';
 
 /**
  * Translating a card into `claude -p` arguments (doc 07 section 3).
@@ -139,6 +140,14 @@ export interface CardContextInput {
   /** What previous runs on this card established. */
   readonly previousRuns?: readonly string[];
   /**
+   * What the board already knows about this work (T13, T16, T18, T19).
+   *
+   * Placed below the constraints and above the ledger: constraints bound what
+   * the agent may do and have to be read first, and the ledger is this card's
+   * own history, which outranks anything inferred from its neighbours.
+   */
+  readonly background?: CardBackground | null;
+  /**
    * What the operator said when they sent the card back (T22).
    *
    * Placed above everything the model established, because it is the operator
@@ -146,6 +155,88 @@ export interface CardContextInput {
    * claim the run made about itself.
    */
   readonly operatorNote?: string | null;
+}
+
+/**
+ * The background block.
+ *
+ * Written as facts with their provenance attached rather than as
+ * instructions. An agent handed "these files are related" will edit them; an
+ * agent handed "card X changed these same files" will read X's work first,
+ * which is the behaviour this is for. Every heading says where the fact came
+ * from, because a claim whose source is invisible gets weighted as though the
+ * board were certain of it.
+ */
+function renderBackground(background: CardBackground): string[] {
+  const lines: string[] = [
+    '## What the board already knows about this work',
+    '',
+    'Assembled from what earlier cards on this board actually did. It is',
+    'context, not instruction: none of it overrides the constraints above.',
+    '',
+  ];
+
+  if (background.waitingOn.length > 0) {
+    // First, because it changes whether the work should start at all.
+    lines.push(
+      '### This card is waiting on other cards',
+      '',
+      ...background.waitingOn.map((entry) => `- ${entry}`),
+      '',
+      'They are not finished. Expect what they are changing to be absent or in flux.',
+      '',
+    );
+  }
+
+  if (background.contradictions.length > 0) {
+    lines.push(
+      '### This card runs into a project rule',
+      '',
+      ...background.contradictions.map((entry) => `- ${entry}`),
+      '',
+      'Not necessarily a mistake - a rule can prohibit a path precisely because',
+      'this card is the one allowed to change it. Say which reading you took.',
+      '',
+    );
+  }
+
+  if (background.previousRuns.length > 0) {
+    lines.push(
+      '### Previous runs on this card',
+      '',
+      ...background.previousRuns.map((entry) => `- ${entry}`),
+      '',
+    );
+  }
+
+  if (background.touched.length > 0) {
+    lines.push(
+      '### What this card has already touched',
+      '',
+      ...background.touched.map((entry) => `- ${entry}`),
+      '',
+    );
+  }
+
+  if (background.related.length > 0) {
+    lines.push(
+      '### Earlier cards that changed the same files',
+      '',
+      ...background.related.map(
+        (card) => `- "${card.title}" - ${card.shared.slice(0, 6).join(', ')}`,
+      ),
+      '',
+      'Read what they did before changing those files. Whatever they concluded',
+      'about that code is probably still true, and rediscovering it costs a run.',
+      '',
+    );
+  }
+
+  if (background.blastRadius !== null) {
+    lines.push('### Where similar work has landed before', '', background.blastRadius, '');
+  }
+
+  return lines;
 }
 
 /**
@@ -199,6 +290,10 @@ export function renderCardContext(input: CardContextInput): string {
       lines.push(`- ${guardrail.text} (${guardrail.enforcement})`);
     }
     lines.push('');
+  }
+
+  if (input.background !== undefined && input.background !== null && !isEmpty(input.background)) {
+    lines.push(...renderBackground(input.background));
   }
 
   if (

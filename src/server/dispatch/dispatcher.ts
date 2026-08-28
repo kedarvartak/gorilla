@@ -5,6 +5,8 @@ import { eq } from 'drizzle-orm';
 import { getCard, updateCard } from '../api/cards.js';
 import { canonicaliseCwd } from '../ingest/binding.js';
 import { dispatchableCards } from '../cards/eligibility.js';
+import { assembleBackground } from '../cards/background.js';
+import { previousRunsFor } from '../cards/card-context.js';
 import { parseGuardrails } from '../cards/guardrails.js';
 import type { DatabaseHandle } from '../db/client.js';
 import { boards, cards, columns, invariants, runs } from '../db/schema.js';
@@ -796,6 +798,20 @@ export class Dispatcher {
         agentEffort: card.agentEffort,
         permissionMode: card.permissionMode,
         cardId,
+        // The board has computed all of this for the card detail since T13 and
+        // told the agent none of it. Assembled here rather than in the
+        // launcher because it needs the database, and the launcher is kept
+        // able to run without one.
+        background: assembleBackground({
+          db: this.database.db,
+          sqlite: this.database.sqlite,
+          boardId,
+          cardId,
+          title: card.title,
+          body: card.body,
+          guardrails: card.guardrails,
+          previousRuns: previousRunsFor(this.database, cardId),
+        }),
         ...(accepted.length === 0 ? {} : { acceptedEntries: accepted }),
         ...(rejected.length === 0 ? {} : { rejectedEntries: rejected }),
         ...(this.#executable === undefined ? {} : { executable: this.#executable }),

@@ -12,6 +12,7 @@ import {
   type LaunchSpec,
 } from './args.js';
 import type { GuardrailSet } from '../cards/guardrails.js';
+import type { CardBackground } from '../cards/background.js';
 import type { AgentProvider } from '../agents/providers.js';
 
 /**
@@ -65,6 +66,8 @@ export interface LaunchOptions {
   readonly acceptedEntries?: readonly string[];
   readonly rejectedEntries?: readonly string[];
   readonly previousRuns?: readonly string[];
+  /** What the board already knows about this work. */
+  readonly background?: CardBackground | null;
   /** Overridable for tests. Defaults to `claude`. */
   readonly executable?: string;
   readonly onEvent?: (event: StreamEventPayload) => void;
@@ -125,6 +128,7 @@ function writeLaunchFiles(options: LaunchOptions): {
     ...(options.acceptedEntries === undefined ? {} : { acceptedEntries: options.acceptedEntries }),
     ...(options.rejectedEntries === undefined ? {} : { rejectedEntries: options.rejectedEntries }),
     ...(options.previousRuns === undefined ? {} : { previousRuns: options.previousRuns }),
+    ...(options.background === undefined ? {} : { background: options.background }),
     ...(options.operatorNote === undefined ? {} : { operatorNote: options.operatorNote }),
   });
   writeFileSync(contextPath, context, 'utf8');

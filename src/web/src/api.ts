@@ -396,6 +396,15 @@ export const api = {
      section, never the screen. */
 
   cardDetail: <T>(cardId: string) => optional<T>(`/api/cards/${cardId}/detail`, isRecord),
+
+  /**
+   * The context file a session dispatched now would be handed, verbatim.
+   *
+   * The literal text rather than a description of it, so the screen and the
+   * agent cannot be reading two different things.
+   */
+  cardContext: (cardId: string) =>
+    request<{ context: string; asOfNow: boolean }>(`/api/cards/${cardId}/context`),
   cardBrief: <T>(cardId: string) => optional<T>(`/api/cards/${cardId}/brief`, isRecord),
   cardSubagents: <T>(cardId: string) => optional<T[]>(`/api/cards/${cardId}/subagents`, isList),
   cardProposals: <T>(cardId: string) =>
