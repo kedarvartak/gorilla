@@ -190,6 +190,11 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     // The API names the field; carrying it through means the interface can put
     // the message where the operator is looking.
     const error = new Error(body.error ?? `Request failed: ${response.status}`);
+    // Carried through so a caller can tell "this route does not exist" from
+    // "this route refused". A 404 on a route the interface knows about means
+    // the server is older than the page calling it, and that has a fix the
+    // operator can act on - which a bare message does not.
+    (error as Error & { status?: number }).status = response.status;
     if (body.field !== undefined) {
       (error as Error & { field?: string }).field = body.field;
     }

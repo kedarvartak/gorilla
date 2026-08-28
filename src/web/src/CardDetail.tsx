@@ -762,11 +762,14 @@ function flattenSections(children: ReactNode): ReactNode[] {
  */
 function Narration({
   narration,
+  error,
   running,
   limit,
   onMore,
 }: {
   narration: NarrationModel | null;
+  /** Why there is nothing, when there is a reason worth acting on. */
+  error: string | null;
   running: boolean;
   limit: number;
   onMore: () => void;
@@ -785,7 +788,15 @@ function Narration({
     return (
       <div className="section section--wide">
         <h4 className="mb-1 eyebrow">Model thinking</h4>
-        <p className="text-dim">Reading the transcript.</p>
+        {/* "Reading the transcript" is only true while it is being read. Left
+            up after a failed request it is a sentence that never becomes
+            correct, and the operator waits for a screen that will never
+            arrive. */}
+        {error === null ? (
+          <p className="text-dim">Reading the transcript.</p>
+        ) : (
+          <p className="text-danger">{error}</p>
+        )}
       </div>
     );
   }
@@ -932,6 +943,7 @@ export function CardDetail({
     'brief',
   );
   const [narration, setNarration] = useState<NarrationModel | null>(null);
+  const [narrationError, setNarrationError] = useState<string | null>(null);
   /** How far back the operator has asked to see. */
   const [narrationLimit, setNarrationLimit] = useState(400);
   const [error, setError] = useState<string | null>(null);
@@ -1116,11 +1128,30 @@ export function CardDetail({
     const running = detail?.card.status === 'running';
 
     async function read(): Promise<void> {
-      const next = await api.cardNarration(cardId, narrationLimit).catch(() => null);
-      // Shape-checked rather than trusted, like every other loader on this
-      // screen. A section whose body was not what it expected must not be able
-      // to stop the card opening.
-      if (!cancelled && next !== null && Array.isArray(next.entries)) setNarration(next);
+      try {
+        const next = await api.cardNarration(cardId, narrationLimit);
+        // Shape-checked rather than trusted, like every other loader on this
+        // screen. A section whose body was not what it expected must not be
+        // able to stop the card opening.
+        if (cancelled || !Array.isArray(next.entries)) return;
+        setNarration(next);
+        setNarrationError(null);
+      } catch (cause) {
+        if (cancelled) return;
+
+        // A 404 on a route this page knows about means the server is older
+        // than the page calling it - the board is served from `dist/web`,
+        // which a rebuild replaces under a process still running the previous
+        // `dist/server`. Saying so beats leaving "Reading the transcript." on
+        // screen for ever, which is what this did before and is a sentence
+        // that was not true.
+        const status = (cause as Error & { status?: number }).status;
+        setNarrationError(
+          status === 404
+            ? 'This board is running an older build than this page: the route it needs answers 404. Restart it with `npm start`.'
+            : (cause as Error).message,
+        );
+      }
     }
 
     void read();
@@ -2136,6 +2167,7 @@ export function CardDetail({
             <SectionFlow>
               <Narration
                 narration={narration}
+                error={narrationError}
                 running={detail.card.status === 'running'}
                 limit={narrationLimit}
                 onMore={() => setNarrationLimit((current) => Math.min(current * 4, 5_000))}
