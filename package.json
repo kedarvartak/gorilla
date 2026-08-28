@@ -16,6 +16,7 @@
   ],
   "scripts": {
     "build": "tsc && vite build",
+    "start": "npm run build && node dist/cli/index.js serve",
     "clean": "rm -rf dist",
     "dev": "tsx watch src/cli/index.ts",
     "pretest": "npm run build",
