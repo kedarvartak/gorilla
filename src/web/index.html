@@ -4,6 +4,24 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Gorilla</title>
+    <!--
+      The mark, inline.
+
+      A file in `public/` would be copied to the root of `dist/web`, and the
+      server only serves `/` and `/assets/*` - so it would resolve under Vite
+      in development and 404 under Fastify in production, which is the failure
+      this project has already shipped twice in another form. A data URI cannot
+      404, costs no request, and behaves the same under both.
+
+      The geometry is duplicated from `src/logo.ts`, which is the only reason
+      `test/web/logo.test.ts` exists: it decodes this and asserts the two are
+      still the same drawing.
+    -->
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Cstyle%3Epath%7Bfill%3A%233f4db8%7D%40media(prefers-color-scheme%3Adark)%7Bpath%7Bfill%3A%239aa4f2%7D%7D%3C%2Fstyle%3E%3Cpath%20fill-rule%3D%22evenodd%22%20d%3D%22M%203%2C11%20A%208%2C8%200%200%201%2011%2C3%20H%2021%20A%208%2C8%200%200%201%2029%2C11%20V%2021%20A%208%2C8%200%200%201%2021%2C29%20H%2011%20A%208%2C8%200%200%201%203%2C21%20Z%20M%2011.5%2C8.75%20H%2020.5%20A%202.5%2C2.5%200%200%201%2020.5%2C13.75%20H%2011.5%20A%202.5%2C2.5%200%200%201%2011.5%2C8.75%20Z%20M%2011.5%2C18.25%20H%2014.5%20A%202.5%2C2.5%200%200%201%2014.5%2C23.25%20H%2011.5%20A%202.5%2C2.5%200%200%201%2011.5%2C18.25%20Z%22%2F%3E%3C%2Fsvg%3E"
+    />
   </head>
   <body>
     <div id="root"></div>
