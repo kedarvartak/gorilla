@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 
-import { describePlan, parseCardList } from '../../server/cards/intake.js';
+import { describePlan, missingGoals, parseCardList } from '../../server/cards/intake.js';
 import { DEFAULT_HOST, DEFAULT_PORT } from '../../server/index.js';
 import type { Command, CommandResult } from '../cli.js';
 
@@ -30,7 +30,7 @@ async function firstBoard(url: string): Promise<Board | null> {
 
 export const addCommand: Command = {
   name: 'add',
-  summary: 'Add a markdown list of tasks to the board as cards',
+  summary: 'Add a markdown list of tasks to the board as cards, each with a goal: line',
   async run(args: readonly string[]): Promise<CommandResult> {
     const fileIndex = args.indexOf('--file');
     const portIndex = args.indexOf('--port');
@@ -50,11 +50,35 @@ export const addCommand: Command = {
     // what a command will do should not have to have a board running to find
     // out, and should not risk half of it happening.
     if (args.includes('--dry-run')) {
-      return { exitCode: 0, stdout: describePlan(parsed).join('\n'), stderr: '' };
+      // Non-zero when the file would be refused. A dry run exists to be read
+      // by a person and gated on by a script, and one that exits 0 while
+      // printing the reason the real run will fail is a check that passes
+      // when the thing it checks would not.
+      return {
+        exitCode: missingGoals(parsed).length > 0 ? 1 : 0,
+        stdout: describePlan(parsed).join('\n'),
+        stderr: '',
+      };
     }
 
     if (parsed.cards.length === 0) {
       return { exitCode: 1, stdout: describePlan(parsed).join('\n'), stderr: '' };
+    }
+
+    // Refused whole, before the first card is posted.
+    //
+    // Adding the items that have a goal and skipping the rest would leave the
+    // operator reconciling a file against a board, and the ones left out are
+    // exactly the ones they would not notice - a card that is absent looks the
+    // same as a card that was never written. The file is one statement of
+    // intent, so it lands whole or not at all.
+    const missing = missingGoals(parsed);
+    if (missing.length > 0) {
+      return {
+        exitCode: 1,
+        stdout: '',
+        stderr: describePlan(parsed).join('\n'),
+      };
     }
 
     const port = portIndex === -1 ? DEFAULT_PORT : Number(args[portIndex + 1]);
@@ -76,7 +100,11 @@ export const addCommand: Command = {
         const response = await fetch(`${url}/api/boards/${board.id}/cards`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ title: card.title, body: card.body }),
+          body: JSON.stringify({
+            title: card.title,
+            body: card.body,
+            goalCondition: card.goalCondition,
+          }),
           signal: AbortSignal.timeout(TIMEOUT_MS),
         });
 

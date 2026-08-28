@@ -72,6 +72,8 @@ export interface CardTileProps {
   readonly unseen: boolean;
   /** Eligible for dispatch, as the server computes it. */
   readonly runnable: boolean;
+  /** Why this card cannot be dispatched, or null when it can. */
+  readonly whyNotRunnable: string | null;
   /** In a terminal column. What a finished card needs shown is not the same. */
   readonly terminal: boolean;
   readonly onOpen: (card: Card) => void;
@@ -83,6 +85,7 @@ export function CardTile({
   card,
   unseen,
   runnable,
+  whyNotRunnable,
   terminal,
   onOpen,
   onRun,
@@ -290,20 +293,41 @@ export function CardTile({
               <Play size={12} weight="fill" aria-hidden />
               Run
             </button>
-          ) : null}
-
-          {/* The elapsed time yields to the button rather than squeezing the
-              status chip out of the row. Nothing is lost: the rule along the
-              bottom edge is the same fact drawn, and it carries the phrase in
-              its tooltip. */}
-          {card.status === 'running' || runnable ? null : (
-            <span
-              className="whitespace-nowrap text-[11.5px] text-faint"
-              title={`Last changed ${waitedFor(since)}`}
+          ) : whyNotRunnable === null ? null : (
+            /*
+             * Drawn even when it cannot be pressed.
+             *
+             * Four rules decide dispatchability - ready column, idle,
+             * unarchived, a goal condition, no unfinished dependency - and
+             * omitting the control collapsed all four into one outcome the
+             * operator could not tell from the button having been deleted.
+             * That is what was reported: "the run button got erased". So the
+             * control stays and carries the reason instead, which is the only
+             * form of this that answers the question the absence provoked.
+             *
+             * Disabled rather than pressable-with-an-error: the server would
+             * refuse it, and a button that exists to fail is worse than one
+             * that explains itself.
+             */
+            <button
+              type="button"
+              disabled
+              className="inline-flex cursor-not-allowed items-center gap-1 rounded-md border border-line px-2.5 py-1 text-[12.5px] font-medium text-faint"
+              onPointerDown={(event) => event.stopPropagation()}
+              title={whyNotRunnable}
+              aria-label={`Cannot run: ${whyNotRunnable}`}
             >
-              {waiting ? waitedFor(since) : 'updated'}
-            </span>
+              <Play size={12} aria-hidden />
+              Run
+            </button>
           )}
+
+          {/* Dropped, now that every card carries a button.
+              It was shown only on cards with no button, and there are none
+              left: allowing it back would put a second element in a row that
+              already wrapped once and made one card taller than its
+              neighbours. Nothing is lost - the rule along the bottom edge is
+              the same fact drawn, and it carries the phrase in its tooltip. */}
         </div>
       </div>
 
