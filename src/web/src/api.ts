@@ -13,6 +13,26 @@ export interface GuardrailDetail {
   readonly because: string;
 }
 
+export type NarrationKind = 'thinking' | 'said' | 'did' | 'asked';
+
+export interface NarrationEntry {
+  readonly runId: string;
+  readonly seq: number;
+  readonly at: number | null;
+  readonly kind: NarrationKind;
+  readonly text: string;
+  readonly tool: string | null;
+}
+
+/** The agent's own account of a run. */
+export interface Narration {
+  readonly entries: readonly NarrationEntry[];
+  readonly total: number;
+  readonly provider: 'claude' | 'codex' | 'mixed' | null;
+  /** What the provider did not give, in words. */
+  readonly note: string | null;
+}
+
 export interface ResyncFinding {
   readonly cardId: string;
   readonly title: string;
@@ -370,6 +390,17 @@ export const api = {
    */
   resync: (boardId: string) =>
     request<ResyncReport>(`/api/boards/${boardId}/resync`, { method: 'POST' }),
+
+  /**
+   * What the agent thought, said and did.
+   *
+   * The tail, bounded by `limit`. Polled while a card is running, which the
+   * server makes cheap by caching on the transcript's size and mtime.
+   */
+  cardNarration: (cardId: string, limit?: number) =>
+    request<Narration>(
+      `/api/cards/${cardId}/narration${limit === undefined ? '' : `?limit=${String(limit)}`}`,
+    ),
 
   /** Puts a card away, or brings it back. Nothing is deleted (T77). */
   archiveCard: (cardId: string, archived: boolean) =>

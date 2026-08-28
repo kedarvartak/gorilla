@@ -52,6 +52,12 @@ export interface TokenUsage {
   readonly contextTokens: number;
 }
 
+/** A tool call, with the arguments it was made with. */
+export interface ToolCall {
+  readonly name: string;
+  readonly input: Record<string, unknown> | null;
+}
+
 export interface AssistantRecord {
   readonly kind: 'assistant';
   readonly uuid: string | null;
@@ -61,6 +67,23 @@ export interface AssistantRecord {
   readonly text: string;
   readonly thinking: string;
   readonly toolNames: readonly string[];
+  /**
+   * The same calls, with their arguments.
+   *
+   * `toolNames` is kept beside this because several callers count names and
+   * nothing else. "Bash" on its own says an agent ran something; the command
+   * is what says what it did.
+   */
+  readonly tools: readonly ToolCall[];
+  /**
+   * Thinking blocks that arrived with no text in them.
+   *
+   * Claude Code writes `{type:'thinking', thinking:'', signature:...}` - the
+   * block is recorded, the reasoning is not. Counting them is the only way to
+   * tell "the model did not think" from "the model thought and the harness
+   * kept none of it", and those are very different things to show an operator.
+   */
+  readonly redactedThinking: number;
   readonly usage: TokenUsage | null;
 }
 
@@ -127,13 +150,18 @@ function parseContent(content: unknown): {
   text: string;
   thinking: string;
   toolNames: string[];
+  tools: ToolCall[];
+  redactedThinking: number;
 } {
   const text: string[] = [];
   const thinking: string[] = [];
   const toolNames: string[] = [];
+  const tools: ToolCall[] = [];
+  let redactedThinking = 0;
 
-  if (typeof content === 'string') return { text: content, thinking: '', toolNames: [] };
-  if (!Array.isArray(content)) return { text: '', thinking: '', toolNames: [] };
+  const none = { text: '', thinking: '', toolNames: [], tools: [], redactedThinking: 0 };
+  if (typeof content === 'string') return { ...none, text: content };
+  if (!Array.isArray(content)) return none;
 
   for (const raw of content) {
     const block = asRecord(raw);
@@ -145,14 +173,19 @@ function parseContent(content: unknown): {
         if (value !== null) text.push(value);
         break;
       }
-      case 'thinking': {
+      case 'thinking':
+      case 'redacted_thinking': {
         const value = readString(block, 'thinking');
-        if (value !== null) thinking.push(value);
+        if (value !== null && value !== '') thinking.push(value);
+        else redactedThinking += 1;
         break;
       }
       case 'tool_use': {
         const name = readString(block, 'name');
-        if (name !== null) toolNames.push(name);
+        if (name !== null) {
+          toolNames.push(name);
+          tools.push({ name, input: asRecord(block['input']) });
+        }
         break;
       }
       default:
@@ -160,7 +193,13 @@ function parseContent(content: unknown): {
     }
   }
 
-  return { text: text.join('\n'), thinking: thinking.join('\n'), toolNames };
+  return {
+    text: text.join('\n'),
+    thinking: thinking.join('\n'),
+    toolNames,
+    tools,
+    redactedThinking,
+  };
 }
 
 /**
@@ -188,7 +227,9 @@ export function parseLine(line: string): TranscriptRecord | null {
   if (type === 'assistant') {
     const message = asRecord(record['message']);
     const model = readString(message, 'model');
-    const { text, thinking, toolNames } = parseContent(message?.['content']);
+    const { text, thinking, toolNames, tools, redactedThinking } = parseContent(
+      message?.['content'],
+    );
 
     return {
       kind: 'assistant',
@@ -199,6 +240,8 @@ export function parseLine(line: string): TranscriptRecord | null {
       text,
       thinking,
       toolNames,
+      tools,
+      redactedThinking,
       usage: parseUsage(asRecord(message?.['usage'])),
     };
   }

@@ -28,6 +28,8 @@ import {
   type Card,
   type GuardrailDetail,
   type GuardrailProposal,
+  type Narration as NarrationModel,
+  type NarrationEntry,
   type MergeReport,
 } from './api.js';
 
@@ -745,6 +747,147 @@ function flattenSections(children: ReactNode): ReactNode[] {
   );
 }
 
+/**
+ * The agent's own account of the run.
+ *
+ * Three kinds of line, kept visually apart on purpose. Thinking is what
+ * produced the sentence after it, what it said is addressed to the operator,
+ * and what it did is neither - flattening them into one column is how a
+ * transcript stops being readable, and the reason to build this at all was that
+ * a running card showed nothing.
+ *
+ * Its own scroll rather than the page's: a run is tens of thousands of lines
+ * and the rest of the card is a handful of boxes. Sharing one scrollbar would
+ * bury every other section under the transcript.
+ */
+function Narration({
+  narration,
+  running,
+  limit,
+  onMore,
+}: {
+  narration: NarrationModel | null;
+  running: boolean;
+  limit: number;
+  onMore: () => void;
+}): ReactElement {
+  const foot = useRef<HTMLDivElement>(null);
+  const shown = narration?.entries?.length ?? 0;
+
+  useEffect(() => {
+    // Follows the run, which is the whole point while a card is live. Only
+    // while running: yanking a reader to the bottom of a finished transcript
+    // they were scrolling through would be a bug.
+    if (running) foot.current?.scrollIntoView({ block: 'nearest' });
+  }, [shown, running]);
+
+  if (narration === null) {
+    return (
+      <div className="section section--wide">
+        <h4 className="mb-1 eyebrow">Model thinking</h4>
+        <p className="text-dim">Reading the transcript.</p>
+      </div>
+    );
+  }
+
+  const hidden = (narration.total ?? shown) - shown;
+
+  return (
+    <div className="section section--wide">
+      <h4 className="mb-1 eyebrow">
+        Model thinking
+        {narration.provider === null ? '' : ` · ${narration.provider}`}
+      </h4>
+
+      {/* Said before the entries, not after. An operator who reads to the
+          bottom looking for reasoning that was never handed over has already
+          concluded the feature is broken. */}
+      {narration.note === null ? null : (
+        <p className="mb-2 border-l-2 border-attention pl-2 text-[12.5px] text-dim">
+          {narration.note}
+        </p>
+      )}
+
+      {shown === 0 ? (
+        <p className="text-dim">
+          {running
+            ? 'Nothing recorded yet. This fills in as the agent works.'
+            : 'Nothing was recorded for this card.'}
+        </p>
+      ) : (
+        <>
+          {hidden > 0 ? (
+            <button
+              type="button"
+              className="mb-2 text-[12.5px] text-info hover:underline"
+              onClick={onMore}
+            >
+              {`Show earlier — ${String(hidden)} of ${String(narration.total)} not shown`}
+            </button>
+          ) : null}
+
+          <div className="max-h-[62vh] overflow-y-auto pr-1">
+            <ol className="flex flex-col gap-2">
+              {narration.entries.map((entry) => (
+                <li key={`${entry.runId}:${String(entry.seq)}`}>
+                  <NarrationLine entry={entry} />
+                </li>
+              ))}
+            </ol>
+            <div ref={foot} />
+          </div>
+        </>
+      )}
+
+      {limit >= 5_000 && hidden > 0 ? (
+        <p className="mt-2 text-[12.5px] text-faint">
+          This is as far back as one request goes. The rest is in the transcript on disk.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** One line of the account, styled by what kind of thing it is. */
+function NarrationLine({ entry }: { entry: NarrationEntry }): ReactElement {
+  if (entry.kind === 'did') {
+    return (
+      <div className="flex items-baseline gap-2 text-[12.5px]">
+        <span className="shrink-0 font-mono text-faint">did</span>
+        <span className="font-mono text-ink">{entry.tool ?? 'tool'}</span>
+        {entry.text === '' ? null : (
+          <span className="min-w-0 truncate text-dim" title={entry.text}>
+            {entry.text}
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  if (entry.kind === 'thinking') {
+    return (
+      // Set back and quieter than speech. It is the largest thing here and the
+      // least often the thing being looked for, so it reads as an aside rather
+      // than as the main column of text.
+      <div className="border-l-2 border-line pl-2.5">
+        <div className="eyebrow mb-0.5 text-faint">thinking</div>
+        <p className="whitespace-pre-wrap text-[12.5px] leading-[1.5] text-dim">{entry.text}</p>
+      </div>
+    );
+  }
+
+  if (entry.kind === 'asked') {
+    return (
+      <div className="rounded-md bg-well px-2.5 py-1.5">
+        <div className="eyebrow mb-0.5 text-faint">asked</div>
+        <p className="whitespace-pre-wrap text-[12.5px] leading-[1.5] text-dim">{entry.text}</p>
+      </div>
+    );
+  }
+
+  return <p className="whitespace-pre-wrap text-[13px] leading-[1.55] text-ink">{entry.text}</p>;
+}
+
 function GroupHeading({ id, label }: { id: string; label: string }): ReactElement {
   return (
     <h3
@@ -785,7 +928,12 @@ export function CardDetail({
   // Keep the dense material mutually exclusive. The board stays visible above
   // this pane, so opening detail should clarify a decision, not replace one
   // wall of cards with three smaller walls of text.
-  const [activePane, setActivePane] = useState<'brief' | 'specification' | 'review'>('brief');
+  const [activePane, setActivePane] = useState<'brief' | 'specification' | 'thinking' | 'review'>(
+    'brief',
+  );
+  const [narration, setNarration] = useState<NarrationModel | null>(null);
+  /** How far back the operator has asked to see. */
+  const [narrationLimit, setNarrationLimit] = useState(400);
   const [error, setError] = useState<string | null>(null);
   const [timelineRunId, setTimelineRunId] = useState<string | null>(null);
   const [merging, setMerging] = useState(false);
@@ -955,6 +1103,36 @@ export function CardDetail({
     };
   }, [onClose]);
 
+  /**
+   * Follows the account while the card is live.
+   *
+   * Polled rather than pushed. The server caches its parse on the transcript's
+   * size and mtime, so a poll where nothing has moved costs one `stat` - and a
+   * second stream, kept open per open card, would be more machinery than this
+   * is worth. Only while running: a finished card is read once.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    const running = detail?.card.status === 'running';
+
+    async function read(): Promise<void> {
+      const next = await api.cardNarration(cardId, narrationLimit).catch(() => null);
+      // Shape-checked rather than trusted, like every other loader on this
+      // screen. A section whose body was not what it expected must not be able
+      // to stop the card opening.
+      if (!cancelled && next !== null && Array.isArray(next.entries)) setNarration(next);
+    }
+
+    void read();
+    if (!running) return;
+
+    const timer = setInterval(() => void read(), 2_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [cardId, narrationLimit, detail?.card.status]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -1104,6 +1282,12 @@ export function CardDetail({
           [
             ['brief', brief === null ? 'Brief' : `Brief · ${brief.unseenCount} new`],
             ['specification', 'Specification'],
+            [
+              'thinking',
+              narration === null || narration.total === 0
+                ? 'Model thinking'
+                : `Model thinking · ${String(narration.total)}`,
+            ],
             [
               'review',
               detail.runs.length === 0
@@ -1948,6 +2132,16 @@ export function CardDetail({
                 </div>
               )}
             </SectionFlow>
+            <GroupHeading id="group-thinking" label="Model thinking" />
+            <SectionFlow>
+              <Narration
+                narration={narration}
+                running={detail.card.status === 'running'}
+                limit={narrationLimit}
+                onMore={() => setNarrationLimit((current) => Math.min(current * 4, 5_000))}
+              />
+            </SectionFlow>
+
             <GroupHeading id="group-review" label={runsTitle(detail.runs)} />
             <SectionFlow>
               {detail.runs.length === 0 ? (
