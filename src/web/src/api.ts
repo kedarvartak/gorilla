@@ -457,6 +457,12 @@ export const api = {
 
   dispatchable: (boardId: string) =>
     request<{ id: string; title: string }[]>(`/api/boards/${boardId}/dispatchable`),
+
+  /** Why each card cannot be dispatched, so the tile can say so. */
+  dispatchStanding: (boardId: string) =>
+    request<{ id: string; reason: string | null; offer: boolean }[]>(
+      `/api/boards/${boardId}/dispatch-standing`,
+    ),
 };
 
 export interface SearchHit {

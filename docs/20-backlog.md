@@ -390,3 +390,54 @@ notification, a token ceiling stopping a real run, a second opinion from a real
 model, an import against real GitHub, and one unattended batch that completes
 clean. Every one of those needs the thing to be used, not built, and putting
 them here would let a merged pull request stand in for evidence.
+
+---
+
+# Wave three, 27 August 2026
+
+Three entries, and three rather than thirty. Waves one and two were written
+against a backlog that had somewhere to go; this one is written against a list
+where every entry is closed, which is the condition under which a backlog
+acquires invented work. Each of these comes from something that failed, or was
+counted, in the week of building the interface - not from a category that
+looked thin.
+
+## Q. Found while building the interface
+
+| Id | Task | Done when | Status | Issue |
+| --- | --- | --- | --- | --- |
+| T80 | Report the build mismatch that actually 404s | The stamp reports both directions, and compares the running process against what is built rather than two files against each other. | open | [#151](https://github.com/kedarvartak/gorilla/issues/151) |
+| T81 | Test the tile and the board | `CardTile` and `Board` have tests covering rename, delete, dispatch and cancel, at the level the card-detail tests already work at. | open | [#152](https://github.com/kedarvartak/gorilla/issues/152) |
+| T82 | Put archive on the tile and delete out of reach | The tile's menu offers archive; delete is reachable only from the card detail, and asks through the shared panel frame. | open | [#153](https://github.com/kedarvartak/gorilla/issues/153) |
+
+**T80.** `describe()` flags a mismatch only when `serverBuiltAt - webBuiltAt`
+is positive - an interface older than its server. The direction that actually
+breaks is the other one. `npm run build:web` rebuilds the bundle alone, the
+bundle then calls routes the running server was never compiled with, and they
+404 while the board reports itself healthy. Measured on 26 August: `PATCH
+/api/boards/:boardId/columns` 404'd against a board with no staleness note, and
+was diagnosed by attaching a console listener to the page, which is the
+diagnosis this module exists to make unnecessary. The second half is that it
+compares mtimes on disk rather than what the live process was loaded from, so
+rebuilding without restarting clears the warning and changes nothing. It still
+reports rather than refuses: the T1 rescope holds.
+
+**T81.** `CardTile.tsx` and `Board.tsx` have no test file. `test/web/` covers
+card detail, activity, the digest, invariants, the merge gate and the panel
+frame, and stops exactly short of the two components carrying every action that
+changes or destroys state. `45be766`, `6b2ce8f` and `50b2599` add roughly 170
+lines of interactive behaviour between them and touch no test. What stood in
+for a test was a screenshot, read by a person, once.
+
+**T82.** The gradient on removal is inverted. Delete is one click inside the
+tile's menu, takes the card's runs and ledger with it, and asks through
+`window.confirm` - a native dialog that bypasses the shared frame T79 exists to
+give every other dialog here. Archive is reversible, keeps everything, has been
+built since T77, and is a button at the bottom of the card detail. The
+recoverable action is the hard one to find.
+
+## Still not on this list
+
+Doc 19's "what has never happened" is unchanged and none of it has become a
+coding task. Adding UI tests does not make a real compaction more likely to
+have happened.
