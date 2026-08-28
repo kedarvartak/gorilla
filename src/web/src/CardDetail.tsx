@@ -16,8 +16,6 @@ import { Timeline } from './Timeline.js';
 import {
   Archive,
   ArrowLeft,
-  CaretDown,
-  Check,
   CheckCircle,
   Copy,
   DownloadSimple,
@@ -365,7 +363,6 @@ function TextField({
   placeholder,
   invalid = false,
   invalidNote,
-  tone = 'field',
   onSave,
 }: {
   label: string;
@@ -373,8 +370,6 @@ function TextField({
   placeholder: string;
   invalid?: boolean;
   invalidNote?: string;
-  /** `statement` sets it as prose at reading size, for the goal condition. */
-  tone?: 'field' | 'statement';
   onSave: (value: string) => void;
 }): ReactElement {
   const [draft, setDraft] = useState(value);
@@ -393,17 +388,10 @@ function TextField({
   return (
     <>
       <textarea
-        className={
-          tone === 'statement'
-            ? 'goal-statement'
-            : `w-full resize-y rounded-md border bg-well px-2 py-1 text-[16px] text-ink placeholder:text-dim ${
-                invalid ? 'border-danger/60' : 'border-line'
-              }`
-        }
-        // Sized to its content: the goal is a sentence or a paragraph and
-        // either must be readable whole. `field-sizing` does this natively
-        // where it exists; the row count is the floor for everywhere else.
-        rows={tone === 'statement' ? Math.max(2, Math.ceil(draft.length / 78)) : 1}
+        className={`w-full resize-y rounded-md border bg-well px-2 py-1 text-[13px] text-ink placeholder:text-dim ${
+          invalid ? 'border-danger/60' : 'border-line'
+        }`}
+        rows={1}
         value={draft}
         aria-label={label}
         placeholder={placeholder}
@@ -425,149 +413,13 @@ function TextField({
         }}
       />
       {invalid && invalidNote !== undefined && !editing ? (
-        <div className="text-[13.5px] text-danger">{invalidNote}</div>
+        <div className="text-[11.5px] text-danger">{invalidNote}</div>
       ) : null}
     </>
   );
 }
 
 /** One labelled select over a nullable card field, saving on change. */
-/**
- * A dropdown the page owns, rather than one the operating system draws.
- *
- * A native `select` renders its list at the system's font size, in the system's
- * colours, positioned by the system - so on this page it was a 15px control
- * that opened an 11px menu in a different typeface, which is exactly the
- * moment an operator is trying to read a model name they only half remember.
- *
- * This one is set at reading size, aligned to the control it belongs to, and
- * keeps the keyboard behaviour a select has: arrows move, Enter and Space
- * choose, Escape closes and returns focus, and the open list is a listbox with
- * the current option marked.
- */
-function Dropdown({
-  label,
-  value,
-  options,
-  title,
-  neutralLabel,
-  onPick,
-}: {
-  label: string;
-  value: string | null;
-  options: readonly string[];
-  title: string;
-  neutralLabel: string;
-  onPick: (value: string | null) => void;
-}): ReactElement {
-  const [open, setOpen] = useState(false);
-  const [active, setActive] = useState(0);
-  const box = useRef<HTMLDivElement>(null);
-  const button = useRef<HTMLButtonElement>(null);
-
-  // A value set by /gorilla:plan or curl may not be in the list. Showing it is
-  // the difference between an honest control and one that lies about what the
-  // card will actually run.
-  const all: readonly (string | null)[] = [
-    null,
-    ...options,
-    ...(value !== null && !options.includes(value) ? [value] : []),
-  ];
-  const chosen = all.indexOf(value);
-
-  useEffect(() => {
-    if (!open) return;
-    setActive(chosen === -1 ? 0 : chosen);
-
-    function onAway(event: MouseEvent): void {
-      if (!box.current?.contains(event.target as Node)) setOpen(false);
-    }
-    document.addEventListener('mousedown', onAway);
-    return () => {
-      document.removeEventListener('mousedown', onAway);
-    };
-  }, [open, chosen]);
-
-  const choose = (index: number): void => {
-    setOpen(false);
-    button.current?.focus();
-    onPick(all[index] ?? null);
-  };
-
-  return (
-    <div className="dropdown" ref={box}>
-      <button
-        ref={button}
-        type="button"
-        title={title}
-        aria-label={label}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        className="dropdown-button"
-        onClick={() => setOpen((was) => !was)}
-        onKeyDown={(event) => {
-          if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            setOpen(true);
-          }
-        }}
-      >
-        <span className={value === null ? 'text-dim' : undefined}>{value ?? neutralLabel}</span>
-        <CaretDown size={12} aria-hidden />
-      </button>
-
-      {!open ? null : (
-        <ul
-          role="listbox"
-          aria-label={label}
-          tabIndex={-1}
-          className="dropdown-list"
-          ref={(node) => node?.focus()}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') {
-              event.preventDefault();
-              setOpen(false);
-              button.current?.focus();
-            }
-            if (event.key === 'ArrowDown') {
-              event.preventDefault();
-              setActive((at) => (at + 1) % all.length);
-            }
-            if (event.key === 'ArrowUp') {
-              event.preventDefault();
-              setActive((at) => (at - 1 + all.length) % all.length);
-            }
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              choose(active);
-            }
-          }}
-        >
-          {all.map((option, index) => (
-            <li key={option ?? '__default'}>
-              <button
-                type="button"
-                role="option"
-                aria-selected={option === value}
-                className={`dropdown-option ${index === active ? 'is-active' : ''} ${
-                  option === value ? 'is-chosen' : ''
-                }`}
-                onMouseEnter={() => setActive(index)}
-                onClick={() => choose(index)}
-              >
-                <span className={option === null ? 'text-dim' : undefined}>
-                  {option ?? neutralLabel}
-                </span>
-                {option === value ? <Check size={13} aria-hidden /> : null}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 function FieldSelect({
   label,
   value,
@@ -585,22 +437,32 @@ function FieldSelect({
   onPick: (value: string | null) => void;
 }): ReactElement {
   return (
-    // One block, label above control. Laid out as a flat list of `dt`/`dd` in a
-    // multi-column grid, the pairs interleaved: a label landed in one column
-    // and its value in the next, and "model" sat above somebody else's value.
-    <div className="setting">
-      <span className="setting-label" title={title}>
+    <>
+      <dt className="text-dim" title={title}>
         {label}
-      </span>
-      <Dropdown
-        label={label}
-        value={value}
-        options={options}
-        title={title}
-        neutralLabel={neutralLabel}
-        onPick={onPick}
-      />
-    </div>
+      </dt>
+      <dd>
+        <select
+          className="w-full rounded-md border border-line bg-well px-2 py-1 text-ink"
+          value={value ?? ''}
+          aria-label={label}
+          onChange={(changed) => onPick(changed.target.value === '' ? null : changed.target.value)}
+        >
+          <option value="">{neutralLabel}</option>
+          {options.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+          {/* A value set by /gorilla:plan or curl may not be in the list. Showing
+              it is the difference between an honest control and one that lies
+              about what the card will actually run. */}
+          {value !== null && !options.includes(value) ? (
+            <option value={value}>{value}</option>
+          ) : null}
+        </select>
+      </dd>
+    </>
   );
 }
 
@@ -925,7 +787,7 @@ function Narration({
   if (narration === null) {
     return (
       <div className="section section--wide">
-        <h4 className="section-label">Model thinking</h4>
+        <h4 className="mb-1 eyebrow">Model thinking</h4>
         {/* "Reading the transcript" is only true while it is being read. Left
             up after a failed request it is a sentence that never becomes
             correct, and the operator waits for a screen that will never
@@ -943,7 +805,7 @@ function Narration({
 
   return (
     <div className="section section--wide">
-      <h4 className="section-label">
+      <h4 className="mb-1 eyebrow">
         Model thinking
         {narration.provider === null ? '' : ` · ${narration.provider}`}
       </h4>
@@ -952,7 +814,7 @@ function Narration({
           bottom looking for reasoning that was never handed over has already
           concluded the feature is broken. */}
       {narration.note === null ? null : (
-        <p className="mb-2 border-l-2 border-attention pl-2 text-[15px] text-dim">
+        <p className="mb-2 border-l-2 border-attention pl-2 text-[12.5px] text-dim">
           {narration.note}
         </p>
       )}
@@ -968,7 +830,7 @@ function Narration({
           {hidden > 0 ? (
             <button
               type="button"
-              className="mb-2 text-[15px] text-info hover:underline"
+              className="mb-2 text-[12.5px] text-info hover:underline"
               onClick={onMore}
             >
               {`Show earlier — ${String(hidden)} of ${String(narration.total)} not shown`}
@@ -989,7 +851,7 @@ function Narration({
       )}
 
       {limit >= 5_000 && hidden > 0 ? (
-        <p className="mt-2 text-[15px] text-faint">
+        <p className="mt-2 text-[12.5px] text-faint">
           This is as far back as one request goes. The rest is in the transcript on disk.
         </p>
       ) : null}
@@ -1001,7 +863,7 @@ function Narration({
 function NarrationLine({ entry }: { entry: NarrationEntry }): ReactElement {
   if (entry.kind === 'did') {
     return (
-      <div className="flex items-baseline gap-2 text-[15px]">
+      <div className="flex items-baseline gap-2 text-[12.5px]">
         <span className="shrink-0 font-mono text-faint">did</span>
         <span className="font-mono text-ink">{entry.tool ?? 'tool'}</span>
         {entry.text === '' ? null : (
@@ -1020,7 +882,7 @@ function NarrationLine({ entry }: { entry: NarrationEntry }): ReactElement {
       // than as the main column of text.
       <div className="border-l-2 border-line pl-2.5">
         <div className="eyebrow mb-0.5 text-faint">thinking</div>
-        <p className="whitespace-pre-wrap text-[15px] leading-[1.5] text-dim">{entry.text}</p>
+        <p className="whitespace-pre-wrap text-[12.5px] leading-[1.5] text-dim">{entry.text}</p>
       </div>
     );
   }
@@ -1029,115 +891,21 @@ function NarrationLine({ entry }: { entry: NarrationEntry }): ReactElement {
     return (
       <div className="rounded-md bg-well px-2.5 py-1.5">
         <div className="eyebrow mb-0.5 text-faint">asked</div>
-        <p className="whitespace-pre-wrap text-[15px] leading-[1.5] text-dim">{entry.text}</p>
+        <p className="whitespace-pre-wrap text-[12.5px] leading-[1.5] text-dim">{entry.text}</p>
       </div>
     );
   }
 
-  return <p className="whitespace-pre-wrap text-[16px] leading-[1.55] text-ink">{entry.text}</p>;
-}
-
-/**
- * A band heading, with its rule running out to the edge.
- *
- * The rule is structural rather than decorative: it shows how far the band
- * reaches, which is the one thing a page of unboxed sections no longer says on
- * its own. Set in the label's own line so the two read as a single mark.
- */
-/**
- * Where this card stands, in the words an operator would use.
- *
- * The page's first sentence, so it answers the question they arrived with -
- * is anything waiting on me - before they read a line of anything else. Built
- * from the readiness checks the board already computes rather than a second
- * opinion about them, so this and the list further down cannot disagree.
- */
-function verdictOf(
-  status: string,
-  needsYou: readonly { name: string }[],
-  runs: number,
-  hasGoal: boolean,
-): { state: string; because: string; tone: string } {
-  // The card's own state leads, and an outstanding check is said inside it.
-  // Ordered the other way round, a finished card whose last check was never
-  // settled announced "Waiting on you" beside a token reading "done" - two
-  // sentences on one line contradicting each other.
-  const outstanding =
-    needsYou.length === 0
-      ? ''
-      : ` ${needsYou.map((check) => check.name).join(', ')} still ${needsYou.length === 1 ? 'wants' : 'want'} a look.`;
-
-  if (status === 'running') {
-    return {
-      state: 'Running now',
-      because:
-        'A session is working on this card. What it says and does appears under Model thinking as it goes.',
-      tone: 'var(--color-info)',
-    };
-  }
-
-  if (status === 'done') {
-    return {
-      state: 'Done',
-      because: `Accepted and merged.${outstanding === '' ? ' Nothing here is waiting on you.' : outstanding}`,
-      tone: 'var(--color-ok)',
-    };
-  }
-
-  if (status === 'abandoned') {
-    return {
-      state: 'Abandoned',
-      because: 'Nobody is working on this. Its runs and ledger are kept.',
-      tone: 'var(--color-danger)',
-    };
-  }
-
-  if (status === 'awaiting-review') {
-    return {
-      state: needsYou.length === 0 ? 'Ready for your verdict' : 'Waiting on you',
-      because:
-        needsYou.length === 0
-          ? 'The run finished and nothing is outstanding. Read what it did, then accept it or send it back.'
-          : `The run finished, but${outstanding}`,
-      tone: 'var(--color-attention)',
-    };
-  }
-
-  if (status === 'blocked') {
-    return {
-      state: 'Blocked',
-      because: 'Something this card depends on has not happened yet.',
-      tone: 'var(--color-attention)',
-    };
-  }
-
-  if (!hasGoal) {
-    return {
-      state: 'Not dispatchable',
-      because:
-        'No goal condition, so the board has nothing to judge a run against and will not start one.',
-      tone: 'var(--color-danger)',
-    };
-  }
-
-  return {
-    state: runs === 0 ? 'Waiting to run' : 'Idle',
-    because:
-      runs === 0
-        ? `Nothing has been dispatched against this card yet.${outstanding}`
-        : `The last run ended and nothing is queued.${outstanding}`,
-    tone: 'var(--color-faint)',
-  };
+  return <p className="whitespace-pre-wrap text-[13px] leading-[1.55] text-ink">{entry.text}</p>;
 }
 
 function GroupHeading({ id, label }: { id: string; label: string }): ReactElement {
   return (
     <h3
       id={id}
-      className="mt-9 mb-4 flex scroll-mt-4 items-center gap-3 text-[13px] font-semibold tracking-[0.14em] text-dim uppercase first:mt-0"
+      className="mb-3 mt-1 scroll-mt-4 border-b border-line pb-1.5 text-[13px] font-semibold tracking-[0.01em] text-ink"
     >
-      <span className="shrink-0">{label}</span>
-      <span className="h-px flex-1 bg-line" aria-hidden />
+      {label}
     </h3>
   );
 }
@@ -1463,15 +1231,6 @@ export function CardDetail({
   const entries = detail.runs.flatMap((run) => run.ledger.entries);
   const latest = detail.runs[detail.runs.length - 1];
 
-  /** What this card is waiting on, if anything, in the board's own reckoning. */
-  const needsYou = (detail.readiness?.checks ?? []).filter((check) => check.state === 'needs-you');
-  const verdict = verdictOf(
-    detail.card.status,
-    needsYou,
-    detail.runs.length,
-    detail.card.goalCondition !== null,
-  );
-
   return (
     /*
      * A page, not a drawer.
@@ -1492,7 +1251,7 @@ export function CardDetail({
             rather than covering it, so leaving is a return to somewhere. */}
         <button
           type="button"
-          className="-ml-1 inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[15px] text-dim transition-colors hover:bg-well hover:text-ink"
+          className="-ml-1 inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
           onClick={onClose}
         >
           <ArrowLeft size={13} aria-hidden />
@@ -1501,14 +1260,14 @@ export function CardDetail({
         <h2 className="min-w-0 truncate text-ink" title={detail.card.title}>
           {detail.card.title}
         </h2>
-        <span className="shrink-0 text-[15px] text-dim">{detail.card.status}</span>
+        <span className="shrink-0 text-[12.5px] text-dim">{detail.card.status}</span>
         {/* Only on a card that stopped. Offering it on a running card would
             invite two runs in one worktree, and the server refuses that
             anyway - a button that returns 409 is worse than no button. */}
         {detail.card.status !== 'blocked' && detail.card.status !== 'abandoned' ? null : (
           <button
             type="button"
-            className="ml-auto rounded border border-line px-2 py-0.5 text-[15px] text-dim hover:text-ink"
+            className="ml-auto rounded border border-line px-2 py-0.5 text-[12.5px] text-dim hover:text-ink"
             title="Sends the card back to the queue, keeping its worktree, with what you say about it."
             onClick={() => setRetrying(true)}
           >
@@ -1519,7 +1278,7 @@ export function CardDetail({
             there is no template store to keep - just this. */}
         <button
           type="button"
-          className={`${detail.card.status === 'blocked' || detail.card.status === 'abandoned' ? '' : 'ml-auto '}inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[15px] text-dim transition-colors hover:bg-well hover:text-ink`}
+          className={`${detail.card.status === 'blocked' || detail.card.status === 'abandoned' ? '' : 'ml-auto '}inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink`}
           title="A new card with this one's body, guardrails, goal and model. Nothing that happened to this card comes with it."
           onClick={() => {
             void api.cloneCard(cardId).catch((cause: Error) => setError(cause.message));
@@ -1532,7 +1291,7 @@ export function CardDetail({
             judgements with it - the history this product exists to keep. */}
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[15px] text-dim transition-colors hover:bg-well hover:text-ink"
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
           title="Takes this off the board and out of the queue. Its runs, ledger and judgements stay."
           onClick={() => {
             void api
@@ -1605,7 +1364,7 @@ export function CardDetail({
           />
           <button
             type="button"
-            className="action action-primary"
+            className="rounded border border-line px-2 py-1 text-[12.5px] text-ink hover:border-dim"
             onClick={() => {
               void api
                 .retryCard(detail.card.boardId, cardId, retryNote.trim() === '' ? null : retryNote)
@@ -1618,7 +1377,11 @@ export function CardDetail({
           >
             send it back
           </button>
-          <button type="button" className="action action-quiet" onClick={() => setRetrying(false)}>
+          <button
+            type="button"
+            className="rounded border border-line px-2 py-1 text-[12.5px] text-dim hover:text-ink"
+            onClick={() => setRetrying(false)}
+          >
             cancel
           </button>
         </div>
@@ -1641,77 +1404,70 @@ export function CardDetail({
          */}
         <Rail title="Card">
           <>
-            {/*
-             * The answer first.
-             *
-             * This page exists so one person can reach a verdict on work a
-             * machine did, and it opened with eleven settings controls -
-             * configuration, the least urgent thing on it. It opens with
-             * where the card stands, and what is waiting on them.
-             */}
-            <section className="verdict -mx-6 -mt-4 mb-8">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <h2 className="verdict-state">{verdict.state}</h2>
-                <span className="verdict-token" style={{ color: verdict.tone }}>
-                  {detail.card.status}
-                </span>
+            <GroupHeading id="group-specification" label="Specification" />
+            <SectionFlow>
+              <div className="section">
+                <h4 className="mb-2 eyebrow">What this card is</h4>
+                {detail.card.body === '' ? (
+                  <p className="text-dim">
+                    No description. An agent reads this before anything else, so a card with none is
+                    a card that starts from its title alone.
+                  </p>
+                ) : (
+                  <p className="whitespace-pre-wrap text-ink">{detail.card.body}</p>
+                )}
               </div>
-              <p className="verdict-because mt-2">{verdict.because}</p>
 
               {/*
-               * The run as a reading off an instrument.
+               * What the agent will actually be handed.
                *
-               * A machine worked for nineteen turns, spent 593k tokens and
-               * ninety-seven cents, and says it is finished. That is the most
-               * characteristic object this product has and it was three lines
-               * of grey prose in a box near the bottom of the page.
+               * The literal text of `card-context.md`, not a description of it.
+               * A screen that paraphrased the context would be a second
+               * description to keep in step with the first, and on the day the
+               * two disagreed the operator would review against the wrong one.
                *
-               * All of it is set in the mono face, which is the rule this
-               * page follows throughout: mono is what the machine produced,
-               * sans is what a person wrote.
+               * Wide, because it is preformatted and cannot reflow into a
+               * column, and closed by default, because it is long and the
+               * question it answers - "what does the agent know?" - is one an
+               * operator asks occasionally rather than every time they open a
+               * card. The summary line carries the answer for the other times.
                */}
-              <dl className="instrument">
-                <div>
-                  <dt>Runs</dt>
-                  <dd className={detail.runs.length === 0 ? 'is-quiet' : ''}>
-                    {detail.runs.length}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Turns</dt>
-                  <dd className={latest?.cost?.turns === undefined ? 'is-quiet' : ''}>
-                    {latest?.cost?.turns ?? '\u2014'}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Spent</dt>
-                  <dd className={latest?.cost === undefined ? 'is-quiet' : ''}>
-                    {latest?.cost?.summary.split(' \u00b7 ')[1] ?? '\u2014'}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Account</dt>
-                  <dd className={narration === null || narration.total === 0 ? 'is-quiet' : ''}>
-                    {narration === null || narration.total === 0 ? '\u2014' : narration.total}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Verify</dt>
-                  <dd
-                    className={detail.verify === null ? 'is-quiet' : ''}
-                    title={detail.verify?.command}
+              {agentContext === null ? null : (
+                <div className={`section ${contextOpen ? 'section--wide' : ''}`}>
+                  <h4 className="mb-2 eyebrow">What the agent will be told</h4>
+                  <p className="mb-2 text-dim">
+                    The context file handed to the session, as it would be written if this card were
+                    dispatched now. Not a record of what an earlier run received: the ledger, the
+                    dependencies and the subsystem map all move.
+                  </p>
+                  <p className="mb-3 text-[12.5px] text-faint">
+                    {`${String(agentContext.split('\n').length)} lines, ${String(agentContext.length)} characters. Sections: ${
+                      agentContext
+                        .split('\n')
+                        .filter((line) => line.startsWith('## '))
+                        .map((line) => line.slice(3))
+                        .join(', ') || 'the card body alone'
+                    }.`}
+                  </p>
+                  <button
+                    type="button"
+                    className="rounded-md border border-line px-2.5 py-1 text-[12.5px] text-ink transition-colors hover:border-dim"
+                    onClick={() => setContextOpen((open) => !open)}
+                    aria-expanded={contextOpen}
                   >
-                    {detail.verify?.status ?? 'not run'}
-                  </dd>
+                    {contextOpen ? 'Hide it' : 'Read it'}
+                  </button>
+                  {!contextOpen ? null : (
+                    <pre className="mt-3 max-h-[420px] overflow-auto whitespace-pre-wrap rounded-md border border-line bg-well p-3 font-mono text-[12px] leading-[1.5] text-ink">
+                      {agentContext}
+                    </pre>
+                  )}
                 </div>
-              </dl>
+              )}
 
-              {/* Folded, because settings are consulted when something needs
-                    changing, which is rarely, and they took a permanent column
-                    beside the reading column to say so. */}
-              <details className="settings">
-                <summary>How it runs</summary>
-                <div className="settings-grid">
+              <div className="section">
+                <h4 className="mb-3 eyebrow">How it will run</h4>
+                <dl className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 text-[12.5px]">
                   <FieldSelect
                     label="Priority"
                     value={detail.card.priority === 'normal' ? null : detail.card.priority}
@@ -1753,17 +1509,17 @@ export function CardDetail({
                     title="Used only for windows that escalate - compaction, and manual re-extraction. Not the model that does the work."
                     onPick={(synthesisModel) => patch({ synthesisModel })}
                   />
-                  <div className="setting">
-                    <span
-                      className="setting-label"
-                      title="Tokens a run may spend before the board stops it. This one is enforced: the board terminates the session."
-                    >
-                      Ceiling
-                    </span>
+                  <dt
+                    className="text-dim"
+                    title="Tokens a run may spend before the board stops it. This one is enforced: the board terminates the session."
+                  >
+                    Ceiling
+                  </dt>
+                  <dd>
                     {/* Named as a hard limit rather than a preference. The board
-              kills the process when it is crossed, unlike the guardrails
-              below, which are written into settings and can be argued
-              with. */}
+                    kills the process when it is crossed, unlike the guardrails
+                    below, which are written into settings and can be argued
+                    with. */}
                     <TextField
                       label="token ceiling"
                       value={
@@ -1774,14 +1530,33 @@ export function CardDetail({
                         patch({ tokenCeiling: next.trim() === '' ? null : Number(next) })
                       }
                     />
-                  </div>
-                  <div className="setting">
-                    <span
-                      className="setting-label"
-                      title="A command the board runs itself after the run. Hard: the card halts if it does not pass."
-                    >
-                      Verify
-                    </span>
+                  </dd>
+                  <dt
+                    className="text-dim"
+                    title="What /goal is given. Without one, the card cannot be dispatched."
+                  >
+                    Goal
+                  </dt>
+                  <dd>
+                    {/* Editable, because a card added from the board header has no
+                    goal and therefore cannot be dispatched - the Add button led
+                    to a dead end, and every real card had to be made by curl. */}
+                    <TextField
+                      label="goal condition"
+                      value={detail.card.goalCondition ?? ''}
+                      placeholder="measurable end state, a stated check, and a turn bound"
+                      invalid={detail.card.goalCondition === null}
+                      invalidNote="Not set, so this card cannot be dispatched."
+                      onSave={(next) => patch({ goalCondition: next === '' ? null : next })}
+                    />
+                  </dd>
+                  <dt
+                    className="text-dim"
+                    title="A command the board runs itself after the run. Hard: the card halts if it does not pass."
+                  >
+                    Verify
+                  </dt>
+                  <dd>
                     <TextField
                       label="verify command"
                       value={detail.verifyCommand ?? ''}
@@ -1792,153 +1567,7 @@ export function CardDetail({
                         })
                       }
                     />
-                  </div>
-                </div>
-              </details>
-            </section>
-
-            {/*
-             * The sentence the whole card turns on, at the size it deserves.
-             *
-             * It was a truncated one-line input in the middle of a settings
-             * box: the measurable end state every run is judged against, shown
-             * forty characters at a time.
-             */}
-            <div className="mb-7">
-              <h4 className="section-label">Done when</h4>
-
-              {/* Editable, because a card added from the board header has no
-                goal and therefore cannot be dispatched - the Add button led
-                to a dead end, and every real card had to be made by curl. */}
-              <TextField
-                label="goal condition"
-                value={detail.card.goalCondition ?? ''}
-                placeholder="measurable end state, a stated check, and a turn bound"
-                invalid={detail.card.goalCondition === null}
-                invalidNote="Not set, so this card cannot be dispatched."
-                tone="statement"
-                onSave={(next) => patch({ goalCondition: next === '' ? null : next })}
-              />
-            </div>
-
-            <GroupHeading id="group-specification" label="Specification" />
-            <SectionFlow>
-              <div className="section">
-                <h4 className="section-label">What this card is</h4>
-                {detail.card.body === '' ? (
-                  <p className="text-dim">
-                    No description. An agent reads this before anything else, so a card with none is
-                    a card that starts from its title alone.
-                  </p>
-                ) : (
-                  <p className="whitespace-pre-wrap text-ink">{detail.card.body}</p>
-                )}
-              </div>
-
-              {/*
-               * What the agent will actually be handed.
-               *
-               * The literal text of `card-context.md`, not a description of it.
-               * A screen that paraphrased the context would be a second
-               * description to keep in step with the first, and on the day the
-               * two disagreed the operator would review against the wrong one.
-               *
-               * Wide, because it is preformatted and cannot reflow into a
-               * column, and closed by default, because it is long and the
-               * question it answers - "what does the agent know?" - is one an
-               * operator asks occasionally rather than every time they open a
-               * card. The summary line carries the answer for the other times.
-               */}
-              {agentContext === null ? null : (
-                <div className={`section ${contextOpen ? 'section--wide' : ''}`}>
-                  <h4 className="section-label">What the agent will be told</h4>
-                  <p className="mb-2 text-dim">
-                    The context file handed to the session, as it would be written if this card were
-                    dispatched now. Not a record of what an earlier run received: the ledger, the
-                    dependencies and the subsystem map all move.
-                  </p>
-                  <p className="mb-3 text-[15px] text-faint">
-                    {`${String(agentContext.split('\n').length)} lines, ${String(agentContext.length)} characters. Sections: ${
-                      agentContext
-                        .split('\n')
-                        .filter((line) => line.startsWith('## '))
-                        .map((line) => line.slice(3))
-                        .join(', ') || 'the card body alone'
-                    }.`}
-                  </p>
-                  <button
-                    type="button"
-                    className="rounded-md border border-line px-2.5 py-1 text-[15px] text-ink transition-colors hover:border-dim"
-                    onClick={() => setContextOpen((open) => !open)}
-                    aria-expanded={contextOpen}
-                  >
-                    {contextOpen ? 'Hide it' : 'Read it'}
-                  </button>
-                  {!contextOpen ? null : (
-                    <pre className="mt-3 max-h-[420px] overflow-auto whitespace-pre-wrap rounded-md border border-line bg-well p-3 font-mono text-[14.5px] leading-[1.5] text-ink">
-                      {agentContext}
-                    </pre>
-                  )}
-                </div>
-              )}
-
-              {/* Full measure. Its rows are a label beside a list, which a
-                    340px masonry column wraps into confetti. */}
-              <div className="section section--wide">
-                <h4 className="section-label">Guardrails</h4>
-                {/*
-                 * Grouped by the promise, not one chip per line.
-                 *
-                 * A rail the board enforces and one it merely asks for are
-                 * different promises (R10), and that difference was carried
-                 * by a chip repeated beside every entry - the same word
-                 * printed nine times down the left of a list. It is the
-                 * heading now, said once, with its rules under it. The rows
-                 * that follow are the two the operator can edit, in the same
-                 * shape as the ones they cannot.
-                 */}
-                <dl className="ruled">
-                  {detail.guardrailDetail.length === 0 ? (
-                    <>
-                      <dt>None</dt>
-                      <dd className="text-dim">
-                        Nothing constrains what this card&rsquo;s run may touch.
-                      </dd>
-                    </>
-                  ) : null}
-
-                  {/* The values are 'hard' and 'advisory'. Writing 'soft'
-                        here dropped every advisory rail and still typechecked,
-                        because the two unions overlap on 'hard' - so the
-                        comparison was legal and simply never true. */}
-                  {(['hard', 'advisory'] as const).map((enforcement) => {
-                    const rails = detail.guardrailDetail.filter(
-                      (rail) => rail.enforcement === enforcement,
-                    );
-                    if (rails.length === 0) return null;
-
-                    return (
-                      <Fragment key={enforcement}>
-                        <dt className={enforcement === 'hard' ? 'text-ok' : undefined}>
-                          {enforcement === 'hard' ? 'Enforced' : 'Asked for'}
-                        </dt>
-                        <dd>
-                          <ul className="flex flex-col gap-1.5">
-                            {rails.map((rail) => (
-                              <li
-                                key={`${rail.kind}:${rail.text}`}
-                                className="rail-rule"
-                                title={rail.because}
-                              >
-                                {rail.text}
-                              </li>
-                            ))}
-                          </ul>
-                        </dd>
-                      </Fragment>
-                    );
-                  })}
-
+                  </dd>
                   <dt
                     className="text-dim"
                     title="Paths the agent should confine itself to. Advisory: it is prompt text, not a rule."
@@ -1970,6 +1599,32 @@ export function CardDetail({
                 </dl>
               </div>
 
+              <div className="section">
+                <h4 className="mb-2 eyebrow">Guardrails</h4>
+                {detail.guardrailDetail.length === 0 ? (
+                  <p className="text-dim">
+                    None. Nothing constrains what this card&rsquo;s run may touch.
+                  </p>
+                ) : (
+                  <ul className="flex flex-col gap-2">
+                    {detail.guardrailDetail.map((rail) => (
+                      <li key={`${rail.kind}:${rail.text}`} className="leading-snug">
+                        {/* A guardrail the board enforces and one it merely asks
+                          for are different promises, so they are different
+                          chips rather than the same word in two greys (R10). */}
+                        <span
+                          className={`chip mr-1.5 ${rail.enforcement === 'hard' ? 'chip-ok' : ''}`}
+                          title={rail.because}
+                        >
+                          {rail.enforcement === 'hard' ? 'Enforced' : 'Asked for'}
+                        </span>
+                        <span className="text-ink">{rail.text}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
               {detail.staleness?.suspect !== true ? null : (
                 /* A suspicion, never a verdict. The board says what it noticed and
                  what to look at; archiving a card it believed was finished would
@@ -1981,14 +1636,14 @@ export function CardDetail({
                     <p key={finding.signal} className="mb-1 leading-snug text-ink">
                       {finding.detail}
                       {finding.evidence.length === 0 ? null : (
-                        <span className="ml-1 text-[13.5px] text-dim">
+                        <span className="ml-1 text-[11.5px] text-dim">
                           ({finding.evidence.slice(0, 4).join(', ')})
                         </span>
                       )}
                     </p>
                   ))}
                   {detail.staleness.advice === null ? null : (
-                    <p className="text-[13.5px] text-dim">{detail.staleness.advice}</p>
+                    <p className="text-[11.5px] text-dim">{detail.staleness.advice}</p>
                   )}
                 </div>
               )}
@@ -2016,8 +1671,8 @@ export function CardDetail({
                 <div className="mb-3 rounded border border-danger/40 bg-danger/10 px-2 py-1.5 text-danger">
                   {/* The board ran this. It does not depend on the agent
                     reporting honestly, which is the whole point (R10). */}
-                  <div className="text-[15px]">{detail.verifyNote}</div>
-                  <pre className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap font-mono text-[13.5px] text-dim">
+                  <div className="text-[12.5px]">{detail.verifyNote}</div>
+                  <pre className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap font-mono text-[11.5px] text-dim">
                     {detail.verify.output}
                   </pre>
                 </div>
@@ -2028,7 +1683,7 @@ export function CardDetail({
               ) : (
                 <>
                   {brief.extraction.note === null ? null : (
-                    <p className="mb-3 rounded border border-danger/40 bg-danger/10 px-2 py-1.5 text-[15px] text-danger">
+                    <p className="mb-3 rounded border border-danger/40 bg-danger/10 px-2 py-1.5 text-[12.5px] text-danger">
                       {brief.extraction.note}
                     </p>
                   )}
@@ -2044,7 +1699,7 @@ export function CardDetail({
                         {mergeRefusal?.summary ??
                           'These have not been read yet. Accept or reject each and the merge becomes available.'}
                       </p>
-                      <p className="mb-2 text-[13.5px] text-dim">
+                      <p className="mb-2 text-[11.5px] text-dim">
                         {mergeRefusal?.reach ??
                           'This is the board declining to merge for you, not a lock on the repository. ' +
                             'A `git merge` run in a terminal will merge this branch with nothing to stop it.'}
@@ -2059,23 +1714,23 @@ export function CardDetail({
                         {brief.surprises.map((surprise) => (
                           <li key={surprise.id} className="leading-snug">
                             <div className="text-ink">{surprise.headline}</div>
-                            <div className="text-[13.5px] text-dim">{surprise.why}</div>
+                            <div className="text-[11.5px] text-dim">{surprise.why}</div>
                             {surprise.target.type === 'path' ? (
-                              <div className="text-[13.5px] text-dim">
+                              <div className="text-[11.5px] text-dim">
                                 Not an entry, so there is nothing to accept: open the file.
                               </div>
                             ) : (
                               <div className="mt-0.5 flex gap-2">
                                 <button
                                   type="button"
-                                  className="rounded border border-ok/50 px-1.5 text-[13.5px] text-ok hover:bg-ok/10"
+                                  className="rounded border border-ok/50 px-1.5 text-[11.5px] text-ok hover:bg-ok/10"
                                   onClick={() => judge(surprise.target, 'accepted')}
                                 >
                                   accept
                                 </button>
                                 <button
                                   type="button"
-                                  className="rounded border border-danger/50 px-1.5 text-[13.5px] text-danger hover:bg-danger/10"
+                                  className="rounded border border-danger/50 px-1.5 text-[11.5px] text-danger hover:bg-danger/10"
                                   title="Kept on the card, but no longer stated as fact in the brief."
                                   onClick={() => judge(surprise.target, 'rejected')}
                                 >
@@ -2086,7 +1741,7 @@ export function CardDetail({
                                   the operator's head until they forget it. */}
                                 <button
                                   type="button"
-                                  className="rounded border border-line px-1.5 text-[13.5px] text-dim hover:text-ink"
+                                  className="rounded border border-line px-1.5 text-[11.5px] text-dim hover:text-ink"
                                   title="Rejects this and raises a card to address it, linked back to here."
                                   onClick={() => {
                                     const entryId =
@@ -2111,45 +1766,27 @@ export function CardDetail({
                     </div>
                   )}
 
-                  {/*
-                   * One list, not a tile each.
-                   *
-                   * Every heading the brief can produce got a bordered box
-                   * whether or not it had anything in it, so a quiet card
-                   * showed six boxes reading "No decisions recorded", "No
-                   * assumptions recorded", "Nothing has changed" - the empty
-                   * ones took the same room as the full ones and made the
-                   * page look like the board had nothing to say. As rows they
-                   * cost one line each, and what is there stands out because
-                   * what is not has stopped competing with it.
-                   */}
-                  <div className="section section--wide">
-                    <dl className="ruled">
-                      {brief.sections.map((section) => (
-                        <Fragment key={section.title}>
-                          <dt>{section.title}</dt>
-                          <dd className={section.empty ? 'text-faint' : undefined}>
-                            {section.lines.map((line, index) => (
-                              <p
-                                key={`${section.title}-${String(index)}`}
-                                className={`whitespace-pre-wrap leading-snug ${
-                                  section.empty
-                                    ? ''
-                                    : line.startsWith('REVERSED:')
-                                      ? 'text-danger'
-                                      : line.startsWith('Needs you:')
-                                        ? 'text-brand'
-                                        : 'text-ink'
-                                }`}
-                              >
-                                {line}
-                              </p>
-                            ))}
-                          </dd>
-                        </Fragment>
+                  {brief.sections.map((section) => (
+                    <div key={section.title} className="section">
+                      <h4 className="mb-1 eyebrow">{section.title}</h4>
+                      {section.lines.map((line, index) => (
+                        <p
+                          key={`${section.title}-${String(index)}`}
+                          className={`whitespace-pre-wrap leading-snug ${
+                            section.empty
+                              ? 'text-dim'
+                              : line.startsWith('REVERSED:')
+                                ? 'text-danger'
+                                : line.startsWith('Needs you:')
+                                  ? 'text-brand'
+                                  : 'text-ink'
+                          }`}
+                        >
+                          {line}
+                        </p>
                       ))}
-                    </dl>
-                  </div>
+                    </div>
+                  ))}
                 </>
               )}
 
@@ -2159,7 +1796,7 @@ export function CardDetail({
                 <div className="section">
                   <button
                     type="button"
-                    className="text-[15px] text-info hover:underline"
+                    className="text-[12.5px] text-info hover:underline"
                     onClick={() => setShowEntries(!showEntries)}
                   >
                     {showEntries ? 'hide' : 'show'} the {entries.length} underlying entr
@@ -2171,7 +1808,7 @@ export function CardDetail({
                       {entries.map((entry, index) => (
                         <li key={`${entry.kind}-${index}`} className="border-l-2 border-line pl-2">
                           <span
-                            className={`mr-1.5 text-[13.5px] uppercase ${
+                            className={`mr-1.5 text-[11.5px] uppercase ${
                               KIND_COLOUR[entry.kind] ?? 'text-dim'
                             }`}
                           >
@@ -2179,9 +1816,9 @@ export function CardDetail({
                           </span>
                           <span className="text-ink">{entry.statement}</span>
                           {entry.detail === undefined ? null : (
-                            <div className="mt-0.5 text-[15px] text-dim">{entry.detail}</div>
+                            <div className="mt-0.5 text-[12.5px] text-dim">{entry.detail}</div>
                           )}
-                          <div className="text-[13.5px] text-dim">
+                          <div className="text-[11.5px] text-dim">
                             {/* Every entry names its evidence; nothing here is
                               unfalsifiable (doc 08). */}
                             {entry.sourceEventIds.length} source event(s)
@@ -2197,7 +1834,7 @@ export function CardDetail({
                 <div className="section">
                   {/* Most useful straight after cloning, which is why it sits on
                     the card rather than behind a selection on the board. */}
-                  <label className="text-[15px] text-dim">
+                  <label className="text-[12.5px] text-dim">
                     compare with{' '}
                     <select
                       className="rounded border border-line bg-well px-1 py-0.5 text-ink"
@@ -2230,7 +1867,7 @@ export function CardDetail({
                     spends a model call is one an operator presses twice. */}
                   <button
                     type="button"
-                    className="rounded border border-line px-2 py-0.5 text-[15px] text-dim hover:text-ink disabled:opacity-50"
+                    className="rounded border border-line px-2 py-0.5 text-[12.5px] text-dim hover:text-ink disabled:opacity-50"
                     disabled={reviewing}
                     title="Asks a session that did not write this branch to read it. One model call on your Claude Code quota. Anything it raises has to be judged before this merges."
                     onClick={() => {
@@ -2246,15 +1883,15 @@ export function CardDetail({
                     {reviewing ? 'reading the branch…' : 'ask for a second opinion'}
                   </button>
                   {reviewNote === null ? null : (
-                    <p className="mt-1 text-[15px] text-dim">{reviewNote}</p>
+                    <p className="mt-1 text-[12.5px] text-dim">{reviewNote}</p>
                   )}
                 </div>
               )}
 
               {(detail.readiness?.checks ?? []).length === 0 ? null : (
                 <div className="section">
-                  <h4 className="section-label">Before you merge</h4>
-                  <ul className="flex flex-col gap-0.5 text-[15px]">
+                  <h4 className="mb-1 eyebrow">Before you merge</h4>
+                  <ul className="flex flex-col gap-0.5 text-[12.5px]">
                     {(detail.readiness?.checks ?? []).map((check) => (
                       <li key={check.name} className="flex items-start gap-2 text-dim">
                         {/* Three states, not two. A check the board could not run
@@ -2300,14 +1937,14 @@ export function CardDetail({
 
               {detail.diff === undefined || !detail.diff.readable ? null : (
                 <div className="section">
-                  <h4 className="section-label">
+                  <h4 className="mb-1 eyebrow">
                     Diff ({detail.diff.files.length} file(s), +{detail.diff.insertions} −
                     {detail.diff.deletions})
                   </h4>
                   {/* Reviewing used to mean leaving the board for a terminal,
                     which is where the operator loses the context the board
                     exists to hold. */}
-                  <ul className="flex flex-col gap-0.5 text-[15px]">
+                  <ul className="flex flex-col gap-0.5 text-[12.5px]">
                     {detail.diff.files.map((file) => (
                       <li key={file.path}>
                         <button
@@ -2339,16 +1976,16 @@ export function CardDetail({
                   {openDiff === null ? null : (
                     <div className="mt-2 border-t border-line pt-2">
                       <div className="mb-1 flex items-baseline gap-2">
-                        <span className="font-mono text-[15px] text-ink">{openDiff.path}</span>
+                        <span className="font-mono text-[12.5px] text-ink">{openDiff.path}</span>
                         <button
                           type="button"
-                          className="text-[15px] text-dim hover:text-ink"
+                          className="text-[12.5px] text-dim hover:text-ink"
                           onClick={() => setOpenDiff(null)}
                         >
                           close
                         </button>
                       </div>
-                      <pre className="max-h-96 overflow-auto whitespace-pre bg-well p-2 font-mono text-[15px] text-dim">
+                      <pre className="max-h-96 overflow-auto whitespace-pre bg-well p-2 font-mono text-[12.5px] text-dim">
                         {openDiff.text}
                       </pre>
                     </div>
@@ -2358,11 +1995,11 @@ export function CardDetail({
 
               {proposals.length === 0 ? null : (
                 <div className="section">
-                  <h4 className="section-label">Worth making a rule ({proposals.length})</h4>
+                  <h4 className="mb-1 eyebrow">Worth making a rule ({proposals.length})</h4>
                   {/* Proposals, never applied on their own. An entry becoming a
                     rule without a human reading it would let the ledger
                     constrain the agent by itself, which doc 12 never allows. */}
-                  <ul className="flex flex-col gap-2 text-[15px]">
+                  <ul className="flex flex-col gap-2 text-[12.5px]">
                     {proposals.map((proposal) => (
                       <li key={proposal.entryId} className="border-l-2 border-line pl-2">
                         <div className="text-ink">{proposal.statement}</div>
@@ -2409,7 +2046,7 @@ export function CardDetail({
               {(detail.contradictions ?? []).length === 0 ? null : (
                 <div className="section">
                   <h4 className="mb-1 eyebrow text-danger">Runs into a project rule</h4>
-                  <ul className="flex flex-col gap-1 text-[15px]">
+                  <ul className="flex flex-col gap-1 text-[12.5px]">
                     {(detail.contradictions ?? []).map((entry) => (
                       <li key={`${entry.invariant}-${entry.conflict}`} className="text-dim">
                         {/* Scope is a claim about where the work will happen. A
@@ -2426,12 +2063,12 @@ export function CardDetail({
 
               {(detail.blastRadius?.paths ?? []).length === 0 ? null : (
                 <div className="section">
-                  <h4 className="section-label">Cards like this touched</h4>
+                  <h4 className="mb-1 eyebrow">Cards like this touched</h4>
                   {/* A guess from similar wording, said as one. 'These files'
                     invites acceptance; 'these files, because these cards
                     touched them' invites checking, which is what an operator
                     should do with a guess. */}
-                  <ul className="flex flex-col gap-0.5 text-[15px]">
+                  <ul className="flex flex-col gap-0.5 text-[12.5px]">
                     {(detail.blastRadius?.paths ?? []).slice(0, 8).map((entry) => (
                       <li key={entry.path} className="text-dim">
                         <span className="text-ink">{entry.path}</span> · {entry.cards} card(s)
@@ -2447,8 +2084,8 @@ export function CardDetail({
 
               {(detail.subsystems ?? []).length === 0 ? null : (
                 <div className="section">
-                  <h4 className="section-label">Touched</h4>
-                  <ul className="flex flex-col gap-0.5 text-[15px]">
+                  <h4 className="mb-1 eyebrow">Touched</h4>
+                  <ul className="flex flex-col gap-0.5 text-[12.5px]">
                     {(detail.subsystems ?? []).map((entry) => (
                       <li key={entry.subsystem} className="text-dim">
                         <span className="text-ink">{entry.subsystem}</span> · {entry.paths} file(s)
@@ -2470,10 +2107,10 @@ export function CardDetail({
 
               {(detail.relatedCards ?? []).length === 0 ? null : (
                 <div className="section">
-                  <h4 className="section-label">Also worked here</h4>
+                  <h4 className="mb-1 eyebrow">Also worked here</h4>
                   {/* The point of the map: whatever an earlier card learned about
                     these files was learned the expensive way. */}
-                  <ul className="flex flex-col gap-0.5 text-[15px]">
+                  <ul className="flex flex-col gap-0.5 text-[12.5px]">
                     {(detail.relatedCards ?? []).map((related) => (
                       <li key={related.cardId} className="text-dim">
                         <span className="text-ink">{related.title}</span> · {related.shared.length}{' '}
@@ -2486,7 +2123,7 @@ export function CardDetail({
 
               {detail.realityNotes.length > 0 ? (
                 <div className="section">
-                  <h4 className="section-label">Claim versus reality</h4>
+                  <h4 className="mb-1 eyebrow">Claim versus reality</h4>
                   {detail.realityNotes.map((note) => (
                     <p key={note} className="text-dim">
                       {note}
@@ -2509,14 +2146,14 @@ export function CardDetail({
                   <span className="eyebrow mr-1 whitespace-nowrap">Export</span>
                   <button
                     type="button"
-                    className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[15px] text-dim transition-colors hover:bg-well hover:text-ink"
+                    className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
                     onClick={() => void copyMarkdown()}
                   >
                     <Copy size={13} aria-hidden />
                     <span className="whitespace-nowrap">{copied ? 'Copied' : 'Copy markdown'}</span>
                   </button>
                   <a
-                    className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[15px] text-dim transition-colors hover:bg-well hover:text-ink"
+                    className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
                     href={`/api/cards/${cardId}/brief.md`}
                     download
                   >
@@ -2541,45 +2178,44 @@ export function CardDetail({
             <SectionFlow>
               {detail.runs.length === 0 ? (
                 <div className="section">
-                  <h4 className="section-label">Nothing to review</h4>
+                  <h4 className="mb-1 eyebrow">Nothing to review</h4>
                   <p className="text-dim">
                     Nothing has been dispatched against this card, so there is no run to read.
                   </p>
                 </div>
               ) : (
-                <ul className="mb-3 text-[15px]">
+                <ul className="mb-3 flex flex-col gap-2 text-[12.5px]">
                   {detail.runs.map((run) => {
                     const ended = endedNote(run);
                     return (
-                      <li key={run.runId} className="run">
-                        <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-                          <span className="run-id">{run.sessionId.slice(0, 8)}</span>
-                          <span className="text-[13.5px] text-faint">
+                      <li key={run.runId} className="border-l-2 border-line pl-2">
+                        <div className="text-ink">
+                          {run.sessionId.slice(0, 8)}
+                          <span className="ml-1.5 text-dim">
                             {run.mode}
                             {run.runId === latest?.runId ? ' · latest' : ''}
                           </span>
-                          {/* How it ended, beside the identity rather than four
-                              lines below it. It is the one thing a person scans
-                              a run list for. */}
-                          <span className={`text-[13.5px] ${ended.tone}`}>{ended.text}</span>
-                          <button
-                            type="button"
-                            className="ml-auto text-[13.5px] text-brand hover:underline"
-                            onClick={() => setTimelineRunId(run.runId)}
-                          >
-                            timeline
-                          </button>
                         </div>
-
-                        <div className="readout">
-                          <span>{new Date(run.startedAt).toLocaleString()}</span>
-                          <span>{run.events} events</span>
-                          {/* Silent when nothing was recorded. A run with no
-                              usage and a run that cost nothing are different
-                              facts, and "0 tokens" would state the second. */}
-                          {run.cost === null ? null : <span>{run.cost.summary}</span>}
-                          {run.goalOutcome === null ? null : <span>goal {run.goalOutcome}</span>}
+                        <div className="text-dim">
+                          {new Date(run.startedAt).toLocaleString()} · {run.events} events
                         </div>
+                        {/* Silent when nothing was recorded. A run with no usage
+                          and a run that cost nothing are different facts, and
+                          printing "0 tokens" would state the second. */}
+                        {run.cost === null ? null : (
+                          <div className="text-dim">{run.cost.summary}</div>
+                        )}
+                        <div className={ended.tone}>{ended.text}</div>
+                        {run.goalOutcome === null ? null : (
+                          <div className="text-dim">goal: {run.goalOutcome}</div>
+                        )}
+                        <button
+                          type="button"
+                          className="text-info hover:underline"
+                          onClick={() => setTimelineRunId(run.runId)}
+                        >
+                          timeline
+                        </button>
                       </li>
                     );
                   })}
@@ -2588,11 +2224,11 @@ export function CardDetail({
 
               {subagents.length === 0 ? null : (
                 <div className="section">
-                  <h4 className="section-label">Subagents ({subagents.length})</h4>
+                  <h4 className="mb-1 eyebrow">Subagents ({subagents.length})</h4>
                   {/* Shown as work in its own right. A subagent's context is
                     discarded when it stops, so these files would otherwise
                     appear in the blast radius with nothing accounting for them. */}
-                  <ul className="flex flex-col gap-3 text-[15px]">
+                  <ul className="flex flex-col gap-3 text-[12.5px]">
                     {subagents.map((agent) => (
                       <li key={agent.agentId} className="border-l-2 border-info/40 pl-2">
                         <div className="text-ink">
@@ -2624,45 +2260,35 @@ export function CardDetail({
               {/* The close-out. Everything the operator needs in order to decide
                 is above; this is the decision, named rather than implied. */}
               <div className="section">
-                <h4 className="section-label">Review and close</h4>
+                <h4 className="mb-1 eyebrow">Review and close</h4>
 
                 {detail.card.mergedAt !== null ? (
-                  <p className="mb-2 text-[15px] text-ok">
+                  <p className="mb-2 text-[12.5px] text-ok">
                     Merged into {detail.card.mergedInto ?? 'the target branch'} from{' '}
                     {detail.card.mergedBranch ?? 'its branch'} on{' '}
                     {new Date(detail.card.mergedAt).toLocaleString()}.
                   </p>
                 ) : detail.workspace === null ? (
-                  <p className="text-[15px] text-dim">
+                  <p className="text-[12.5px] text-dim">
                     No worktree, and the board has not merged this card. If it is finished, the work
                     reached the target some other way.
                   </p>
                 ) : (
-                  <div className="mb-2">
-                    {/* Branch, worktree and what git says about them: all of it
-                        the machine's, so all of it in the machine's face. */}
-                    <div className="font-mono text-[15px] text-ink">{detail.workspace.branch}</div>
-                    <div className="readout">
-                      <span className="truncate" title={detail.workspace.worktree}>
-                        {detail.workspace.worktree}
-                      </span>
-                    </div>
+                  <div className="mb-2 text-[12.5px]">
+                    <div className="text-ink">{detail.workspace.branch}</div>
+                    <div className="text-dim">{detail.workspace.worktree}</div>
                     {detail.workspace.git === null ? null : (
-                      <div
-                        className={`readout ${detail.workspace.git.dirty > 0 ? 'text-danger' : ''}`}
-                      >
-                        <span>{detail.workspace.git.ahead} ahead</span>
-                        <span>
-                          {detail.workspace.git.dirty > 0
-                            ? `${detail.workspace.git.dirty} uncommitted, which would not be merged`
-                            : 'working tree clean'}
-                        </span>
+                      <div className={detail.workspace.git.dirty > 0 ? 'text-danger' : 'text-dim'}>
+                        {detail.workspace.git.ahead} commit(s) ahead
+                        {detail.workspace.git.dirty > 0
+                          ? `, ${detail.workspace.git.dirty} uncommitted change(s) - these would not be merged`
+                          : ', working tree clean'}
                       </div>
                     )}
                   </div>
                 )}
 
-                <div className="actions">
+                <div className="flex flex-wrap gap-2">
                   {detail.workspace === null ||
                   detail.card.mergedAt !== null ? null : conflicted ? (
                     /* A conflict is the ordinary cost of two agents working in
@@ -2670,7 +2296,7 @@ export function CardDetail({
                      doing the work rather than reporting that it is needed. */
                     <button
                       type="button"
-                      className="action action-primary disabled:opacity-40"
+                      className="rounded border border-brand/60 px-2 py-0.5 text-[12.5px] text-brand hover:bg-brand/10 disabled:opacity-40"
                       disabled={merging}
                       title={
                         'Resolves the conflict, commits the merge, and runs the verify command. ' +
@@ -2683,7 +2309,7 @@ export function CardDetail({
                   ) : (
                     <button
                       type="button"
-                      className="action action-primary disabled:opacity-40"
+                      className="rounded border border-ok/50 px-2 py-0.5 text-[12.5px] text-ok hover:bg-ok/10 disabled:opacity-40"
                       // Disabled rather than left to fail. The gate refuses this
                       // request anyway, and a button that looks available and
                       // answers 409 teaches the operator that the board is
@@ -2710,7 +2336,7 @@ export function CardDetail({
 
                   <button
                     type="button"
-                    className="action"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
                     title="Marks the card finished without merging anything. Use when the work landed another way, or was not needed."
                     onClick={() => patch({ status: 'done' })}
                   >
@@ -2720,7 +2346,7 @@ export function CardDetail({
                   {detail.card.status === 'idle' ? null : (
                     <button
                       type="button"
-                      className="action action-quiet"
+                      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
                       title="Back to idle, which is the only status the queue will dispatch."
                       onClick={() => patch({ status: 'idle' })}
                     >
@@ -2731,7 +2357,7 @@ export function CardDetail({
 
                 {mergeReport === null ? null : (
                   <pre
-                    className={`mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-[13.5px] ${
+                    className={`mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-[11.5px] ${
                       mergeReport.clean ? 'text-ok' : 'text-danger'
                     }`}
                   >
@@ -2740,7 +2366,7 @@ export function CardDetail({
                 )}
 
                 {resolution === null ? null : (
-                  <p className="mt-2 text-[13.5px] leading-snug text-dim">{resolution}</p>
+                  <p className="mt-2 text-[11.5px] leading-snug text-dim">{resolution}</p>
                 )}
               </div>
             </SectionFlow>
