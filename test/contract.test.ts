@@ -79,8 +79,37 @@ describe('the route inventory', () => {
     // Not an exact number: this is a tripwire, not a specification. A route
     // added without a thought about its shape trips it, and the fix is either
     // a contract assertion below or a raised bound with a reason.
+    //
+    // Raised from 60 on 28 August 2026, with both reasons. Two routes crossed
+    // it in the same afternoon - `dispatch-standing`, which says why a card
+    // cannot run, and `runs/:runId/adopt`, which turns an unclaimed session
+    // into a card now that the board no longer does it unasked (#160). Both
+    // have their shape asserted below, which is the half of the fix that costs
+    // something; raising the bound alone would have been the half that does
+    // not.
     expect(routes).toBeGreaterThan(30);
-    expect(routes).toBeLessThan(60);
+    expect(routes).toBeLessThan(75);
+  });
+});
+
+describe('the routes that tripped the inventory', () => {
+  it('says why each card cannot run, in a shape the tile can switch on', async () => {
+    const standing = (await shapeAt(`/api/boards/${BOARD}/dispatch-standing`)) as unknown[];
+    expect(keysAt(standing[0])).toEqual(['id', 'offer', 'reason']);
+  });
+
+  it('adopts a run into a card, and answers with the card', async () => {
+    // No such run, so this asserts the refusal rather than the card: a route
+    // that invented one would be worse than a 404, and the adopt path exists
+    // precisely because the board stopped inventing cards.
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/runs/never-seen/adopt',
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(keysAt(shapeOf(response.json()))).toEqual(['code', 'error']);
   });
 });
 
