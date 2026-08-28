@@ -92,6 +92,7 @@ function ColumnView({
   column,
   cards,
   runnable,
+  whyNotRunnable,
   collapsed,
   onToggle,
   onOpen,
@@ -101,6 +102,7 @@ function ColumnView({
   column: Column;
   cards: Card[];
   runnable: ReadonlySet<string>;
+  whyNotRunnable: ReadonlyMap<string, string>;
   collapsed: boolean;
   onToggle: (columnId: string) => void;
   onOpen: (card: Card) => void;
@@ -246,6 +248,7 @@ function ColumnView({
               card={card}
               unseen={unseenSince(card)}
               runnable={runnable.has(card.id)}
+              whyNotRunnable={whyNotRunnable.get(card.id) ?? null}
               terminal={column.isTerminal}
               onOpen={onOpen}
               onRun={onRun}
@@ -279,6 +282,10 @@ export function Board(): ReactElement {
   const [comparing, setComparing] = useState<readonly string[] | null>(null);
   const [activityOpen, setActivityOpen] = useState(false);
   const [runnable, setRunnable] = useState<ReadonlySet<string>>(new Set());
+  // Why the cards that are not runnable are not runnable. Held beside the set
+  // rather than derived from it: the set says no, and this says which of the
+  // four rules said it.
+  const [whyNotRunnable, setWhyNotRunnable] = useState<ReadonlyMap<string, string>>(new Map());
 
   const load = useCallback(async () => {
     try {
@@ -293,19 +300,30 @@ export function Board(): ReactElement {
       // Read once the board is known, because what is folded is per board.
       setCollapsed(loadCollapsed(window.localStorage, first.id));
 
-      const [nextColumns, nextCards, state, eligible] = await Promise.all([
+      const [nextColumns, nextCards, state, eligible, standing] = await Promise.all([
         api.columns(first.id),
         api.cards(first.id),
         api.dispatchState(first.id),
         // Eligibility is the server's rule - ready column, idle, unblocked -
         // so the button cannot disagree with what dispatch would actually do.
         api.dispatchable(first.id),
+        api.dispatchStanding(first.id),
       ]);
 
       setColumns(nextColumns);
       setCards(nextCards);
       setDispatch(state);
       setRunnable(new Set(eligible.map((card) => card.id)));
+      // Only the cards that should carry a control and cannot use it. A card
+      // in a terminal column is absent from this map and from the set, which
+      // is how the tile knows to draw nothing at all.
+      setWhyNotRunnable(
+        new Map(
+          standing
+            .filter((entry) => entry.offer && entry.reason !== null)
+            .map((entry) => [entry.id, entry.reason as string]),
+        ),
+      );
       setError(null);
     } catch (cause) {
       setError((cause as Error).message);
@@ -693,6 +711,7 @@ export function Board(): ReactElement {
                   column={column}
                   cards={byColumn.get(column.id) ?? []}
                   runnable={runnable}
+                  whyNotRunnable={whyNotRunnable}
                   collapsed={collapsed.has(column.id)}
                   onToggle={(columnId) => {
                     const next = toggle(collapsed, columnId);

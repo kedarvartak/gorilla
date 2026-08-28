@@ -34,18 +34,33 @@ using the Claude Code CLI.
 
 ## Run it
 
-```
+```bash
 npm install
-npm run build
-node dist/cli/index.js init
-node dist/cli/index.js serve
+npm start
 ```
 
 Open **http://127.0.0.1:4300**.
 
-`init` installs the Claude Code hooks for the current project. `serve` starts the
-local board. Planning and claiming can be done from Claude Code with
-`/gorilla:plan` and `/gorilla:claim`.
+`npm start` builds and serves. It builds every time on purpose: the board is
+served from `dist`, and a `dist` older than the source is the failure this
+project has hit twice - the interface calls routes the running server was never
+compiled with, every one of them answers 404, and the board looks healthy
+throughout.
+
+Once, per project, to install the Claude Code hooks:
+
+```bash
+npm run build && node dist/cli/index.js init
+```
+
+To serve on another port, or to pass any other flag:
+
+```bash
+node dist/cli/index.js serve --port 4301
+```
+
+Planning and claiming are done from Claude Code with `/gorilla:plan` and
+`/gorilla:claim`.
 
 ## Development
 
