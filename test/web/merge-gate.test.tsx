@@ -91,6 +91,22 @@ async function render(): Promise<void> {
   await act(async () => {
     await Promise.resolve();
   });
+  await openPane('review');
+}
+
+/**
+ * Opens one of the card's tabs.
+ *
+ * The card opens on its brief and the tabs filter, so a pane's content is not
+ * in the document until it is chosen. These tests used to read it straight off
+ * `container` because every group rendered at once.
+ */
+async function openPane(pane: string): Promise<void> {
+  const tab = container.querySelector<HTMLButtonElement>(`#tab-${pane}`);
+  if (tab === null) throw new Error(`No "${pane}" tab to open.`);
+  await act(async () => {
+    tab.click();
+  });
 }
 
 function mergeButton(): HTMLButtonElement | undefined {
@@ -127,6 +143,10 @@ describe('when something has not been read', () => {
     respondWith([SURPRISE]);
     await render();
 
+    // The explanation is a finding, so it is on the brief - the review pane
+    // holds the button and a route to here.
+    await openPane('brief');
+
     expect(container.textContent).toContain('Merge is blocked');
     expect(container.textContent).toContain('the exporter is only called from the CLI');
     // The accept control is the way through. Without it this is a wall.
@@ -138,6 +158,8 @@ describe('when something has not been read', () => {
   it('admits the gate is not a lock on the repository', async () => {
     respondWith([SURPRISE]);
     await render();
+
+    await openPane('brief');
 
     // Claiming a guarantee the board cannot keep is the R10 failure aimed at
     // ourselves: the first terminal merge would betray the trust.

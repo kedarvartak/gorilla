@@ -97,6 +97,22 @@ async function render(): Promise<void> {
   await act(async () => {
     await Promise.resolve();
   });
+  await openPane('thinking');
+}
+
+/**
+ * Opens one of the card's tabs.
+ *
+ * The card opens on its brief and the tabs filter, so a pane's content is not
+ * in the document until it is chosen. These tests used to read it straight off
+ * `container` because every group rendered at once.
+ */
+async function openPane(pane: string): Promise<void> {
+  const tab = container.querySelector<HTMLButtonElement>(`#tab-${pane}`);
+  if (tab === null) throw new Error(`No "${pane}" tab to open.`);
+  await act(async () => {
+    tab.click();
+  });
 }
 
 beforeEach(() => {
