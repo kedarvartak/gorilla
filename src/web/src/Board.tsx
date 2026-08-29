@@ -38,6 +38,19 @@ import {
   type SearchHit,
 } from './api.js';
 import { CardDetail } from './CardDetail.js';
+import { Select, type SelectOption } from './Select.js';
+
+/**
+ * Priority, as a consequence rather than a word.
+ *
+ * "High" and "low" say where a card sits; what an operator wants to know is
+ * what that does to the queue, which is the sentence the tooltip used to hold.
+ */
+const PRIORITIES: readonly SelectOption[] = [
+  { value: 'high', label: 'High', hint: 'Dispatched before the rest of its column.' },
+  { value: 'normal', label: 'Normal', hint: 'Dispatched in board order.' },
+  { value: 'low', label: 'Low', hint: 'Dispatched after the rest of its column.' },
+];
 import { Plan } from './Plan.js';
 import { Metrics } from './Metrics.js';
 import { Compare } from './Compare.js';
@@ -713,56 +726,71 @@ export function Board(): ReactElement {
           {/* How the queue behaves, grouped as one control rather than three
               labelled fields spread across the bar. */}
           <div className="ml-auto flex items-center gap-1 rounded-md border border-line bg-surface p-0.5">
-            <select
-              className="rounded-sm bg-transparent px-1.5 py-1 text-dim focus:text-ink"
-              aria-label="Dispatch mode"
-              title="Manual holds the queue. Automatic starts the next card itself."
+            <Select
+              variant="bare"
+              label="Dispatch mode"
               value={dispatch?.mode ?? 'manual'}
-              onChange={(changed) => {
+              options={[
+                { value: 'manual', label: 'Manual', hint: 'Holds the queue.' },
+                {
+                  value: 'automatic',
+                  label: 'Automatic',
+                  hint: 'Starts the next card itself.',
+                },
+              ]}
+              onChange={(mode) => {
                 void api
-                  .setDispatch(board.id, { mode: changed.target.value })
+                  .setDispatch(board.id, { mode })
                   .then(setDispatch)
                   .catch((cause: Error) => setError(cause.message));
               }}
-            >
-              <option value="manual">Manual</option>
-              <option value="automatic">Automatic</option>
-            </select>
+            />
             <span className="h-4 w-px bg-line" aria-hidden />
-            <select
-              className="rounded-sm bg-transparent px-1.5 py-1 text-dim focus:text-ink"
-              aria-label="Review policy"
-              title="Review stops the queue after every card. Unattended collects them for the morning."
+            <Select
+              variant="bare"
+              label="Review policy"
               value={dispatch?.policy ?? 'review'}
-              onChange={(changed) => {
+              options={[
+                {
+                  value: 'review',
+                  label: 'Review each',
+                  hint: 'Stops the queue after every card.',
+                },
+                {
+                  value: 'unattended',
+                  label: 'Unattended',
+                  hint: 'Collects them for the morning.',
+                },
+              ]}
+              onChange={(policy) => {
                 void api
-                  .setDispatch(board.id, { policy: changed.target.value })
+                  .setDispatch(board.id, { policy })
                   .then(setDispatch)
                   .catch((cause: Error) => setError(cause.message));
               }}
-            >
-              <option value="review">Review each</option>
-              <option value="unattended">Unattended</option>
-            </select>
+            />
             <span className="h-4 w-px bg-line" aria-hidden />
-            <select
-              className="rounded-sm bg-transparent px-1.5 py-1 text-dim focus:text-ink"
-              aria-label="Agents at once"
+            <Select
+              variant="bare"
+              label="Agents at once"
               title="How many cards this board runs at the same time."
-              value={dispatch?.concurrency ?? 1}
-              onChange={(changed) => {
+              value={String(dispatch?.concurrency ?? 1)}
+              options={[1, 2, 3, 4, 6].map((n) => ({
+                value: String(n),
+                label: `${String(n)} agent${n === 1 ? '' : 's'}`,
+                // Only where the number stops meaning what it looks like it
+                // means. Labelling every row "runs N at a time" is noise.
+                ...(n === 1
+                  ? { hint: 'One card at a time, in queue order.' }
+                  : { hint: `${String(n)} worktrees, ${String(n)} cards in flight.` }),
+              }))}
+              onChange={(concurrency) => {
                 void api
-                  .setDispatch(board.id, { concurrency: Number(changed.target.value) })
+                  .setDispatch(board.id, { concurrency: Number(concurrency) })
                   .then(setDispatch)
                   .catch((cause: Error) => setError(cause.message));
               }}
-            >
-              {[1, 2, 3, 4, 6].map((n) => (
-                <option key={n} value={n}>
-                  {n} agent{n === 1 ? '' : 's'}
-                </option>
-              ))}
-            </select>
+            />
           </div>
 
           {/* The composer. One cluster, so adding a card reads as one action
@@ -782,17 +810,14 @@ export function Board(): ReactElement {
           </button>
 
           <div className="flex items-center rounded-md border border-line bg-surface">
-            <select
-              className="rounded-l-md bg-transparent py-1.5 pl-2 pr-1 text-dim focus:text-ink"
+            <Select
+              variant="bare"
+              className="rounded-r-none"
+              label="Priority for the new card"
               value={newPriority}
-              aria-label="Priority for the new card"
-              title="High and low reorder the dispatch queue within a column."
-              onChange={(changed) => setNewPriority(changed.target.value as Card['priority'])}
-            >
-              <option value="high">High</option>
-              <option value="normal">Normal</option>
-              <option value="low">Low</option>
-            </select>
+              options={PRIORITIES}
+              onChange={(priority) => setNewPriority(priority as Card['priority'])}
+            />
             <input
               className="w-52 bg-transparent px-2 py-1.5 text-ink placeholder:text-faint"
               placeholder="New card"

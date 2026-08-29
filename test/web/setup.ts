@@ -33,3 +33,20 @@ if (!('ResizeObserver' in globalThis)) {
     disconnect(): void {}
   } as unknown as typeof ResizeObserver;
 }
+
+/**
+ * jsdom has no `scrollIntoView` either, and the dropdown calls it to keep the
+ * row the arrow keys are on inside its own box.
+ *
+ * Same reasoning as above: with no layout there is no scrolling to do, and the
+ * only thing its absence achieves is a `TypeError` in the middle of a keyboard
+ * test.
+ */
+/* Guarded on `Element` itself, like the observer above is on its constructor.
+   This file is the setup for every test in the repository, and the server ones
+   run in node, where there is no `Element` to reach through. */
+if (typeof Element !== 'undefined' && typeof Element.prototype.scrollIntoView !== 'function') {
+  Element.prototype.scrollIntoView = function scrollIntoView(): void {
+    /* nothing in jsdom scrolls */
+  };
+}

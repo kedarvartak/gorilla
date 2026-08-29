@@ -4,6 +4,7 @@ import {
   isValidElement,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -11,6 +12,7 @@ import {
   type ReactNode,
 } from 'react';
 
+import { Select, type SelectOption } from './Select.js';
 import { Timeline } from './Timeline.js';
 
 import {
@@ -355,6 +357,17 @@ function asList(raw: string): string[] {
 }
 
 /**
+ * As tall as a field is allowed to grow before it starts scrolling after all.
+ *
+ * About twenty lines. Measured against the board rather than guessed: the
+ * longest goal condition on it wants 414 pixels, so a cap under that would
+ * leave the one field most worth reading in full still scrolling. Past this a
+ * value is a scope list of thirty paths, and a box that kept growing would
+ * push the rest of the card's settings off the screen to show it.
+ */
+const MAX_FIELD_PX = 440;
+
+/**
  * One editable field, saved on blur or Enter rather than per keystroke.
  *
  * Per-keystroke saving would write a partial goal condition to the card, and a
@@ -378,11 +391,61 @@ function TextField({
 }): ReactElement {
   const [draft, setDraft] = useState(value);
   const [editing, setEditing] = useState(false);
+  const box = useRef<HTMLTextAreaElement>(null);
 
   // Reset when the stored value changes underneath - another tab, or a run.
   useEffect(() => {
     if (!editing) setDraft(value);
   }, [value, editing]);
+
+  /**
+   * The field is as tall as what is in it.
+   *
+   * It was one row. A goal condition is a sentence, a scope is a list of paths
+   * and a verify is a command with four clauses joined by `&&`, so every one of
+   * these was a one-line porthole onto a paragraph: to read the value you
+   * scrolled it, and scrolling it took the beginning of the value out of view.
+   * The operator could not see what the card would actually run without
+   * dragging the corner of each box in turn.
+   *
+   * Reset to `auto` before reading `scrollHeight`, or the measurement is taken
+   * against the height already set and the box can only ever grow.
+   */
+  useLayoutEffect(() => {
+    const node = box.current;
+    if (node === null) return;
+
+    const fit = (): void => {
+      node.style.height = 'auto';
+      node.style.height = `${String(Math.min(node.scrollHeight, MAX_FIELD_PX))}px`;
+    };
+
+    fit();
+
+    /*
+     * And again whenever the box changes width.
+     *
+     * The height is a function of the width, and the width moves: the section
+     * these sit in takes two columns when the pane is wide enough, so the same
+     * goal condition is fourteen lines in one column and six in two. Fitted
+     * only on edit, the field kept the height it was first measured at and the
+     * section stayed as tall as it had been when it was half as wide - which
+     * is the whole of what widening it was supposed to fix.
+     */
+    if (typeof ResizeObserver === 'undefined') return;
+    let width = node.clientWidth;
+    const observer = new ResizeObserver(() => {
+      // Width only. Observing height would see the height this sets and fit
+      // against its own output.
+      if (node.clientWidth === width) return;
+      width = node.clientWidth;
+      fit();
+    });
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+    };
+  }, [draft]);
 
   const commit = (): void => {
     setEditing(false);
@@ -392,8 +455,9 @@ function TextField({
   return (
     <>
       <textarea
-        className={`w-full resize-y rounded-md border bg-well px-2 py-1 text-[13px] text-ink placeholder:text-dim ${
-          invalid ? 'border-danger/60' : 'border-line'
+        ref={box}
+        className={`field w-full resize-none overflow-y-auto leading-snug placeholder:text-dim ${
+          invalid ? 'border-danger/60' : ''
         }`}
         rows={1}
         value={draft}
@@ -417,18 +481,19 @@ function TextField({
         }}
       />
       {invalid && invalidNote !== undefined && !editing ? (
-        <div className="text-[11.5px] text-danger">{invalidNote}</div>
+        <div className="t-fine text-danger">{invalidNote}</div>
       ) : null}
     </>
   );
 }
 
-/** One labelled select over a nullable card field, saving on change. */
+/** One labelled dropdown over a nullable card field, saving on change. */
 function FieldSelect({
   label,
   value,
   options,
   title,
+  hints,
   neutralLabel = 'board default',
   onPick,
 }: {
@@ -436,35 +501,43 @@ function FieldSelect({
   value: string | null;
   options: readonly string[];
   title: string;
+  /** What choosing an option does, for the fields where that is not obvious.
+   *  Model and effort lists are model names and need no gloss. */
+  hints?: Readonly<Record<string, string>>;
   /** What "unset" means for this field; not every field defers to the board. */
   neutralLabel?: string;
   onPick: (value: string | null) => void;
 }): ReactElement {
+  /* A value set by /gorilla:plan or curl may not be in the list. Carrying it
+     is the difference between an honest control and one that lies about what
+     the card will actually run. */
+  const offList = value !== null && !options.includes(value) ? [value] : [];
+
+  const choices: SelectOption[] = [
+    { value: '', label: neutralLabel, ...(hints?.[''] === undefined ? {} : { hint: hints[''] }) },
+    ...[...options, ...offList].map((option) => ({
+      value: option,
+      label: option,
+      ...(hints?.[option] === undefined ? {} : { hint: hints[option] }),
+    })),
+  ];
+
   return (
     <>
-      <dt className="text-dim" title={title}>
+      {/* A line of padding, so a label sits on the first line of the field it
+          names rather than on the field's top edge. */}
+      <dt className="pt-1 text-dim" title={title}>
         {label}
       </dt>
       <dd>
-        <select
-          className="w-full rounded-md border border-line bg-well px-2 py-1 text-ink"
+        <Select
+          className="w-full"
+          label={label}
+          title={title}
           value={value ?? ''}
-          aria-label={label}
-          onChange={(changed) => onPick(changed.target.value === '' ? null : changed.target.value)}
-        >
-          <option value="">{neutralLabel}</option>
-          {options.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-          {/* A value set by /gorilla:plan or curl may not be in the list. Showing
-              it is the difference between an honest control and one that lies
-              about what the card will actually run. */}
-          {value !== null && !options.includes(value) ? (
-            <option value={value}>{value}</option>
-          ) : null}
-        </select>
+          options={choices}
+          onChange={(picked) => onPick(picked === '' ? null : picked)}
+        />
       </dd>
     </>
   );
@@ -504,6 +577,28 @@ function Rail({
  * between groups rather than as another section competing with the ones it
  * introduces. Carries the scroll target the tab bar jumps to.
  */
+/**
+ * How many columns a section takes.
+ *
+ * One by default. `full` is for content the measure works against - a diff, a
+ * context file - which cannot reflow into a column at all.
+ *
+ * Two is for the section that is simply long. A section is a fixed width and
+ * whatever height its content needs, so a section with a lot to say becomes a
+ * narrow ribbon: the card's settings ran to 934 pixels in a 393-pixel column
+ * and set the scroll length of the whole pane on their own, while two columns
+ * beside them ended at 267 and stayed blank for the rest of the way down. Made
+ * twice as wide, the same content is about half as tall, and the space it was
+ * leaving beside itself is the space it now occupies.
+ */
+type Tracks = 1 | 2 | 'full';
+
+function tracksFor(node: Element | null | undefined): Tracks {
+  if (node?.classList.contains('section--wide') === true) return 'full';
+  if (node?.classList.contains('section--pair') === true) return 2;
+  return 1;
+}
+
 /** The row unit the spans are counted in. Matches `grid-auto-rows` in index.css. */
 const ROW_PX = 4;
 /** The gap between sections, added to each span so it does not need a row-gap. */
@@ -526,12 +621,15 @@ const SECTION_GAP_PX = 20;
 function SectionItem({
   children,
   column,
+  columns,
   onSpan,
 }: {
   children: ReactNode;
   /** The column the group assigned, or null before it has decided. */
   column: number | null;
-  onSpan: (span: number, wide: boolean) => void;
+  /** How many tracks the group has. A pair cannot be honoured in fewer. */
+  columns: number;
+  onSpan: (span: number, tracks: Tracks) => void;
 }): ReactElement {
   /**
    * Measured on the inner element, never on the outer one.
@@ -546,7 +644,7 @@ function SectionItem({
    */
   const inner = useRef<HTMLDivElement>(null);
   const [span, setSpan] = useState(1);
-  const [wide, setWide] = useState(false);
+  const [tracks, setTracks] = useState<Tracks>(1);
 
   useEffect(() => {
     const node = inner.current;
@@ -560,12 +658,16 @@ function SectionItem({
       // is the first thing anybody notices.
       const rows =
         height === 0 ? 1 : Math.max(1, Math.ceil((height + SECTION_GAP_PX) / ROW_PX) + 1);
-      const isWide = node.firstElementChild?.classList.contains('section--wide') ?? false;
+      // Capped at what the window actually gave us. Asked to span two tracks
+      // on a one-track grid, CSS invents a second one and the section hangs
+      // off the side of the pane.
+      const asked = tracksFor(node.firstElementChild);
+      const wanted: Tracks = asked === 2 && columns < 2 ? 1 : asked;
       setSpan(rows);
-      setWide(isWide);
+      setTracks(wanted);
       // Reported up as the natural span so the group can choose columns from
       // heights it knows before the browser has placed anything.
-      onSpan(rows, isWide);
+      onSpan(rows, wanted);
     };
 
     measure();
@@ -587,18 +689,23 @@ function SectionItem({
     return () => {
       observer.disconnect();
     };
-  }, [onSpan]);
+  }, [onSpan, columns]);
 
   return (
     <div
       className="min-w-0"
       style={{
         gridRowEnd: `span ${String(span)}`,
-        ...(wide
+        /* The width is known from the class before any placement happens, and
+           it has to be, or the section would be measured at one track's width
+           and then laid out at two - which is a span computed for a paragraph
+           that no longer exists. Only which column it starts in is the
+           packer's to decide. */
+        ...(tracks === 'full'
           ? { gridColumn: '1 / -1' }
           : column === null
-            ? {}
-            : { gridColumn: String(column) }),
+            ? { gridColumn: `span ${String(tracks)}` }
+            : { gridColumn: `${String(column)} / span ${String(tracks)}` }),
       }}
     >
       <div ref={inner} className="min-w-0">
@@ -620,20 +727,20 @@ function SectionFlow({ children }: { children: ReactNode }): ReactElement {
   const container = useRef<HTMLDivElement>(null);
   /** Natural spans, reported by each section once it has measured itself. */
   const [spans, setSpans] = useState<readonly (number | undefined)[]>([]);
-  const [wides, setWides] = useState<readonly boolean[]>([]);
+  const [widths, setWidths] = useState<readonly Tracks[]>([]);
   const [columns, setColumns] = useState(0);
 
-  const report = useCallback((index: number, span: number, wide: boolean): void => {
+  const report = useCallback((index: number, span: number, tracks: Tracks): void => {
     setSpans((current) => {
       if (current[index] === span) return current;
       const next = [...current];
       next[index] = span;
       return next;
     });
-    setWides((current) => {
-      if (current[index] === wide) return current;
+    setWidths((current) => {
+      if (current[index] === tracks) return current;
       const next = [...current];
-      next[index] = wide;
+      next[index] = tracks;
       return next;
     });
   }, []);
@@ -683,21 +790,70 @@ function SectionFlow({ children }: { children: ReactNode }): ReactElement {
     if (!ready) return items.map(() => null);
 
     const heights = new Array<number>(columns).fill(0);
+    const chosen = new Array<number | null>(items.length).fill(null);
 
-    return items.map((_, index) => {
+    /*
+     * Tallest first, not in reading order.
+     *
+     * Greedy packing is only as good as the order it is fed. Walking the DOM,
+     * the four short sections went down first and the tall one arrived last,
+     * to be dropped on top of whichever column happened to be shortest - which
+     * put a 706-pixel block under a 279-pixel one and made the pane 986 tall
+     * while two columns ended at 311 and stayed blank the rest of the way.
+     * Placed first, the same block starts at zero and the short sections fill
+     * in beside it: 706, and four columns that end within seventy pixels of
+     * each other.
+     *
+     * This is longest-processing-time scheduling, which is the standard
+     * approximation for exactly this problem and is within a third of optimal
+     * in the worst case. Reading order was already not preserved - see the
+     * shortest-first note below - so what it costs here is the order of the
+     * columns, and what it buys is a third off the length of the pane.
+     */
+    const order = items.map((_, index) => index).sort((a, b) => (spans[b] ?? 1) - (spans[a] ?? 1));
+
+    for (const index of order) {
       const span = spans[index] ?? 1;
+      const tracks = widths[index] ?? 1;
 
-      if (wides[index] === true) {
+      if (tracks === 'full') {
         const below = Math.max(...heights) + span;
         heights.fill(below);
-        return null;
+        continue;
+      }
+
+      if (tracks === 2) {
+        /*
+         * Into the adjacent pair that is currently shortest.
+         *
+         * A two-track section has to start somewhere it can also finish, so
+         * the choice is over pairs rather than columns, and the cost of a pair
+         * is its taller half - both of its columns resume underneath it.
+         */
+        let best = 0;
+        let bestCost = Infinity;
+        for (let start = 0; start + 1 < columns; start += 1) {
+          const cost = Math.max(heights[start] ?? 0, heights[start + 1] ?? 0);
+          if (cost < bestCost) {
+            bestCost = cost;
+            best = start;
+          }
+        }
+
+        const below = bestCost + span;
+        heights[best] = below;
+        heights[best + 1] = below;
+        chosen[index] = best + 1;
+        continue;
       }
 
       const shortest = heights.indexOf(Math.min(...heights));
       heights[shortest] = (heights[shortest] ?? 0) + span;
-      return shortest + 1;
-    });
-  }, [columns, spans, wides, items.length]);
+      chosen[index] = shortest + 1;
+    }
+
+    return chosen;
+  }, [columns, spans, widths, items.length]);
 
   return (
     <div className="sections" ref={container}>
@@ -705,8 +861,9 @@ function SectionFlow({ children }: { children: ReactNode }): ReactElement {
         <SectionItem
           key={isValidElement(child) && child.key !== null ? child.key : index}
           column={placement[index] ?? null}
-          onSpan={(span, wide) => {
-            report(index, span, wide);
+          columns={columns}
+          onSpan={(span, tracks) => {
+            report(index, span, tracks);
           }}
         >
           {child}
@@ -818,9 +975,7 @@ function Narration({
           bottom looking for reasoning that was never handed over has already
           concluded the feature is broken. */}
       {narration.note === null ? null : (
-        <p className="mb-2 border-l-2 border-attention pl-2 text-[12.5px] text-dim">
-          {narration.note}
-        </p>
+        <p className="mb-2 border-l-2 border-attention pl-2 t-small text-dim">{narration.note}</p>
       )}
 
       {shown === 0 ? (
@@ -834,7 +989,7 @@ function Narration({
           {hidden > 0 ? (
             <button
               type="button"
-              className="mb-2 text-[12.5px] text-info hover:underline"
+              className="mb-2 t-small text-info hover:underline"
               onClick={onMore}
             >
               {`Show earlier — ${String(hidden)} of ${String(narration.total)} not shown`}
@@ -855,7 +1010,7 @@ function Narration({
       )}
 
       {limit >= 5_000 && hidden > 0 ? (
-        <p className="mt-2 text-[12.5px] text-faint">
+        <p className="mt-2 t-small text-faint">
           This is as far back as one request goes. The rest is in the transcript on disk.
         </p>
       ) : null}
@@ -867,7 +1022,7 @@ function Narration({
 function NarrationLine({ entry }: { entry: NarrationEntry }): ReactElement {
   if (entry.kind === 'did') {
     return (
-      <div className="flex items-baseline gap-2 text-[12.5px]">
+      <div className="flex items-baseline gap-2 t-small">
         <span className="shrink-0 font-mono text-faint">did</span>
         <span className="font-mono text-ink">{entry.tool ?? 'tool'}</span>
         {entry.text === '' ? null : (
@@ -886,7 +1041,7 @@ function NarrationLine({ entry }: { entry: NarrationEntry }): ReactElement {
       // than as the main column of text.
       <div className="border-l-2 border-line pl-2.5">
         <div className="eyebrow mb-0.5 text-faint">thinking</div>
-        <p className="whitespace-pre-wrap text-[12.5px] leading-[1.5] text-dim">{entry.text}</p>
+        <p className="whitespace-pre-wrap t-small leading-[1.5] text-dim">{entry.text}</p>
       </div>
     );
   }
@@ -895,12 +1050,12 @@ function NarrationLine({ entry }: { entry: NarrationEntry }): ReactElement {
     return (
       <div className="rounded-md bg-well px-2.5 py-1.5">
         <div className="eyebrow mb-0.5 text-faint">asked</div>
-        <p className="whitespace-pre-wrap text-[12.5px] leading-[1.5] text-dim">{entry.text}</p>
+        <p className="whitespace-pre-wrap t-small leading-[1.5] text-dim">{entry.text}</p>
       </div>
     );
   }
 
-  return <p className="whitespace-pre-wrap text-[13px] leading-[1.55] text-ink">{entry.text}</p>;
+  return <p className="whitespace-pre-wrap t-small leading-[1.55] text-ink">{entry.text}</p>;
 }
 
 /** The four panes, in the order the tab bar shows them. */
@@ -922,7 +1077,7 @@ type Pane = 'brief' | 'specification' | 'thinking' | 'review';
  * of board left over is enough to keep the place.
  */
 const FLAP =
-  'absolute inset-x-0 bottom-0 z-30 flex flex-col overflow-hidden rounded-t-xl ' +
+  'flap absolute inset-x-0 bottom-0 z-30 flex flex-col overflow-hidden rounded-t-xl ' +
   'border-t border-line bg-surface shadow-[0_-10px_36px_rgba(0,0,0,0.22)]';
 
 export function CardDetail({
@@ -1293,7 +1448,7 @@ export function CardDetail({
         <button
           type="button"
           title="Close (Esc)"
-          className="-ml-1 inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
+          className="-ml-1 inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 t-small text-dim transition-colors hover:bg-well hover:text-ink"
           onClick={onClose}
         >
           <X size={13} aria-hidden />
@@ -1302,14 +1457,14 @@ export function CardDetail({
         <h2 className="min-w-0 truncate text-ink" title={detail.card.title}>
           {detail.card.title}
         </h2>
-        <span className="shrink-0 text-[12.5px] text-dim">{detail.card.status}</span>
+        <span className="shrink-0 t-small text-dim">{detail.card.status}</span>
         {/* Only on a card that stopped. Offering it on a running card would
             invite two runs in one worktree, and the server refuses that
             anyway - a button that returns 409 is worse than no button. */}
         {detail.card.status !== 'blocked' && detail.card.status !== 'abandoned' ? null : (
           <button
             type="button"
-            className="ml-auto rounded border border-line px-2 py-0.5 text-[12.5px] text-dim hover:text-ink"
+            className="ml-auto rounded border border-line px-2 py-0.5 t-small text-dim hover:text-ink"
             title="Sends the card back to the queue, keeping its worktree, with what you say about it."
             onClick={() => setRetrying(true)}
           >
@@ -1320,7 +1475,7 @@ export function CardDetail({
             there is no template store to keep - just this. */}
         <button
           type="button"
-          className={`${detail.card.status === 'blocked' || detail.card.status === 'abandoned' ? '' : 'ml-auto '}inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink`}
+          className={`${detail.card.status === 'blocked' || detail.card.status === 'abandoned' ? '' : 'ml-auto '}inline-flex items-center gap-1.5 rounded-md px-2 py-1 t-small text-dim transition-colors hover:bg-well hover:text-ink`}
           title="A new card with this one's body, guardrails, goal and model. Nothing that happened to this card comes with it."
           onClick={() => {
             void api.cloneCard(cardId).catch((cause: Error) => setError(cause.message));
@@ -1333,7 +1488,7 @@ export function CardDetail({
             judgements with it - the history this product exists to keep. */}
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 t-small text-dim transition-colors hover:bg-well hover:text-ink"
           title="Takes this off the board and out of the queue. Its runs, ledger and judgements stay."
           onClick={() => {
             void api
@@ -1386,7 +1541,7 @@ export function CardDetail({
           />
           <button
             type="button"
-            className="rounded border border-line px-2 py-1 text-[12.5px] text-ink hover:border-dim"
+            className="rounded border border-line px-2 py-1 t-small text-ink hover:border-dim"
             onClick={() => {
               void api
                 .retryCard(detail.card.boardId, cardId, retryNote.trim() === '' ? null : retryNote)
@@ -1401,7 +1556,7 @@ export function CardDetail({
           </button>
           <button
             type="button"
-            className="rounded border border-line px-2 py-1 text-[12.5px] text-dim hover:text-ink"
+            className="rounded border border-line px-2 py-1 t-small text-dim hover:text-ink"
             onClick={() => setRetrying(false)}
           >
             cancel
@@ -1467,7 +1622,7 @@ export function CardDetail({
                       were dispatched now. Not a record of what an earlier run received: the ledger,
                       the dependencies and the subsystem map all move.
                     </p>
-                    <p className="mb-3 text-[12.5px] text-faint">
+                    <p className="mb-3 t-small text-faint">
                       {`${String(agentContext.split('\n').length)} lines, ${String(agentContext.length)} characters. Sections: ${
                         agentContext
                           .split('\n')
@@ -1478,14 +1633,14 @@ export function CardDetail({
                     </p>
                     <button
                       type="button"
-                      className="rounded-md border border-line px-2.5 py-1 text-[12.5px] text-ink transition-colors hover:border-dim"
+                      className="rounded-md border border-line px-2.5 py-1 t-small text-ink transition-colors hover:border-dim"
                       onClick={() => setContextOpen((open) => !open)}
                       aria-expanded={contextOpen}
                     >
                       {contextOpen ? 'Hide it' : 'Read it'}
                     </button>
                     {!contextOpen ? null : (
-                      <pre className="mt-3 max-h-[420px] overflow-auto whitespace-pre-wrap rounded-md border border-line bg-well p-3 font-mono text-[12px] leading-[1.5] text-ink">
+                      <pre className="mt-3 max-h-[420px] overflow-auto whitespace-pre-wrap rounded-md border border-line bg-well p-3 font-mono t-fine leading-[1.5] text-ink">
                         {agentContext}
                       </pre>
                     )}
@@ -1494,13 +1649,22 @@ export function CardDetail({
 
                 <div className="section">
                   <h4 className="mb-3 eyebrow">How it will run</h4>
-                  <dl className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 text-[12.5px]">
+                  {/* Labels to the top of their field, not the middle of it. The fields
+                      grow to fit their value now, so "Goal" beside a
+                      twenty-line condition sat two hundred pixels below the
+                      first line it names. */}
+                  <dl className="grid grid-cols-[auto_1fr] items-start gap-x-4 gap-y-2 t-small">
                     <FieldSelect
                       label="Priority"
                       value={detail.card.priority === 'normal' ? null : detail.card.priority}
                       options={['high', 'low']}
                       title="Reorders the dispatch queue within this card's column."
                       neutralLabel="normal"
+                      hints={{
+                        high: 'Dispatched before the rest of its column.',
+                        '': 'Dispatched in board order.',
+                        low: 'Dispatched after the rest of its column.',
+                      }}
                       onPick={(priority) =>
                         patch({ priority: (priority ?? 'normal') as Card['priority'] })
                       }
@@ -1509,8 +1673,12 @@ export function CardDetail({
                       label="Agent"
                       value={detail.card.agentProvider}
                       options={['claude', 'codex']}
-                      title="The coding CLI dispatched for this card. Claude sessions are observed through hooks; Codex output is captured from its JSON stream."
+                      title="The coding CLI dispatched for this card."
                       neutralLabel="claude"
+                      hints={{
+                        claude: 'Observed through hooks, as it runs.',
+                        codex: 'Captured from its JSON stream.',
+                      }}
                       onPick={(agentProvider) =>
                         patch({
                           agentProvider: (agentProvider ?? 'claude') as Card['agentProvider'],
@@ -1538,8 +1706,32 @@ export function CardDetail({
                       title="Used only for windows that escalate - compaction, and manual re-extraction. Not the model that does the work."
                       onPick={(synthesisModel) => patch({ synthesisModel })}
                     />
+                  </dl>
+                </div>
+
+                {/*
+                 * What the card has to satisfy, kept apart from who runs it.
+                 *
+                 * One box before this, and it was 934 pixels tall in a
+                 * 393-pixel column - one section setting the scroll length of
+                 * the whole pane while two columns beside it ended at 267 and
+                 * stayed blank the rest of the way down.
+                 *
+                 * The seam is not arbitrary. Everything above is a choice from
+                 * a list about how the work gets done, and everything here is
+                 * something written out that the finished work has to meet.
+                 * Splitting them was already the honest division; it is only
+                 * that nothing forced the question until the box got too tall.
+                 *
+                 * Two columns wide, because these are the long values - a goal
+                 * condition is a paragraph and a scope is a list of paths - and
+                 * a paragraph in a 393-pixel column is a ribbon.
+                 */}
+                <div className="section section--pair">
+                  <h4 className="mb-2 eyebrow">What it must satisfy</h4>
+                  <dl className="grid grid-cols-[auto_1fr] items-start gap-x-4 gap-y-2 t-small">
                     <dt
-                      className="text-dim"
+                      className="pt-1 text-dim"
                       title="Tokens a run may spend before the board stops it. This one is enforced: the board terminates the session."
                     >
                       Ceiling
@@ -1561,7 +1753,7 @@ export function CardDetail({
                       />
                     </dd>
                     <dt
-                      className="text-dim"
+                      className="pt-1 text-dim"
                       title="What /goal is given. Without one, the card cannot be dispatched."
                     >
                       Goal
@@ -1580,7 +1772,7 @@ export function CardDetail({
                       />
                     </dd>
                     <dt
-                      className="text-dim"
+                      className="pt-1 text-dim"
                       title="A command the board runs itself after the run. Hard: the card halts if it does not pass."
                     >
                       Verify
@@ -1598,7 +1790,7 @@ export function CardDetail({
                       />
                     </dd>
                     <dt
-                      className="text-dim"
+                      className="pt-1 text-dim"
                       title="Paths the agent should confine itself to. Advisory: it is prompt text, not a rule."
                     >
                       Scope
@@ -1612,7 +1804,7 @@ export function CardDetail({
                       />
                     </dd>
                     <dt
-                      className="text-dim"
+                      className="pt-1 text-dim"
                       title="Hard where a rule names a path or a command pattern, advisory otherwise. The list below says which."
                     >
                       Prohibit
@@ -1667,14 +1859,14 @@ export function CardDetail({
                       <p key={finding.signal} className="mb-1 leading-snug text-ink">
                         {finding.detail}
                         {finding.evidence.length === 0 ? null : (
-                          <span className="ml-1 text-[11.5px] text-dim">
+                          <span className="ml-1 t-fine text-dim">
                             ({finding.evidence.slice(0, 4).join(', ')})
                           </span>
                         )}
                       </p>
                     ))}
                     {detail.staleness.advice === null ? null : (
-                      <p className="text-[11.5px] text-dim">{detail.staleness.advice}</p>
+                      <p className="t-fine text-dim">{detail.staleness.advice}</p>
                     )}
                   </div>
                 )}
@@ -1696,8 +1888,8 @@ export function CardDetail({
                   <div className="mb-3 rounded border border-danger/40 bg-danger/10 px-2 py-1.5 text-danger">
                     {/* The board ran this. It does not depend on the agent
                     reporting honestly, which is the whole point (R10). */}
-                    <div className="text-[12.5px]">{detail.verifyNote}</div>
-                    <pre className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap font-mono text-[11.5px] text-dim">
+                    <div className="t-small">{detail.verifyNote}</div>
+                    <pre className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap font-mono t-fine text-dim">
                       {detail.verify.output}
                     </pre>
                   </div>
@@ -1708,7 +1900,7 @@ export function CardDetail({
                 ) : (
                   <>
                     {brief.extraction.note === null ? null : (
-                      <p className="mb-3 rounded border border-danger/40 bg-danger/10 px-2 py-1.5 text-[12.5px] text-danger">
+                      <p className="mb-3 rounded border border-danger/40 bg-danger/10 px-2 py-1.5 t-small text-danger">
                         {brief.extraction.note}
                       </p>
                     )}
@@ -1724,7 +1916,7 @@ export function CardDetail({
                           {mergeRefusal?.summary ??
                             'These have not been read yet. Accept or reject each and the merge becomes available.'}
                         </p>
-                        <p className="mb-2 text-[11.5px] text-dim">
+                        <p className="mb-2 t-fine text-dim">
                           {mergeRefusal?.reach ??
                             'This is the board declining to merge for you, not a lock on the repository. ' +
                               'A `git merge` run in a terminal will merge this branch with nothing to stop it.'}
@@ -1739,23 +1931,23 @@ export function CardDetail({
                           {brief.surprises.map((surprise) => (
                             <li key={surprise.id} className="leading-snug">
                               <div className="text-ink">{surprise.headline}</div>
-                              <div className="text-[11.5px] text-dim">{surprise.why}</div>
+                              <div className="t-fine text-dim">{surprise.why}</div>
                               {surprise.target.type === 'path' ? (
-                                <div className="text-[11.5px] text-dim">
+                                <div className="t-fine text-dim">
                                   Not an entry, so there is nothing to accept: open the file.
                                 </div>
                               ) : (
                                 <div className="mt-0.5 flex gap-2">
                                   <button
                                     type="button"
-                                    className="rounded border border-ok/50 px-1.5 text-[11.5px] text-ok hover:bg-ok/10"
+                                    className="rounded border border-ok/50 px-1.5 t-fine text-ok hover:bg-ok/10"
                                     onClick={() => judge(surprise.target, 'accepted')}
                                   >
                                     accept
                                   </button>
                                   <button
                                     type="button"
-                                    className="rounded border border-danger/50 px-1.5 text-[11.5px] text-danger hover:bg-danger/10"
+                                    className="rounded border border-danger/50 px-1.5 t-fine text-danger hover:bg-danger/10"
                                     title="Kept on the card, but no longer stated as fact in the brief."
                                     onClick={() => judge(surprise.target, 'rejected')}
                                   >
@@ -1766,7 +1958,7 @@ export function CardDetail({
                                   the operator's head until they forget it. */}
                                   <button
                                     type="button"
-                                    className="rounded border border-line px-1.5 text-[11.5px] text-dim hover:text-ink"
+                                    className="rounded border border-line px-1.5 t-fine text-dim hover:text-ink"
                                     title="Rejects this and raises a card to address it, linked back to here."
                                     onClick={() => {
                                       const entryId =
@@ -1821,7 +2013,7 @@ export function CardDetail({
                   <div className="section">
                     <button
                       type="button"
-                      className="text-[12.5px] text-info hover:underline"
+                      className="t-small text-info hover:underline"
                       onClick={() => setShowEntries(!showEntries)}
                     >
                       {showEntries ? 'hide' : 'show'} the {entries.length} underlying entr
@@ -1836,7 +2028,7 @@ export function CardDetail({
                             className="border-l-2 border-line pl-2"
                           >
                             <span
-                              className={`mr-1.5 text-[11.5px] uppercase ${
+                              className={`mr-1.5 t-fine uppercase ${
                                 KIND_COLOUR[entry.kind] ?? 'text-dim'
                               }`}
                             >
@@ -1844,9 +2036,9 @@ export function CardDetail({
                             </span>
                             <span className="text-ink">{entry.statement}</span>
                             {entry.detail === undefined ? null : (
-                              <div className="mt-0.5 text-[12.5px] text-dim">{entry.detail}</div>
+                              <div className="mt-0.5 t-small text-dim">{entry.detail}</div>
                             )}
-                            <div className="text-[11.5px] text-dim">
+                            <div className="t-fine text-dim">
                               {/* Every entry names its evidence; nothing here is
                               unfalsifiable (doc 08). */}
                               {entry.sourceEventIds.length} source event(s)
@@ -1862,12 +2054,18 @@ export function CardDetail({
                   <div className="section">
                     {/* Most useful straight after cloning, which is why it sits on
                     the card rather than behind a selection on the board. */}
-                    <label className="text-[12.5px] text-dim">
-                      compare with{' '}
-                      <select
-                        className="rounded border border-line bg-well px-1 py-0.5 text-ink"
-                        value=""
-                        onFocus={() => {
+                    <div className="flex items-center gap-2">
+                      <span className="t-small text-dim">compare with</span>
+                      <Select
+                        className="min-w-0 flex-1"
+                        label="Compare this card with another"
+                        value={null}
+                        placeholder="another card"
+                        options={siblings.map((sibling) => ({
+                          value: sibling.id,
+                          label: sibling.title,
+                        }))}
+                        onOpen={() => {
                           if (siblings.length > 0) return;
                           void api
                             .cards(detail.card.boardId)
@@ -1876,18 +2074,9 @@ export function CardDetail({
                             )
                             .catch((cause: Error) => setError(cause.message));
                         }}
-                        onChange={(changed) => {
-                          if (changed.target.value !== '') onCompare(changed.target.value);
-                        }}
-                      >
-                        <option value="">another card</option>
-                        {siblings.map((sibling) => (
-                          <option key={sibling.id} value={sibling.id}>
-                            {sibling.title}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                        onChange={(other) => onCompare(other)}
+                      />
+                    </div>
                   </div>
                 )}
 
@@ -1897,7 +2086,7 @@ export function CardDetail({
                     spends a model call is one an operator presses twice. */}
                     <button
                       type="button"
-                      className="rounded border border-line px-2 py-0.5 text-[12.5px] text-dim hover:text-ink disabled:opacity-50"
+                      className="rounded border border-line px-2 py-0.5 t-small text-dim hover:text-ink disabled:opacity-50"
                       disabled={reviewing}
                       title="Asks a session that did not write this branch to read it. One model call on your Claude Code quota. Anything it raises has to be judged before this merges."
                       onClick={() => {
@@ -1913,7 +2102,7 @@ export function CardDetail({
                       {reviewing ? 'reading the branch…' : 'ask for a second opinion'}
                     </button>
                     {reviewNote === null ? null : (
-                      <p className="mt-1 text-[12.5px] text-dim">{reviewNote}</p>
+                      <p className="mt-1 t-small text-dim">{reviewNote}</p>
                     )}
                   </div>
                 )}
@@ -1921,7 +2110,7 @@ export function CardDetail({
                 {(detail.readiness?.checks ?? []).length === 0 ? null : (
                   <div className="section">
                     <h4 className="mb-1 eyebrow">Before you merge</h4>
-                    <ul className="flex flex-col gap-0.5 text-[12.5px]">
+                    <ul className="flex flex-col gap-0.5 t-small">
                       {(detail.readiness?.checks ?? []).map((check) => (
                         <li key={check.name} className="flex items-start gap-2 text-dim">
                           {/* Three states, not two. A check the board could not run
@@ -1974,7 +2163,7 @@ export function CardDetail({
                     {/* Reviewing used to mean leaving the board for a terminal,
                     which is where the operator loses the context the board
                     exists to hold. */}
-                    <ul className="flex flex-col gap-0.5 text-[12.5px]">
+                    <ul className="flex flex-col gap-0.5 t-small">
                       {detail.diff.files.map((file) => (
                         <li key={file.path}>
                           <button
@@ -2006,16 +2195,16 @@ export function CardDetail({
                     {openDiff === null ? null : (
                       <div className="mt-2 border-t border-line pt-2">
                         <div className="mb-1 flex items-baseline gap-2">
-                          <span className="font-mono text-[12.5px] text-ink">{openDiff.path}</span>
+                          <span className="font-mono t-small text-ink">{openDiff.path}</span>
                           <button
                             type="button"
-                            className="text-[12.5px] text-dim hover:text-ink"
+                            className="t-small text-dim hover:text-ink"
                             onClick={() => setOpenDiff(null)}
                           >
                             close
                           </button>
                         </div>
-                        <pre className="max-h-96 overflow-auto whitespace-pre bg-well p-2 font-mono text-[12.5px] text-dim">
+                        <pre className="max-h-96 overflow-auto whitespace-pre bg-well p-2 font-mono t-small text-dim">
                           {openDiff.text}
                         </pre>
                       </div>
@@ -2029,7 +2218,7 @@ export function CardDetail({
                     {/* Proposals, never applied on their own. An entry becoming a
                     rule without a human reading it would let the ledger
                     constrain the agent by itself, which doc 12 never allows. */}
-                    <ul className="flex flex-col gap-2 text-[12.5px]">
+                    <ul className="flex flex-col gap-2 t-small">
                       {proposals.map((proposal) => (
                         <li key={proposal.entryId} className="border-l-2 border-line pl-2">
                           <div className="text-ink">{proposal.statement}</div>
@@ -2078,7 +2267,7 @@ export function CardDetail({
                 {(detail.contradictions ?? []).length === 0 ? null : (
                   <div className="section">
                     <h4 className="mb-1 eyebrow text-danger">Runs into a project rule</h4>
-                    <ul className="flex flex-col gap-1 text-[12.5px]">
+                    <ul className="flex flex-col gap-1 t-small">
                       {(detail.contradictions ?? []).map((entry) => (
                         <li key={`${entry.invariant}-${entry.conflict}`} className="text-dim">
                           {/* Scope is a claim about where the work will happen. A
@@ -2100,7 +2289,7 @@ export function CardDetail({
                     invites acceptance; 'these files, because these cards
                     touched them' invites checking, which is what an operator
                     should do with a guess. */}
-                    <ul className="flex flex-col gap-0.5 text-[12.5px]">
+                    <ul className="flex flex-col gap-0.5 t-small">
                       {(detail.blastRadius?.paths ?? []).slice(0, 8).map((entry) => (
                         <li key={entry.path} className="text-dim">
                           <span className="text-ink">{entry.path}</span> · {entry.cards} card(s)
@@ -2118,7 +2307,7 @@ export function CardDetail({
                 {(detail.subsystems ?? []).length === 0 ? null : (
                   <div className="section">
                     <h4 className="mb-1 eyebrow">Touched</h4>
-                    <ul className="flex flex-col gap-0.5 text-[12.5px]">
+                    <ul className="flex flex-col gap-0.5 t-small">
                       {(detail.subsystems ?? []).map((entry) => (
                         <li key={entry.subsystem} className="text-dim">
                           <span className="text-ink">{entry.subsystem}</span> · {entry.paths}{' '}
@@ -2144,7 +2333,7 @@ export function CardDetail({
                     <h4 className="mb-1 eyebrow">Also worked here</h4>
                     {/* The point of the map: whatever an earlier card learned about
                     these files was learned the expensive way. */}
-                    <ul className="flex flex-col gap-0.5 text-[12.5px]">
+                    <ul className="flex flex-col gap-0.5 t-small">
                       {(detail.relatedCards ?? []).map((related) => (
                         <li key={related.cardId} className="text-dim">
                           <span className="text-ink">{related.title}</span> ·{' '}
@@ -2180,7 +2369,7 @@ export function CardDetail({
                     <span className="eyebrow mr-1 whitespace-nowrap">Export</span>
                     <button
                       type="button"
-                      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
+                      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 t-small text-dim transition-colors hover:bg-well hover:text-ink"
                       onClick={() => void copyMarkdown()}
                     >
                       <Copy size={13} aria-hidden />
@@ -2189,7 +2378,7 @@ export function CardDetail({
                       </span>
                     </button>
                     <a
-                      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
+                      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 t-small text-dim transition-colors hover:bg-well hover:text-ink"
                       href={`/api/cards/${cardId}/brief.md`}
                       download
                     >
@@ -2221,7 +2410,7 @@ export function CardDetail({
                     </p>
                   </div>
                 ) : (
-                  <ul className="mb-3 flex flex-col gap-2 text-[12.5px]">
+                  <ul className="mb-3 flex flex-col gap-2 t-small">
                     {detail.runs.map((run) => {
                       const ended = endedNote(run);
                       return (
@@ -2265,7 +2454,7 @@ export function CardDetail({
                     {/* Shown as work in its own right. A subagent's context is
                     discarded when it stops, so these files would otherwise
                     appear in the blast radius with nothing accounting for them. */}
-                    <ul className="flex flex-col gap-3 text-[12.5px]">
+                    <ul className="flex flex-col gap-3 t-small">
                       {subagents.map((agent) => (
                         <li key={agent.agentId} className="border-l-2 border-info/40 pl-2">
                           <div className="text-ink">
@@ -2302,18 +2491,18 @@ export function CardDetail({
                   <h4 className="mb-1 eyebrow">Review and close</h4>
 
                   {detail.card.mergedAt !== null ? (
-                    <p className="mb-2 text-[12.5px] text-ok">
+                    <p className="mb-2 t-small text-ok">
                       Merged into {detail.card.mergedInto ?? 'the target branch'} from{' '}
                       {detail.card.mergedBranch ?? 'its branch'} on{' '}
                       {new Date(detail.card.mergedAt).toLocaleString()}.
                     </p>
                   ) : detail.workspace === null ? (
-                    <p className="text-[12.5px] text-dim">
+                    <p className="t-small text-dim">
                       No worktree, and the board has not merged this card. If it is finished, the
                       work reached the target some other way.
                     </p>
                   ) : (
-                    <div className="mb-2 text-[12.5px]">
+                    <div className="mb-2 t-small">
                       <div className="text-ink">{detail.workspace.branch}</div>
                       <div className="text-dim">{detail.workspace.worktree}</div>
                       {detail.workspace.git === null ? null : (
@@ -2337,7 +2526,7 @@ export function CardDetail({
                      doing the work rather than reporting that it is needed. */
                       <button
                         type="button"
-                        className="rounded border border-brand/60 px-2 py-0.5 text-[12.5px] text-brand hover:bg-brand/10 disabled:opacity-40"
+                        className="rounded border border-brand/60 px-2 py-0.5 t-small text-brand hover:bg-brand/10 disabled:opacity-40"
                         disabled={merging}
                         title={
                           'Resolves the conflict, commits the merge, and runs the verify command. ' +
@@ -2350,7 +2539,7 @@ export function CardDetail({
                     ) : (
                       <button
                         type="button"
-                        className="rounded border border-ok/50 px-2 py-0.5 text-[12.5px] text-ok hover:bg-ok/10 disabled:opacity-40"
+                        className="rounded border border-ok/50 px-2 py-0.5 t-small text-ok hover:bg-ok/10 disabled:opacity-40"
                         // Disabled rather than left to fail. The gate refuses this
                         // request anyway, and a button that looks available and
                         // answers 409 teaches the operator that the board is
@@ -2385,7 +2574,7 @@ export function CardDetail({
                     {outstanding === 0 ? null : (
                       <button
                         type="button"
-                        className="rounded-md px-2 py-1 text-[12.5px] text-brand underline-offset-2 hover:underline"
+                        className="rounded-md px-2 py-1 t-small text-brand underline-offset-2 hover:underline"
                         title="The unread findings, and the accept and reject controls, are on the brief."
                         onClick={() => setActivePane('brief')}
                       >
@@ -2395,7 +2584,7 @@ export function CardDetail({
 
                     <button
                       type="button"
-                      className="inline-flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
+                      className="inline-flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 t-small text-dim transition-colors hover:bg-well hover:text-ink"
                       title="Marks the card finished without merging anything. Use when the work landed another way, or was not needed."
                       onClick={() => patch({ status: 'done' })}
                     >
@@ -2405,7 +2594,7 @@ export function CardDetail({
                     {detail.card.status === 'idle' ? null : (
                       <button
                         type="button"
-                        className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-dim transition-colors hover:bg-well hover:text-ink"
+                        className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 t-small text-dim transition-colors hover:bg-well hover:text-ink"
                         title="Back to idle, which is the only status the queue will dispatch."
                         onClick={() => patch({ status: 'idle' })}
                       >
@@ -2416,7 +2605,7 @@ export function CardDetail({
 
                   {mergeReport === null ? null : (
                     <pre
-                      className={`mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-[11.5px] ${
+                      className={`mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap font-mono t-fine ${
                         mergeReport.clean ? 'text-ok' : 'text-danger'
                       }`}
                     >
@@ -2425,7 +2614,7 @@ export function CardDetail({
                   )}
 
                   {resolution === null ? null : (
-                    <p className="mt-2 text-[11.5px] leading-snug text-dim">{resolution}</p>
+                    <p className="mt-2 t-fine leading-snug text-dim">{resolution}</p>
                   )}
                 </div>
               </SectionFlow>
