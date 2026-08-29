@@ -902,7 +902,22 @@ export function Board(): ReactElement {
         {resyncReport === null ? null : (
           <div className="border-b border-line bg-well px-4 py-2.5 text-[12.5px]">
             <div className="flex items-start gap-3">
-              <p className="min-w-0 flex-1 text-dim">{resyncReport.note}</p>
+              <p className="min-w-0 flex-1 text-dim">
+                {resyncReport.error ?? resyncReport.note}
+                {/* What judged the board, and what it cost. An operator who is
+                    being asked to accept a card moved into Done is entitled to
+                    know which model said so. */}
+                {resyncReport.error !== null || resyncReport.model === null ? null : (
+                  <span className="text-faint">
+                    {' '}
+                    ({resyncReport.model}
+                    {resyncReport.tokensSpent === null
+                      ? ''
+                      : `, ${resyncReport.tokensSpent.toLocaleString()} tokens`}
+                    )
+                  </span>
+                )}
+              </p>
               <button
                 type="button"
                 className="shrink-0 text-faint transition-colors hover:text-ink"
@@ -912,20 +927,28 @@ export function Board(): ReactElement {
               </button>
             </div>
 
-            {/* The evidence, not just the count. A card was moved on the
-                strength of a particular commit, and an operator asked to
-                accept that should be able to go and read it. */}
-            {resyncReport.moved.length === 0 ? null : (
-              <ul className="mt-1.5 flex flex-col gap-1">
-                {resyncReport.moved.map((finding) => (
-                  <li key={finding.cardId} className="text-faint">
+            {/* The reasoning, not just the count. A card was moved into a
+                column on the strength of something the agent read, and an
+                operator asked to accept that should be able to see what. */}
+            {resyncReport.findings.length === 0 ? null : (
+              <ul className="mt-1.5 flex flex-col gap-1.5">
+                {resyncReport.findings.map((finding) => (
+                  <li key={finding.cardId} className="leading-snug">
                     <span className="text-ink">{finding.title}</span>
-                    {finding.commits.slice(0, 2).map((commit) => (
-                      <span key={commit.hash}>
-                        {' · '}
-                        <code className="font-mono">{commit.hash}</code> {commit.subject}
-                      </span>
-                    ))}
+                    {finding.movedTo === null ? (
+                      <span className="text-faint"> · left where it was</span>
+                    ) : (
+                      <span className="text-brand"> · moved to {finding.movedTo}</span>
+                    )}
+                    <div className="text-faint">
+                      {finding.evidence}
+                      {finding.commits.slice(0, 3).map((hash) => (
+                        <span key={hash}>
+                          {' '}
+                          <code className="font-mono">{hash}</code>
+                        </span>
+                      ))}
+                    </div>
                   </li>
                 ))}
               </ul>
