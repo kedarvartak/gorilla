@@ -16,6 +16,7 @@ import { storedEntriesFor } from '../ledger/store.js';
 import { proposeBlastRadius, NOTHING as NOTHING_TOUCHED } from '../cards/blast-radius.js';
 import { getCard } from './cards.js';
 import { cardContextInput } from '../cards/card-context.js';
+import { narrationFor } from '../transcript/narration.js';
 import { renderCardContext } from '../launcher/args.js';
 import { buildMechanicalLedger } from '../ledger/mechanical.js';
 import { checkReality, describeReality } from '../ledger/reality.js';
@@ -75,6 +76,35 @@ export function registerCardDetailRoutes(app: FastifyInstance, context: AppConte
    * subsystem map all move, so this is what a run would get if dispatched
    * this second, and is not a record of what any past run received.
    */
+  /**
+   * What the agent thought, said and did, for the operator to read.
+   *
+   * Polled while a card runs rather than pushed. The transcript reader caches
+   * on size and mtime, so a poll where nothing has moved - which is nearly all
+   * of them - costs one `stat`.
+   *
+   * The tail, not the whole run: `limit` bounds what crosses the wire, and
+   * `total` says what was left behind so the client can offer the rest rather
+   * than pretend it has everything.
+   */
+  app.get<{ Params: { cardId: string }; Querystring: { limit?: string } }>(
+    '/api/cards/:cardId/narration',
+    (request, reply) => {
+      try {
+        const card = getCard(context.database, request.params.cardId);
+        const asked = Number(request.query.limit);
+
+        return reply.send(
+          narrationFor(context.database, card.id, {
+            ...(Number.isInteger(asked) && asked > 0 ? { limit: asked } : {}),
+          }),
+        );
+      } catch (error) {
+        return fail(reply, error);
+      }
+    },
+  );
+
   app.get<{ Params: { cardId: string } }>('/api/cards/:cardId/context', (request, reply) => {
     try {
       const card = getCard(context.database, request.params.cardId);

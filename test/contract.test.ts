@@ -98,6 +98,16 @@ describe('the routes that tripped the inventory', () => {
     expect(keysAt(standing[0])).toEqual(['id', 'offer', 'reason']);
   });
 
+  it('reports a narration in a shape the card page can render without guessing', async () => {
+    expect(keysAt(await shapeAt(`/api/cards/${cardId}/narration`))).toEqual([
+      'entries',
+      'note',
+      'provider',
+      'total',
+      'withheldThinking',
+    ]);
+  });
+
   it('reports a resync in a shape the header can render without guessing', async () => {
     // Dry, because a contract test that reorganised the board would be a
     // contract test with a side effect.

@@ -908,68 +908,66 @@ export function Board(): ReactElement {
           </div>
         )}
 
-        {/* The board yields rather than sitting behind the card.
-            A card is now a page, and leaving the columns mounted underneath it
-            would keep a scroll position, a drag context and five droppables
-            alive for a surface nobody can see or reach. */}
-        {openCardId !== null ? null : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={boardCollisions}
-            onDragEnd={(event) => void onDragEnd(event)}
+        {/* The board stays under the card. The detail is a flap over the
+            bottom of it, not a page instead of it, and the strip of columns
+            left showing is what keeps the operator's place - which column
+            this card is in, and what else is sitting in it. */}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={boardCollisions}
+          onDragEnd={(event) => void onDragEnd(event)}
+        >
+          <SortableContext
+            items={columns.map((column) => `${COLUMN_DRAG_PREFIX}${column.id}`)}
+            strategy={horizontalListSortingStrategy}
           >
-            <SortableContext
-              items={columns.map((column) => `${COLUMN_DRAG_PREFIX}${column.id}`)}
-              strategy={horizontalListSortingStrategy}
-            >
-              <div ref={boardRow} className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-3 py-4">
-                {columns.map((column) => (
-                  <ColumnView
-                    key={column.id}
-                    column={column}
-                    cards={byColumn.get(column.id) ?? []}
-                    runnable={runnable}
-                    whyNotRunnable={whyNotRunnable}
-                    collapsed={collapsed.has(column.id)}
-                    share={columnShares[column.id] ?? DEFAULT_COLUMN_SHARE}
-                    totalShares={totalColumnShares(
-                      columnShares,
-                      columns.map((item) => item.id),
-                    )}
-                    onResize={(columnId, deltaPixels, finished) => {
-                      setColumnShares((current) => {
-                        const ids = columns.map((item) => item.id);
-                        const available = boardRow.current?.clientWidth ?? 1;
-                        const total = totalColumnShares(current, ids);
-                        // Pixels are what the pointer reports and shares are what
-                        // the layout takes, so the conversion has to happen here,
-                        // against the row's actual width.
-                        const deltaShares = (deltaPixels / available) * total;
-                        const next = resizeColumnShares(current, ids, columnId, deltaShares);
-                        // Written only when the drag ends. Saving per pointermove
-                        // would write to storage sixty times a second.
-                        if (finished && board !== null) {
-                          saveColumnWidths(window.localStorage, board.id, next);
-                        }
-                        return next;
-                      });
-                    }}
-                    onToggle={(columnId) => {
-                      const next = toggle(collapsed, columnId);
-                      setCollapsed(next);
-                      if (board !== null) saveCollapsed(window.localStorage, board.id, next);
-                    }}
-                    onOpen={(card) => setOpenCardId(card.id)}
-                    onRun={(card) => void run(card)}
-                    onCancel={(card) => void cancel(card)}
-                    onRename={(card, title) => void rename(card, title)}
-                    onArchive={(card) => void archive(card)}
-                  />
-                ))}
-              </div>
-            </SortableContext>
-          </DndContext>
-        )}
+            <div ref={boardRow} className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-3 py-4">
+              {columns.map((column) => (
+                <ColumnView
+                  key={column.id}
+                  column={column}
+                  cards={byColumn.get(column.id) ?? []}
+                  runnable={runnable}
+                  whyNotRunnable={whyNotRunnable}
+                  collapsed={collapsed.has(column.id)}
+                  share={columnShares[column.id] ?? DEFAULT_COLUMN_SHARE}
+                  totalShares={totalColumnShares(
+                    columnShares,
+                    columns.map((item) => item.id),
+                  )}
+                  onResize={(columnId, deltaPixels, finished) => {
+                    setColumnShares((current) => {
+                      const ids = columns.map((item) => item.id);
+                      const available = boardRow.current?.clientWidth ?? 1;
+                      const total = totalColumnShares(current, ids);
+                      // Pixels are what the pointer reports and shares are what
+                      // the layout takes, so the conversion has to happen here,
+                      // against the row's actual width.
+                      const deltaShares = (deltaPixels / available) * total;
+                      const next = resizeColumnShares(current, ids, columnId, deltaShares);
+                      // Written only when the drag ends. Saving per pointermove
+                      // would write to storage sixty times a second.
+                      if (finished && board !== null) {
+                        saveColumnWidths(window.localStorage, board.id, next);
+                      }
+                      return next;
+                    });
+                  }}
+                  onToggle={(columnId) => {
+                    const next = toggle(collapsed, columnId);
+                    setCollapsed(next);
+                    if (board !== null) saveCollapsed(window.localStorage, board.id, next);
+                  }}
+                  onOpen={(card) => setOpenCardId(card.id)}
+                  onRun={(card) => void run(card)}
+                  onCancel={(card) => void cancel(card)}
+                  onRename={(card, title) => void rename(card, title)}
+                  onArchive={(card) => void archive(card)}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
 
         {view !== 'digest' ? null : (
           <Digest

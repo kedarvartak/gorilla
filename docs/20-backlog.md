@@ -411,6 +411,7 @@ looked thin.
 | T82 | Put archive on the tile and delete out of reach | The tile's menu offers archive; delete is reachable only from the card detail, and asks through the shared panel frame. | open | [#153](https://github.com/kedarvartak/gorilla/issues/153) |
 | T83 | Give the board a logo, and give the rail its width back | A drawn mark stands in the rail and in the tab; the rail is an icon strip that opens on hover and on focus, without reflowing the board, and without the board's name under the wordmark. | open | [#163](https://github.com/kedarvartak/gorilla/issues/163) |
 | T84 | Catch the board up with work done in another harness | A control re-checks the cards that look finished against the repository, moves the confirmed ones to review with the evidence attached, and marks nothing done. | open | [#165](https://github.com/kedarvartak/gorilla/issues/165) |
+| T85 | Show what the agent is actually thinking, on the card | A fourth tab on the card page carries the model's thinking, its responses and the tool calls between them, live while the card runs, for Claude and for Codex. | open | [#167](https://github.com/kedarvartak/gorilla/issues/167) |
 
 **T80.** `describe()` flags a mismatch only when `serverBuiltAt - webBuiltAt`
 is positive - an interface older than its server. The direction that actually
@@ -452,6 +453,14 @@ already marks the cheap half of this on every read - the card names files, they
 all exist, it has never run - and the module computing it says the signal is
 weak. Nothing acts on it. It is a chip telling an operator to go and check
 fifteen cards by hand.
+
+**T85.** While a card runs the board shows that it is running and nothing else:
+counts, a line per hook event, and a ledger afterwards. It never shows the thing
+anybody watching a CLI is actually watching. The reasoning is already captured
+and then discarded - `AssistantRecord` carries `thinking` and `text` as separate
+fields, and `reader.ts` joins them only to build the window handed to the
+extraction model. `TranscriptTail` follows a transcript as it is written, is
+tested, and is constructed nowhere.
 
 ## Still not on this list
 
