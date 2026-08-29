@@ -7,6 +7,7 @@ import { registerIngestRoutes, recordedLatencies } from './ingest/routes.js';
 import { Broadcaster } from './stream/broadcaster.js';
 import { registerStreamRoutes } from './stream/routes.js';
 import { registerWebRoutes } from './web/routes.js';
+import { codexResyncJudge, resolveResyncModel, type ResyncJudge } from './cards/resync-agent.js';
 import { claudeCodeReviewer, type ReviewRunner } from './review/second-opinion.js';
 import {
   registerApiRoutes,
@@ -43,6 +44,7 @@ export interface AppOptions {
   readonly extractionModel?: ExtractionModel;
   /** Overridden in tests. The Claude Code CLI otherwise, on the operator's quota. */
   readonly reviewer?: ReviewRunner;
+  readonly resyncJudge?: ResyncJudge;
 }
 
 export interface AppContext {
@@ -61,6 +63,13 @@ export interface AppContext {
    * injected rather than found.
    */
   readonly reviewer: ReviewRunner;
+  /**
+   * The agent that decides whether a card is already done (issue 173).
+   *
+   * Injected for the same reason the reviewer is: every test substitutes its
+   * own, so the suite neither spends a token nor needs a CLI installed.
+   */
+  readonly resyncJudge: ResyncJudge;
 }
 
 /**
@@ -94,6 +103,7 @@ export function buildApp(options: AppOptions): FastifyInstance {
     broadcaster,
     pending,
     reviewer: options.reviewer ?? claudeCodeReviewer(),
+    resyncJudge: options.resyncJudge ?? codexResyncJudge({ model: resolveResyncModel() }),
     extraction: new ExtractionService({
       database: options.database,
       model: options.extractionModel,

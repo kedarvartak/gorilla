@@ -33,19 +33,27 @@ export interface Narration {
   readonly note: string | null;
 }
 
+export type ResyncState = 'done' | 'review' | 'unfinished';
+
 export interface ResyncFinding {
   readonly cardId: string;
   readonly title: string;
-  readonly paths: readonly string[];
-  readonly commits: readonly { readonly hash: string; readonly subject: string }[];
+  readonly state: ResyncState;
+  /** Why, in the agent's own words. Rendered verbatim. */
+  readonly evidence: string;
+  readonly commits: readonly string[];
+  /** The column it was moved to, or null when it stayed put. */
+  readonly movedTo: string | null;
 }
 
 /** What a resync found, and what it did about it. */
 export interface ResyncReport {
   readonly candidates: number;
-  readonly movedTo: string | null;
-  readonly moved: readonly ResyncFinding[];
-  readonly unconfirmed: readonly ResyncFinding[];
+  readonly findings: readonly ResyncFinding[];
+  readonly model: string | null;
+  readonly tokensSpent: number | null;
+  /** Set when the agent could not be reached. Shown instead of the findings. */
+  readonly error: string | null;
   readonly note: string;
 }
 
@@ -390,11 +398,16 @@ export const api = {
   /**
    * Catches the board up with work done outside it.
    *
-   * A POST because it moves cards. Costs a `git log`, which is why it is a
-   * button rather than part of the board read.
+   * A POST because it moves cards. Costs a model call over the whole suspect
+   * column, which is why it is a button and not part of the board read. Given
+   * a `cardId` it asks about that card alone.
    */
-  resync: (boardId: string) =>
-    request<ResyncReport>(`/api/boards/${boardId}/resync`, { method: 'POST' }),
+  resync: (boardId: string, cardId?: string) =>
+    request<ResyncReport>(`/api/boards/${boardId}/resync`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(cardId === undefined ? {} : { cardId }),
+    }),
 
   /**
    * What the agent thought, said and did.

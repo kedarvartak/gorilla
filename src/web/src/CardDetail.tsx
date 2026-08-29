@@ -20,6 +20,7 @@ import {
   CheckCircle,
   Copy,
   DownloadSimple,
+  MagnifyingGlass,
   Question,
   Warning,
   X,
@@ -62,7 +63,17 @@ import {
  * Null everywhere means the board default, which is what most cards should say.
  */
 const CLAUDE_MODELS = ['haiku', 'sonnet', 'opus', 'fable'] as const;
-const CODEX_MODELS = ['gpt-5.3-codex', 'gpt-5.2-codex', 'o3'] as const;
+/* The ids the installed Codex CLI actually offers. The list before this one
+   was `gpt-5.3-codex`, `gpt-5.2-codex` and `o3`, none of which it recognises -
+   so every one of them was a card that would fail at dispatch. */
+const CODEX_MODELS = [
+  'gpt-5.4-mini',
+  'gpt-5.4',
+  'gpt-5.5',
+  'gpt-5.6-luna',
+  'gpt-5.6-sol',
+  'gpt-5.6-terra',
+] as const;
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 
 interface LedgerEntry {
@@ -1101,6 +1112,9 @@ export function CardDetail({
   /** The file whose diff is open, and its text. One at a time (T31). */
   const [openDiff, setOpenDiff] = useState<{ path: string; text: string } | null>(null);
   const [retrying, setRetrying] = useState(false);
+  /** A scoped resync in flight, and what it came back with. */
+  const [checking, setChecking] = useState(false);
+  const [checkedNote, setCheckedNote] = useState<string | null>(null);
   const [retryNote, setRetryNote] = useState('');
   const [reviewing, setReviewing] = useState(false);
   const [reviewNote, setReviewNote] = useState<string | null>(null);
@@ -1471,6 +1485,35 @@ export function CardDetail({
             retry
           </button>
         )}
+        {/* The sweep asks about every suspect card on the board; this asks
+            about the one already open. Pointing at a card is a better signal
+            than any heuristic, so this one skips the filter entirely - it is
+            the only way to ask about a card the sweep would never consider. */}
+        <button
+          type="button"
+          disabled={checking}
+          title="Ask a cheap agent to read the repository and say whether this card's work is already there."
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 t-small text-dim transition-colors hover:bg-well hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={() => {
+            setChecking(true);
+            setCheckedNote(null);
+            void api
+              .resync(detail.card.boardId, cardId)
+              .then((report) => {
+                setCheckedNote(report.error ?? report.findings[0]?.evidence ?? report.note);
+                return api.cardDetail<Detail>(cardId);
+              })
+              .then((refreshed) => {
+                if (refreshed !== null) setDetail(refreshed);
+              })
+              .catch((cause: Error) => setError(cause.message))
+              .finally(() => setChecking(false));
+          }}
+        >
+          <MagnifyingGlass size={13} aria-hidden />
+          {checking ? 'Reading the repo' : 'Already done?'}
+        </button>
+
         {/* The best template on a board is the card that worked last week, so
             there is no template store to keep - just this. */}
         <button
@@ -1529,6 +1572,22 @@ export function CardDetail({
           </button>
         ))}
       </nav>
+
+      {/* The agent's answer, under the header where the question was asked.
+          Its own words: what it read and what was in it, which is the whole of
+          what an operator has to go on when a card has just been refiled. */}
+      {checkedNote === null ? null : (
+        <div className="flex items-start gap-3 border-b border-line bg-well px-5 py-2">
+          <p className="min-w-0 flex-1 t-small leading-snug text-dim">{checkedNote}</p>
+          <button
+            type="button"
+            className="shrink-0 t-small text-faint transition-colors hover:text-ink"
+            onClick={() => setCheckedNote(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {!retrying ? null : (
         <div className="flex items-baseline gap-2 border-b border-line bg-well px-4 py-2">
