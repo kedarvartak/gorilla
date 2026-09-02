@@ -38,6 +38,19 @@ import {
   type SearchHit,
 } from './api.js';
 import { CardDetail } from './CardDetail.js';
+import { Select, type SelectOption } from './Select.js';
+
+/**
+ * Priority, as a consequence rather than a word.
+ *
+ * "High" and "low" say where a card sits; what an operator wants to know is
+ * what that does to the queue, which is the sentence the tooltip used to hold.
+ */
+const PRIORITIES: readonly SelectOption[] = [
+  { value: 'high', label: 'High', hint: 'Dispatched before the rest of its column.' },
+  { value: 'normal', label: 'Normal', hint: 'Dispatched in board order.' },
+  { value: 'low', label: 'Low', hint: 'Dispatched after the rest of its column.' },
+];
 import { Plan } from './Plan.js';
 import { Metrics } from './Metrics.js';
 import { Compare } from './Compare.js';
@@ -46,6 +59,7 @@ import { Invariants } from './Invariants.js';
 import { Activity } from './Activity.js';
 import { CardTile } from './CardTile.js';
 import { Sidebar, type View } from './Sidebar.js';
+import { ResyncReportView } from './ResyncReportView.js';
 import {
   CaretLeft,
   CaretRight,
@@ -713,56 +727,71 @@ export function Board(): ReactElement {
           {/* How the queue behaves, grouped as one control rather than three
               labelled fields spread across the bar. */}
           <div className="ml-auto flex items-center gap-1 rounded-md border border-line bg-surface p-0.5">
-            <select
-              className="rounded-sm bg-transparent px-1.5 py-1 text-dim focus:text-ink"
-              aria-label="Dispatch mode"
-              title="Manual holds the queue. Automatic starts the next card itself."
+            <Select
+              variant="bare"
+              label="Dispatch mode"
               value={dispatch?.mode ?? 'manual'}
-              onChange={(changed) => {
+              options={[
+                { value: 'manual', label: 'Manual', hint: 'Holds the queue.' },
+                {
+                  value: 'automatic',
+                  label: 'Automatic',
+                  hint: 'Starts the next card itself.',
+                },
+              ]}
+              onChange={(mode) => {
                 void api
-                  .setDispatch(board.id, { mode: changed.target.value })
+                  .setDispatch(board.id, { mode })
                   .then(setDispatch)
                   .catch((cause: Error) => setError(cause.message));
               }}
-            >
-              <option value="manual">Manual</option>
-              <option value="automatic">Automatic</option>
-            </select>
+            />
             <span className="h-4 w-px bg-line" aria-hidden />
-            <select
-              className="rounded-sm bg-transparent px-1.5 py-1 text-dim focus:text-ink"
-              aria-label="Review policy"
-              title="Review stops the queue after every card. Unattended collects them for the morning."
+            <Select
+              variant="bare"
+              label="Review policy"
               value={dispatch?.policy ?? 'review'}
-              onChange={(changed) => {
+              options={[
+                {
+                  value: 'review',
+                  label: 'Review each',
+                  hint: 'Stops the queue after every card.',
+                },
+                {
+                  value: 'unattended',
+                  label: 'Unattended',
+                  hint: 'Collects them for the morning.',
+                },
+              ]}
+              onChange={(policy) => {
                 void api
-                  .setDispatch(board.id, { policy: changed.target.value })
+                  .setDispatch(board.id, { policy })
                   .then(setDispatch)
                   .catch((cause: Error) => setError(cause.message));
               }}
-            >
-              <option value="review">Review each</option>
-              <option value="unattended">Unattended</option>
-            </select>
+            />
             <span className="h-4 w-px bg-line" aria-hidden />
-            <select
-              className="rounded-sm bg-transparent px-1.5 py-1 text-dim focus:text-ink"
-              aria-label="Agents at once"
+            <Select
+              variant="bare"
+              label="Agents at once"
               title="How many cards this board runs at the same time."
-              value={dispatch?.concurrency ?? 1}
-              onChange={(changed) => {
+              value={String(dispatch?.concurrency ?? 1)}
+              options={[1, 2, 3, 4, 6].map((n) => ({
+                value: String(n),
+                label: `${String(n)} agent${n === 1 ? '' : 's'}`,
+                // Only where the number stops meaning what it looks like it
+                // means. Labelling every row "runs N at a time" is noise.
+                ...(n === 1
+                  ? { hint: 'One card at a time, in queue order.' }
+                  : { hint: `${String(n)} worktrees, ${String(n)} cards in flight.` }),
+              }))}
+              onChange={(concurrency) => {
                 void api
-                  .setDispatch(board.id, { concurrency: Number(changed.target.value) })
+                  .setDispatch(board.id, { concurrency: Number(concurrency) })
                   .then(setDispatch)
                   .catch((cause: Error) => setError(cause.message));
               }}
-            >
-              {[1, 2, 3, 4, 6].map((n) => (
-                <option key={n} value={n}>
-                  {n} agent{n === 1 ? '' : 's'}
-                </option>
-              ))}
-            </select>
+            />
           </div>
 
           {/* The composer. One cluster, so adding a card reads as one action
@@ -782,17 +811,14 @@ export function Board(): ReactElement {
           </button>
 
           <div className="flex items-center rounded-md border border-line bg-surface">
-            <select
-              className="rounded-l-md bg-transparent py-1.5 pl-2 pr-1 text-dim focus:text-ink"
+            <Select
+              variant="bare"
+              className="rounded-r-none"
+              label="Priority for the new card"
               value={newPriority}
-              aria-label="Priority for the new card"
-              title="High and low reorder the dispatch queue within a column."
-              onChange={(changed) => setNewPriority(changed.target.value as Card['priority'])}
-            >
-              <option value="high">High</option>
-              <option value="normal">Normal</option>
-              <option value="low">Low</option>
-            </select>
+              options={PRIORITIES}
+              onChange={(priority) => setNewPriority(priority as Card['priority'])}
+            />
             <input
               className="w-52 bg-transparent px-2 py-1.5 text-ink placeholder:text-faint"
               placeholder="New card"
@@ -875,101 +901,69 @@ export function Board(): ReactElement {
         ) : null}
 
         {resyncReport === null ? null : (
-          <div className="border-b border-line bg-well px-4 py-2.5 text-[12.5px]">
-            <div className="flex items-start gap-3">
-              <p className="min-w-0 flex-1 text-dim">{resyncReport.note}</p>
-              <button
-                type="button"
-                className="shrink-0 text-faint transition-colors hover:text-ink"
-                onClick={() => setResyncReport(null)}
-              >
-                Dismiss
-              </button>
-            </div>
-
-            {/* The evidence, not just the count. A card was moved on the
-                strength of a particular commit, and an operator asked to
-                accept that should be able to go and read it. */}
-            {resyncReport.moved.length === 0 ? null : (
-              <ul className="mt-1.5 flex flex-col gap-1">
-                {resyncReport.moved.map((finding) => (
-                  <li key={finding.cardId} className="text-faint">
-                    <span className="text-ink">{finding.title}</span>
-                    {finding.commits.slice(0, 2).map((commit) => (
-                      <span key={commit.hash}>
-                        {' · '}
-                        <code className="font-mono">{commit.hash}</code> {commit.subject}
-                      </span>
-                    ))}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+          <ResyncReportView report={resyncReport} onDismiss={() => setResyncReport(null)} />
         )}
 
-        {/* The board yields rather than sitting behind the card.
-            A card is now a page, and leaving the columns mounted underneath it
-            would keep a scroll position, a drag context and five droppables
-            alive for a surface nobody can see or reach. */}
-        {openCardId !== null ? null : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={boardCollisions}
-            onDragEnd={(event) => void onDragEnd(event)}
+        {/* The board stays under the card. The detail is a flap over the
+            bottom of it, not a page instead of it, and the strip of columns
+            left showing is what keeps the operator's place - which column
+            this card is in, and what else is sitting in it. */}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={boardCollisions}
+          onDragEnd={(event) => void onDragEnd(event)}
+        >
+          <SortableContext
+            items={columns.map((column) => `${COLUMN_DRAG_PREFIX}${column.id}`)}
+            strategy={horizontalListSortingStrategy}
           >
-            <SortableContext
-              items={columns.map((column) => `${COLUMN_DRAG_PREFIX}${column.id}`)}
-              strategy={horizontalListSortingStrategy}
-            >
-              <div ref={boardRow} className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-3 py-4">
-                {columns.map((column) => (
-                  <ColumnView
-                    key={column.id}
-                    column={column}
-                    cards={byColumn.get(column.id) ?? []}
-                    runnable={runnable}
-                    whyNotRunnable={whyNotRunnable}
-                    collapsed={collapsed.has(column.id)}
-                    share={columnShares[column.id] ?? DEFAULT_COLUMN_SHARE}
-                    totalShares={totalColumnShares(
-                      columnShares,
-                      columns.map((item) => item.id),
-                    )}
-                    onResize={(columnId, deltaPixels, finished) => {
-                      setColumnShares((current) => {
-                        const ids = columns.map((item) => item.id);
-                        const available = boardRow.current?.clientWidth ?? 1;
-                        const total = totalColumnShares(current, ids);
-                        // Pixels are what the pointer reports and shares are what
-                        // the layout takes, so the conversion has to happen here,
-                        // against the row's actual width.
-                        const deltaShares = (deltaPixels / available) * total;
-                        const next = resizeColumnShares(current, ids, columnId, deltaShares);
-                        // Written only when the drag ends. Saving per pointermove
-                        // would write to storage sixty times a second.
-                        if (finished && board !== null) {
-                          saveColumnWidths(window.localStorage, board.id, next);
-                        }
-                        return next;
-                      });
-                    }}
-                    onToggle={(columnId) => {
-                      const next = toggle(collapsed, columnId);
-                      setCollapsed(next);
-                      if (board !== null) saveCollapsed(window.localStorage, board.id, next);
-                    }}
-                    onOpen={(card) => setOpenCardId(card.id)}
-                    onRun={(card) => void run(card)}
-                    onCancel={(card) => void cancel(card)}
-                    onRename={(card, title) => void rename(card, title)}
-                    onArchive={(card) => void archive(card)}
-                  />
-                ))}
-              </div>
-            </SortableContext>
-          </DndContext>
-        )}
+            <div ref={boardRow} className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-3 py-4">
+              {columns.map((column) => (
+                <ColumnView
+                  key={column.id}
+                  column={column}
+                  cards={byColumn.get(column.id) ?? []}
+                  runnable={runnable}
+                  whyNotRunnable={whyNotRunnable}
+                  collapsed={collapsed.has(column.id)}
+                  share={columnShares[column.id] ?? DEFAULT_COLUMN_SHARE}
+                  totalShares={totalColumnShares(
+                    columnShares,
+                    columns.map((item) => item.id),
+                  )}
+                  onResize={(columnId, deltaPixels, finished) => {
+                    setColumnShares((current) => {
+                      const ids = columns.map((item) => item.id);
+                      const available = boardRow.current?.clientWidth ?? 1;
+                      const total = totalColumnShares(current, ids);
+                      // Pixels are what the pointer reports and shares are what
+                      // the layout takes, so the conversion has to happen here,
+                      // against the row's actual width.
+                      const deltaShares = (deltaPixels / available) * total;
+                      const next = resizeColumnShares(current, ids, columnId, deltaShares);
+                      // Written only when the drag ends. Saving per pointermove
+                      // would write to storage sixty times a second.
+                      if (finished && board !== null) {
+                        saveColumnWidths(window.localStorage, board.id, next);
+                      }
+                      return next;
+                    });
+                  }}
+                  onToggle={(columnId) => {
+                    const next = toggle(collapsed, columnId);
+                    setCollapsed(next);
+                    if (board !== null) saveCollapsed(window.localStorage, board.id, next);
+                  }}
+                  onOpen={(card) => setOpenCardId(card.id)}
+                  onRun={(card) => void run(card)}
+                  onCancel={(card) => void cancel(card)}
+                  onRename={(card, title) => void rename(card, title)}
+                  onArchive={(card) => void archive(card)}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
 
         {view !== 'digest' ? null : (
           <Digest

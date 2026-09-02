@@ -67,6 +67,28 @@
   --radius-lg: 10px;
 }
 
+/**
+ * The type scale.
+ *
+ * Four sizes were in use across the card - 11.5, 12, 12.5 and 13 - which is
+ * not a scale but drift: no reader can tell 12 from 12.5, so the distinctions
+ * cost a reader nothing and cost the file 62 hardcoded call sites. Two steps
+ * below the body size is all this interface has ever actually used.
+ *
+ * Custom properties rather than `em`, which compounds: a 0.9em paragraph
+ * inside a 0.9em box lands at 0.81em, and this interface nests sized elements
+ * constantly. A property resolves against the nearest declaration whatever the
+ * depth, so one number moves a whole surface and nothing drifts underneath it.
+ */
+:root {
+  --fs-body: 14px;
+  /* Secondary text: a caption under a fact, a hint under a control. */
+  --fs-small: 12.5px;
+  /* The smallest thing allowed on screen. Provenance, counts, footnotes. */
+  --fs-fine: 11.5px;
+  --fs-eyebrow: 11px;
+}
+
 html,
 body,
 #root {
@@ -196,10 +218,40 @@ body {
   width: 100%;
 }
 
+/*
+ * Two columns rather than four hundred pixels of one.
+ *
+ * A marker, not a rule: `SectionFlow` reads the class and sets the span, since
+ * the number of tracks is only known at that width. See `Tracks` there for why
+ * a section is ever given a second column.
+ */
+.section--pair {
+  width: 100%;
+}
+
+/**
+ * One editable box on a card: a goal condition, a verify command, a dropdown.
+ *
+ * Shared so a column of them reads as one set of controls. They had drifted
+ * apart - a dropdown at 2.5 of padding beside a text field at 2, on a stack
+ * where every box is the same width and the difference is the only thing the
+ * eye has to go on.
+ */
+.field {
+  /* No width. Where these are stacked in a column the caller says `w-full`;
+     the timeline sets two of them inline in a header row. */
+  padding: 5px 10px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-well);
+  font-size: var(--fs-small);
+  color: var(--color-ink);
+}
+
 /* Structure, not text. Tracked out so a label reads as a different kind of
    thing from the content beneath it. */
 .eyebrow {
-  font-size: 11px;
+  font-size: var(--fs-eyebrow);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -210,7 +262,48 @@ body {
    are English and are set in the body face like everything else. */
 .ident {
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
+}
+
+/*
+ * The two steps under the body size, as classes rather than as a utility with
+ * the number written into it. Written into 62 places, the scale could not be
+ * changed; read from the properties above, it moves with whatever surface it
+ * is on.
+ */
+.t-small {
+  font-size: var(--fs-small);
+}
+
+.t-fine {
+  font-size: var(--fs-fine);
+}
+
+/**
+ * The card flap, set larger than the rest of the board.
+ *
+ * Everything else here is scanned - a column of tiles, a row of counts, a
+ * digest read in ten seconds. The flap is the one surface that is read: the
+ * brief, what the run established, what is waiting on a verdict, an agent's
+ * account of its own work. It was set smaller than the body text it sits in,
+ * which is backwards, and the operator was zooming the browser to read it.
+ *
+ * Only the properties change. `.eyebrow` and `.ident` appear on the board, the
+ * digest, the metrics screen and the timeline as well, and those are scanned;
+ * they read the same names and so grow here and stay put there.
+ */
+/* `type--reading` is the same scale for a menu opened from the flap. A
+   dropdown is portalled to the body to escape the flap's own scroll, so it
+   leaves the surface it belongs to and would otherwise come back at the
+   board's size. */
+.flap,
+.type--reading {
+  --fs-body: 15.5px;
+  --fs-small: 14px;
+  --fs-fine: 12.75px;
+  --fs-eyebrow: 11.5px;
+
+  font-size: var(--fs-body);
 }
 
 :focus-visible {

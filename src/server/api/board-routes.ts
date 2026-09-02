@@ -775,31 +775,39 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
    * `?dry=1` reports without moving anything, which is what the tests use and
    * what an operator who does not trust it yet should reach for.
    */
-  app.post<{ Params: { boardId: string }; Querystring: { dry?: string } }>(
-    '/api/boards/:boardId/resync',
-    async (request, reply) => {
-      try {
-        const board = context.database.db
-          .select()
-          .from(boards)
-          .where(eq(boards.id, request.params.boardId))
-          .get();
-        if (board === undefined) return notFound(reply, 'No such board.');
+  app.post<{
+    Params: { boardId: string };
+    Querystring: { dry?: string };
+    Body: { cardId?: unknown } | undefined;
+  }>('/api/boards/:boardId/resync', async (request, reply) => {
+    try {
+      const board = context.database.db
+        .select()
+        .from(boards)
+        .where(eq(boards.id, request.params.boardId))
+        .get();
+      if (board === undefined) return notFound(reply, 'No such board.');
 
-        const report = await resync(context.database, board.id, board.cwd, {
-          apply: request.query.dry !== '1',
-        });
+      // A card id narrows the sweep to one card, which is how the card page
+      // asks the same question about the card already open.
+      const cardId = typeof request.body?.cardId === 'string' ? request.body.cardId : null;
 
-        // Only when something actually moved. A stream event per press would
-        // redraw every open board for a result that was "nothing changed".
-        if (report.moved.length > 0) publish('cards-resynced', report);
+      const report = await resync(context.database, board.id, board.cwd, context.resyncJudge, {
+        apply: request.query.dry !== '1',
+        cardId,
+      });
 
-        return reply.send(report);
-      } catch (error) {
-        return fail(reply, error);
+      // Only when something actually moved. A stream event per press would
+      // redraw every open board for a result that was "nothing changed".
+      if (report.findings.some((finding) => finding.movedTo !== null)) {
+        publish('cards-resynced', report);
       }
-    },
-  );
+
+      return reply.send(report);
+    } catch (error) {
+      return fail(reply, error);
+    }
+  });
 
   app.post<{ Params: { runId: string }; Body: { title?: unknown } }>(
     '/api/runs/:runId/adopt',

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
 
 import { api } from './api.js';
+import { Select } from './Select.js';
 
 /**
  * The run timeline (doc 09, screen 3).
@@ -133,31 +134,34 @@ export function Timeline({ runId, onClose }: { runId: string; onClose: () => voi
           </span>
         ) : null}
 
-        <select
-          className="rounded border border-line bg-well px-1 py-0.5 text-ink"
+        {/* The count is the label, not a hint: "Bash (412)" is one fact about
+            one filter, and splitting it over two lines would make a facet list
+            twice as tall for nothing. */}
+        <Select
+          label="Filter by event"
           value={eventFilter}
-          onChange={(changed) => setEventFilter(changed.target.value)}
-        >
-          <option value="">all events</option>
-          {facets.events.map((facet) => (
-            <option key={facet.name} value={facet.name}>
-              {facet.name} ({facet.n})
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: '', label: 'all events' },
+            ...facets.events.map((facet) => ({
+              value: facet.name,
+              label: `${facet.name} (${String(facet.n)})`,
+            })),
+          ]}
+          onChange={setEventFilter}
+        />
 
-        <select
-          className="rounded border border-line bg-well px-1 py-0.5 text-ink"
+        <Select
+          label="Filter by tool"
           value={toolFilter}
-          onChange={(changed) => setToolFilter(changed.target.value)}
-        >
-          <option value="">all tools</option>
-          {facets.tools.map((facet) => (
-            <option key={facet.name} value={facet.name}>
-              {facet.name} ({facet.n})
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: '', label: 'all tools' },
+            ...facets.tools.map((facet) => ({
+              value: facet.name,
+              label: `${facet.name} (${String(facet.n)})`,
+            })),
+          ]}
+          onChange={setToolFilter}
+        />
 
         <button
           type="button"

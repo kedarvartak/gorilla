@@ -61,7 +61,15 @@ beforeEach(async () => {
   createDefaultColumns(database.db, BOARD);
   cardId = createCard(database, { boardId: BOARD, title: 'a card' }).id;
 
-  app = buildApp({ database, logger: false });
+  app = buildApp({
+    database,
+    logger: false,
+    // Substituted, so this suite can never shell out to a model. Without it
+    // the resync assertion below passes only because this fixture happens to
+    // have no candidate cards, and the day somebody adds one the contract
+    // test starts spending the operator's quota.
+    resyncJudge: () => Promise.resolve({ verdicts: [], usage: null, model: 'test-model' }),
+  });
   await app.ready();
 });
 
@@ -98,6 +106,16 @@ describe('the routes that tripped the inventory', () => {
     expect(keysAt(standing[0])).toEqual(['id', 'offer', 'reason']);
   });
 
+  it('reports a narration in a shape the card page can render without guessing', async () => {
+    expect(keysAt(await shapeAt(`/api/cards/${cardId}/narration`))).toEqual([
+      'entries',
+      'note',
+      'provider',
+      'total',
+      'withheldThinking',
+    ]);
+  });
+
   it('reports a resync in a shape the header can render without guessing', async () => {
     // Dry, because a contract test that reorganised the board would be a
     // contract test with a side effect.
@@ -110,10 +128,11 @@ describe('the routes that tripped the inventory', () => {
     // Sorted, because that is what `shapeOf` does.
     expect(keysAt(shapeOf(response.json()))).toEqual([
       'candidates',
-      'moved',
-      'movedTo',
+      'error',
+      'findings',
+      'model',
       'note',
-      'unconfirmed',
+      'tokensSpent',
     ]);
   });
 

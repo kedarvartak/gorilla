@@ -13,19 +13,47 @@ export interface GuardrailDetail {
   readonly because: string;
 }
 
+export type NarrationKind = 'thinking' | 'said' | 'did' | 'asked';
+
+export interface NarrationEntry {
+  readonly runId: string;
+  readonly seq: number;
+  readonly at: number | null;
+  readonly kind: NarrationKind;
+  readonly text: string;
+  readonly tool: string | null;
+}
+
+/** The agent's own account of a run. */
+export interface Narration {
+  readonly entries: readonly NarrationEntry[];
+  readonly total: number;
+  readonly provider: 'claude' | 'codex' | 'mixed' | null;
+  /** What the provider did not give, in words. */
+  readonly note: string | null;
+}
+
+export type ResyncState = 'done' | 'review' | 'unfinished';
+
 export interface ResyncFinding {
   readonly cardId: string;
   readonly title: string;
-  readonly paths: readonly string[];
-  readonly commits: readonly { readonly hash: string; readonly subject: string }[];
+  readonly state: ResyncState;
+  /** Why, in the agent's own words. Rendered verbatim. */
+  readonly evidence: string;
+  readonly commits: readonly string[];
+  /** The column it was moved to, or null when it stayed put. */
+  readonly movedTo: string | null;
 }
 
 /** What a resync found, and what it did about it. */
 export interface ResyncReport {
   readonly candidates: number;
-  readonly movedTo: string | null;
-  readonly moved: readonly ResyncFinding[];
-  readonly unconfirmed: readonly ResyncFinding[];
+  readonly findings: readonly ResyncFinding[];
+  readonly model: string | null;
+  readonly tokensSpent: number | null;
+  /** Set when the agent could not be reached. Shown instead of the findings. */
+  readonly error: string | null;
   readonly note: string;
 }
 
@@ -170,6 +198,11 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     // The API names the field; carrying it through means the interface can put
     // the message where the operator is looking.
     const error = new Error(body.error ?? `Request failed: ${response.status}`);
+    // Carried through so a caller can tell "this route does not exist" from
+    // "this route refused". A 404 on a route the interface knows about means
+    // the server is older than the page calling it, and that has a fix the
+    // operator can act on - which a bare message does not.
+    (error as Error & { status?: number }).status = response.status;
     if (body.field !== undefined) {
       (error as Error & { field?: string }).field = body.field;
     }
@@ -365,11 +398,27 @@ export const api = {
   /**
    * Catches the board up with work done outside it.
    *
-   * A POST because it moves cards. Costs a `git log`, which is why it is a
-   * button rather than part of the board read.
+   * A POST because it moves cards. Costs a model call over the whole suspect
+   * column, which is why it is a button and not part of the board read. Given
+   * a `cardId` it asks about that card alone.
    */
-  resync: (boardId: string) =>
-    request<ResyncReport>(`/api/boards/${boardId}/resync`, { method: 'POST' }),
+  resync: (boardId: string, cardId?: string) =>
+    request<ResyncReport>(`/api/boards/${boardId}/resync`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(cardId === undefined ? {} : { cardId }),
+    }),
+
+  /**
+   * What the agent thought, said and did.
+   *
+   * The tail, bounded by `limit`. Polled while a card is running, which the
+   * server makes cheap by caching on the transcript's size and mtime.
+   */
+  cardNarration: (cardId: string, limit?: number) =>
+    request<Narration>(
+      `/api/cards/${cardId}/narration${limit === undefined ? '' : `?limit=${String(limit)}`}`,
+    ),
 
   /** Puts a card away, or brings it back. Nothing is deleted (T77). */
   archiveCard: (cardId: string, archived: boolean) =>
