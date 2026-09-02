@@ -456,11 +456,16 @@ fifteen cards by hand.
 
 **T85.** While a card runs the board shows that it is running and nothing else:
 counts, a line per hook event, and a ledger afterwards. It never shows the thing
-anybody watching a CLI is actually watching. The reasoning is already captured
-and then discarded - `AssistantRecord` carries `thinking` and `text` as separate
-fields, and `reader.ts` joins them only to build the window handed to the
-extraction model. `TranscriptTail` follows a transcript as it is written, is
-tested, and is constructed nowhere.
+anybody watching a CLI is actually watching - the model thinking, what it said,
+what it decided to do next. That is the reason to sit in front of a terminal
+rather than a board, and an agent running unattended is when it matters most.
+
+The reasoning is already captured and then discarded. `AssistantRecord` carries
+`thinking` and `text` as separate fields; `reader.ts` joins them only to build
+the window handed to the extraction model. `TranscriptTail` follows a transcript
+as it is written, is tested, and is constructed nowhere - live tailing is built
+and unwired. Both providers' stream events pass through one `onEvent` in the
+launcher. This is a surfacing task, not a capture task.
 
 ## Still not on this list
 
