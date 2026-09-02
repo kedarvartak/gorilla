@@ -59,6 +59,8 @@ import { Invariants } from './Invariants.js';
 import { Activity } from './Activity.js';
 import { CardTile } from './CardTile.js';
 import { Sidebar, type View } from './Sidebar.js';
+import { FilterBar, type FilterState } from './FilterBar.js';
+import { CommandPalette } from './CommandPalette.js';
 import { ResyncReportView } from './ResyncReportView.js';
 import {
   CaretLeft,
@@ -388,6 +390,7 @@ export function Board(): ReactElement {
   const [staleBuild, setStaleBuild] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<readonly SearchHit[] | null>(null);
+  const [filters, setFilters] = useState<FilterState>({ status: null, priority: null, agent: null });
   const [title, setTitle] = useState('');
   const [newPriority, setNewPriority] = useState<Card['priority']>('normal');
   const [openCardId, setOpenCardId] = useState<string | null>(null);
@@ -419,6 +422,15 @@ export function Board(): ReactElement {
       );
       // Read once the board is known, because what is folded is per board.
       setCollapsed(loadCollapsed(window.localStorage, first.id));
+      // Load filter preferences for this board.
+      const saved = window.localStorage.getItem(`filters:${first.id}`);
+      if (saved) {
+        try {
+          setFilters(JSON.parse(saved) as FilterState);
+        } catch {
+          // Ignore corrupt filters.
+        }
+      }
 
       const [nextColumns, nextCards, state, eligible, standing] = await Promise.all([
         api.columns(first.id),
@@ -482,10 +494,23 @@ export function Board(): ReactElement {
   const byColumn = useMemo(() => {
     const map = new Map<string, Card[]>();
     for (const column of columns) map.set(column.id, []);
-    for (const card of cards) map.get(card.columnId)?.push(card);
+
+    // Determine which cards to show: search results if query active, otherwise all cards.
+    const searchCardIds = hits === null ? null : new Set(hits.map((h) => h.cardId));
+    const toShow = searchCardIds === null ? cards : cards.filter((c) => searchCardIds.has(c.id));
+
+    // Apply filters.
+    const filtered = toShow.filter(
+      (card) =>
+        (filters.status === null || card.status === filters.status) &&
+        (filters.priority === null || card.priority === filters.priority) &&
+        (filters.agent === null || card.agentProvider === filters.agent),
+    );
+
+    for (const card of filtered) map.get(card.columnId)?.push(card);
     for (const list of map.values()) list.sort((a, b) => a.position - b.position);
     return map;
-  }, [columns, cards]);
+  }, [columns, cards, hits, filters]);
 
   const unseen = cards.filter(unseenSince).length;
 
@@ -678,31 +703,40 @@ export function Board(): ReactElement {
           {/* Search first and widest. On a board of sixty cards it is the
               fastest route to any of them, and it was previously one control
               among sixteen. */}
-          <div className="relative w-72 min-w-[180px] flex-1">
-            <MagnifyingGlass
-              size={15}
-              aria-hidden
-              className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-faint"
-            />
-            <input
-              className="w-full rounded-md border border-line bg-surface py-1.5 pr-2.5 pl-8 text-ink transition-colors placeholder:text-faint focus:border-edge"
-              placeholder="Find a card, or a file it touched"
-              aria-label="Search cards"
-              value={query}
-              onChange={(changed) => {
-                const next = changed.target.value;
-                setQuery(next);
-                if (next.trim() === '') {
-                  setHits(null);
-                  return;
-                }
-                void api
-                  .search(board.id, next)
-                  .then(setHits)
-                  .catch((cause: Error) => setError(cause.message));
-              }}
-            />
-          </div>
+          <FilterBar
+            filters={filters}
+            onFilterChange={(next) => {
+              setFilters(next);
+              if (board !== null) {
+                window.localStorage.setItem(`filters:${board.id}`, JSON.stringify(next));
+              }
+            }}
+            query={query}
+            onQueryChange={(next) => {
+              setQuery(next);
+              if (next.trim() === '') {
+                setHits(null);
+                return;
+              }
+              void api
+                .search(board.id, next)
+                .then(setHits)
+                .catch((cause: Error) => setError(cause.message));
+            }}
+            activeCount={
+              hits === null
+                ? 0
+                : hits
+                    .map((h) => cards.find((c) => c.id === h.cardId))
+                    .filter(Boolean)
+                    .filter(
+                      (card) =>
+                        (filters.status === null || card.status === filters.status) &&
+                        (filters.priority === null || card.priority === filters.priority) &&
+                        (filters.agent === null || card.agentProvider === filters.agent),
+                    ).length
+            }
+          />
 
           {/* Three numbers, and only three. What is happening, what wants you,
               what finished - in that order, because that is the order an
@@ -1022,6 +1056,24 @@ export function Board(): ReactElement {
             }}
           />
         )}
+
+        <CommandPalette
+          cards={cards}
+          onSelectCard={(card) => setOpenCardId(card.id)}
+          onCreateCard={() => {
+            setTitle('');
+            setNewPriority('normal');
+          }}
+          onResync={() => {
+            if (board === null) return;
+            setResyncing(true);
+            void api
+              .resync(board.id)
+              .then(setResyncReport)
+              .catch((cause: Error) => setError(cause.message))
+              .finally(() => setResyncing(false));
+          }}
+        />
       </main>
     </div>
   );
