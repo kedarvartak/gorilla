@@ -357,3 +357,44 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.filter-bar > input {
+  flex: 1;
+  min-width: 180px;
+  position: relative;
+}
+
+.filter-bar > :not(input) {
+  flex-shrink: 0;
+}
+
+.filter-clear {
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--color-faint);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.filter-clear:hover {
+  color: var(--color-ink);
+}
+
+.filter-count {
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--color-faint);
+  background: var(--color-well);
+  border-radius: var(--radius-md);
+}
