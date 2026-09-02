@@ -59,6 +59,7 @@ import { Invariants } from './Invariants.js';
 import { Activity } from './Activity.js';
 import { CardTile } from './CardTile.js';
 import { Sidebar, type View } from './Sidebar.js';
+import { ResyncReportView } from './ResyncReportView.js';
 import {
   CaretLeft,
   CaretRight,
@@ -900,60 +901,7 @@ export function Board(): ReactElement {
         ) : null}
 
         {resyncReport === null ? null : (
-          <div className="border-b border-line bg-well px-4 py-2.5 text-[12.5px]">
-            <div className="flex items-start gap-3">
-              <p className="min-w-0 flex-1 text-dim">
-                {resyncReport.error ?? resyncReport.note}
-                {/* What judged the board, and what it cost. An operator who is
-                    being asked to accept a card moved into Done is entitled to
-                    know which model said so. */}
-                {resyncReport.error !== null || resyncReport.model === null ? null : (
-                  <span className="text-faint">
-                    {' '}
-                    ({resyncReport.model}
-                    {resyncReport.tokensSpent === null
-                      ? ''
-                      : `, ${resyncReport.tokensSpent.toLocaleString()} tokens`}
-                    )
-                  </span>
-                )}
-              </p>
-              <button
-                type="button"
-                className="shrink-0 text-faint transition-colors hover:text-ink"
-                onClick={() => setResyncReport(null)}
-              >
-                Dismiss
-              </button>
-            </div>
-
-            {/* The reasoning, not just the count. A card was moved into a
-                column on the strength of something the agent read, and an
-                operator asked to accept that should be able to see what. */}
-            {resyncReport.findings.length === 0 ? null : (
-              <ul className="mt-1.5 flex flex-col gap-1.5">
-                {resyncReport.findings.map((finding) => (
-                  <li key={finding.cardId} className="leading-snug">
-                    <span className="text-ink">{finding.title}</span>
-                    {finding.movedTo === null ? (
-                      <span className="text-faint"> · left where it was</span>
-                    ) : (
-                      <span className="text-brand"> · moved to {finding.movedTo}</span>
-                    )}
-                    <div className="text-faint">
-                      {finding.evidence}
-                      {finding.commits.slice(0, 3).map((hash) => (
-                        <span key={hash}>
-                          {' '}
-                          <code className="font-mono">{hash}</code>
-                        </span>
-                      ))}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+          <ResyncReportView report={resyncReport} onDismiss={() => setResyncReport(null)} />
         )}
 
         {/* The board stays under the card. The detail is a flap over the
