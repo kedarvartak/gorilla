@@ -24,9 +24,29 @@ function git(...args: string[]): string {
   return execFileSync('git', args, { cwd: repo, encoding: 'utf8' });
 }
 
-function fakeClaude(script: string): string {
+/**
+ * A stand-in for the coding CLI.
+ *
+ * Writes the completion report the board now requires before a card may
+ * settle, so a test about dispatch, budgets or windows is not also a test of
+ * the completion contract. A test that is about the contract writes its own
+ * report - or deliberately writes none - and passes `{ report: false }`.
+ */
+function fakeClaude(script: string, options: { report?: boolean } = {}): string {
   const path = join(dir, `fake-${Math.random().toString(36).slice(2)}.sh`);
-  writeFileSync(path, `#!/usr/bin/env bash\n${script}\n`, 'utf8');
+  const report =
+    options.report === false
+      ? ''
+      : `mkdir -p .gorilla && cat > .gorilla/report.json <<'GORILLA_JSON'\n` +
+        JSON.stringify({
+          summary: 'The fake agent did what the test asked.',
+          files: [{ path: 'app.txt', why: 'What the test had it change.' }],
+          verification: { how: 'the test harness', result: 'ok', evidence: null },
+          outstanding: [],
+        }) +
+        `\nGORILLA_JSON\n`;
+
+  writeFileSync(path, `#!/usr/bin/env bash\n${report}${script}\n`, 'utf8');
   chmodSync(path, 0o755);
   return path;
 }
@@ -255,6 +275,42 @@ describe('dispatching into a worktree', () => {
 
     expect(await dispatcher.dispatchIsolated(BOARD, id)).toBeNull();
     expect(dispatcher.state(BOARD).halted?.reason).toBe('no-workspace');
+  });
+
+  it('prepares the worktree with the project setup command before the agent starts', async () => {
+    handle.db
+      .update(boards)
+      .set({ policySetup: 'echo prepared > prepared.txt' })
+      .where(eq(boards.id, BOARD))
+      .run();
+
+    dispatcher.useExecutable(fakeClaude(`echo '{"type":"system","session_id":"s"}'`));
+    const id = card('needs its dependencies');
+
+    await (
+      await dispatcher.dispatchIsolated(BOARD, id)
+    )?.result;
+
+    const workspace = dispatcher.worktreesFor(repo).pathFor(id) ?? '';
+    expect(existsSync(join(workspace, 'prepared.txt'))).toBe(true);
+  });
+
+  it('halts with the cause named rather than handing over a workspace that cannot build', async () => {
+    handle.db
+      .update(boards)
+      .set({ policySetup: 'echo "npm ERR! cannot resolve dependency tree" >&2; exit 1' })
+      .where(eq(boards.id, BOARD))
+      .run();
+
+    dispatcher.useExecutable(fakeClaude(`echo '{"type":"system","session_id":"s"}'`));
+    const id = card('cannot be prepared');
+
+    expect(await dispatcher.dispatchIsolated(BOARD, id)).toBeNull();
+
+    const halted = dispatcher.state(BOARD).halted;
+    expect(halted?.reason).toBe('setup-failed');
+    // The operator should not have to reproduce it in a terminal to find out why.
+    expect(halted?.detail).toContain('cannot resolve dependency tree');
   });
 
   it('branches a dependent card from its dependency', async () => {

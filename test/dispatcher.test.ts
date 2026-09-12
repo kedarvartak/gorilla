@@ -28,9 +28,29 @@ let pending: PendingBindings;
 
 const BOARD = 'board-1';
 
-function fakeClaude(script: string): string {
+/**
+ * A stand-in for the coding CLI.
+ *
+ * Writes the completion report the board now requires before a card may
+ * settle, so a test about dispatch, budgets or windows is not also a test of
+ * the completion contract. A test that is about the contract writes its own
+ * report - or deliberately writes none - and passes `{ report: false }`.
+ */
+function fakeClaude(script: string, options: { report?: boolean } = {}): string {
   const path = join(dir, `fake-${Math.random().toString(36).slice(2)}.sh`);
-  writeFileSync(path, `#!/usr/bin/env bash\n${script}\n`, 'utf8');
+  const report =
+    options.report === false
+      ? ''
+      : `mkdir -p .gorilla && cat > .gorilla/report.json <<'GORILLA_JSON'\n` +
+        JSON.stringify({
+          summary: 'The fake agent did what the test asked.',
+          files: [{ path: 'app.txt', why: 'What the test had it change.' }],
+          verification: { how: 'the test harness', result: 'ok', evidence: null },
+          outstanding: [],
+        }) +
+        `\nGORILLA_JSON\n`;
+
+  writeFileSync(path, `#!/usr/bin/env bash\n${report}${script}\n`, 'utf8');
   chmodSync(path, 0o755);
   return path;
 }

@@ -142,15 +142,13 @@ describe('the tabs on a card', () => {
   it('shows one pane and leaves the others out of the document', async () => {
     await open();
 
-    // The card opens on its brief, which this stub refuses.
-    expect(container.textContent).toContain('The brief could not be loaded.');
-    // The specification's body is on another tab, so it is not here at all.
-    expect(container.textContent).not.toContain('Give test/web/ a real environment.');
-
-    choose('specification');
-
+    // A card with no runs opens ready to configure. Its draft stays mounted
+    // but hidden when switching tabs, so navigation does not discard edits.
     expect(container.textContent).toContain('Give test/web/ a real environment.');
     expect(container.textContent).not.toContain('The brief could not be loaded.');
+    choose('brief');
+    expect(container.textContent).toContain('The brief could not be loaded.');
+    expect(container.querySelector('#card-setup')?.closest('[hidden]')).not.toBeNull();
   });
 
   it('marks the open tab selected, and only that one', async () => {

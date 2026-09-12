@@ -75,6 +75,11 @@ one file here that is expected to go out of date, so it says when it was last tr
 | Where a run's time went, and what it kept retrying | Working | `src/server/timeline/` |
 | The order the board will work in, and why | Working | `src/server/cards/plan.ts` |
 | A run turned back into a replayable fixture | Working | `src/server/fixtures/from-run.ts` |
+| Project execution policy, stamped onto a card at creation | Working | `src/server/cards/policy.ts` |
+| A worktree prepared by the board before the agent starts | Working | `src/server/worktree/prepare.ts` |
+| The completion contract: a card cannot settle on "done" | Working | `src/server/review/contract.ts` |
+| A bounded repair attempt at a failure the board can describe | Working | `src/server/dispatch/dispatcher.ts` |
+| A batch branch per approved plan, cards integrating as they finish | Working, never run overnight | `src/server/review/batch.ts` |
 | `gorilla status`, `export`, `add`, `import`, `fixture`, `dispatch`, `verify` | Working | `src/cli/commands/` |
 
 Against doc 10's phases: Phase 0 and Phase 1 are complete and were verified against
@@ -102,6 +107,59 @@ thing that was written down and deliberately not built:
   offers a rule carried by three or more cards as a project rule, naming the cards that
   carry it. Nothing is ever applied without the operator saying yes, which is doc 12's
   constraint rather than a limitation of the implementation.
+
+## One-click execution, as of 12 September 2026
+
+The first of three steps towards a board where ordinary work costs one planning
+approval and one final review. What landed:
+
+- **The project owns how cards run.** Provider, model, effort, the preparation
+  command and the check are set once per board and copied onto a card when it
+  is created. A card is therefore a description of work, and the settings it
+  runs with are a fact recorded on it rather than a lookup that changes
+  underneath it. The cost, chosen deliberately: editing the policy does not
+  reach cards that already exist.
+- **The board prepares the workspace.** A fresh worktree is a clean checkout
+  with no dependencies installed, which cost every card the first of its turns
+  and failed the board's own verify for reasons that had nothing to do with the
+  work. The project's setup command now runs before the agent starts, once per
+  new worktree, and a failure halts the dispatch with the command, the
+  directory and the tail of its output rather than with "setup failed".
+- **The setup screen asks for two things.** A task and an outcome. Everything
+  else moved under Advanced, where it remains per-card and overrides the
+  project.
+
+## Automatic completion and integration, as of 12 September 2026
+
+The second step. What landed:
+
+- **A card cannot settle on an agent's own "done".** Finishing is a contract
+  with four terms - what changed, which files and why, what was verified and
+  where the evidence is, and what is outstanding - and the board holds the
+  agent to all four. `outstanding` is required even when empty, because an
+  omitted field and nothing to report are otherwise the same bytes: saying
+  "nothing is outstanding" is a claim someone can be held to, and saying
+  nothing is not. The diff and the verify result stay the board's own; the
+  report is checked against them and never substituted for them.
+- **A failure the board can describe goes back to the agent once.** A failing
+  check and a report missing a term are both failures the board can state
+  exactly, and handing them back with the output attached is cheaper than
+  waking somebody. Bounded by the project's policy, counted separately from
+  dispatch attempts, and delivered through the same channel an operator's
+  correction uses. A product decision, a missing credential or a scope
+  question is not repaired - it goes to a person unrepaired.
+- **An approved plan owns a branch.** Cards still run concurrently in their own
+  worktrees; a card that finishes clean is merged onto the batch branch and the
+  project's check is run again there, so a conflict between two cards surfaces
+  against the second one with a single named cause. A dependent card starts
+  from the batch branch once its dependency is on it. Integration is automatic;
+  the batch reaching the project's own branch is one approval, and the only one
+  asked for after the plan.
+
+What is not done: the batch-first board. The columns are still
+Intake/Ready/Running/Needs Review/Done, the summary and the "Needs you" lane
+exist as `batchStatus` and nothing renders them, and a card still opens onto the
+old panes rather than Overview / Activity / Changes & evidence.
 
 ## What has never happened
 

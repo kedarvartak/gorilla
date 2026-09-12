@@ -38,6 +38,64 @@ export const boards = sqliteTable(
      */
     dispatchFromHour: integer('dispatch_from_hour'),
     dispatchToHour: integer('dispatch_to_hour'),
+
+    /**
+     * The project's execution policy.
+     *
+     * Which agent works a card, on which model, at what effort, and what the
+     * project's standard preparation and verification commands are. These were
+     * per-card decisions, which meant every card was a small configuration
+     * exercise before it was a piece of work - and a board of twenty cards
+     * carried twenty copies of one decision that had been made once.
+     *
+     * Stamped onto a card when it is created rather than resolved at dispatch.
+     * A card therefore records literally what it will run with, so a run last
+     * month can be reproduced and 'this card used opus' is a fact on the card
+     * rather than a lookup against a policy that has since changed. The cost,
+     * accepted deliberately, is that changing the policy does not reach cards
+     * that already exist.
+     *
+     * Null means "let the provider decide", which is not the same as a value
+     * this board chose: a default nobody picked should not be recorded as one.
+     */
+    policyProvider: text('policy_provider', { enum: ['claude', 'codex'] })
+      .notNull()
+      .default('claude'),
+    policyModel: text('policy_model'),
+    policyEffort: text('policy_effort'),
+    policyPermissionMode: text('policy_permission_mode'),
+    /**
+     * What the board runs to check a card's work, when the card names nothing
+     * of its own. The board runs this itself and does not take the agent's
+     * word for the result (R10).
+     */
+    policyVerify: text('policy_verify'),
+    /**
+     * What a fresh worktree needs before an agent can work in it.
+     *
+     * A new worktree is a clean checkout: it has the repository and no
+     * `node_modules`. Every card was therefore either installing dependencies
+     * out of its own turn budget or failing its verification for a reason that
+     * had nothing to do with the work. Run by the board, once, before the
+     * agent starts - and a failure here stops the dispatch and says so, rather
+     * than handing an agent a workspace that cannot build.
+     */
+    policySetup: text('policy_setup'),
+    policyTokenCeiling: integer('policy_token_ceiling'),
+    /**
+     * How many times the board may hand a routine failure back to the agent
+     * before it asks a person.
+     *
+     * Routine means the board can say exactly what is wrong and what would
+     * fix it: a verify that failed, a completion report that is missing a
+     * term. Those are worth one more attempt with the failure attached, and
+     * are not worth waking anybody for. Bounded, because an unbounded repair
+     * loop is how a card spends a night failing the same way.
+     *
+     * One by default. Zero turns repair off, which is a legitimate choice for
+     * a board whose operator would rather see the first failure themselves.
+     */
+    policyRepairAttempts: integer('policy_repair_attempts').notNull().default(1),
   },
   (table) => [uniqueIndex('boards_cwd_unique').on(table.cwd)],
 );
@@ -228,6 +286,32 @@ export const plans = sqliteTable(
     sourceSessionId: text('source_session_id'),
     prompt: text('prompt'),
     createdAt: integer('created_at').notNull(),
+
+    /**
+     * When the operator approved this plan, and the branch its cards
+     * integrate onto.
+     *
+     * The batch branch is the difference between a night that produces five
+     * branches and a night that produces one reviewable result. Each card
+     * still works in its own worktree - that is what makes them concurrent -
+     * and a card that finishes clean is merged here and verified again, so
+     * the question at the end is "does this batch work" rather than "do these
+     * five branches work, and do they work together".
+     *
+     * Null until the plan is approved. A plan lands unapproved however
+     * confident the conversation that produced it felt, because a planning
+     * conversation feels complete at the time and frequently is not.
+     */
+    approvedAt: integer('approved_at'),
+    integrationBranch: text('integration_branch'),
+    /**
+     * When the batch was merged into the project's own branch.
+     *
+     * The one approval this design asks for after the plan: integration into
+     * the batch branch is automatic, and the step out of it is not.
+     */
+    mergedAt: integer('merged_at'),
+    mergedInto: text('merged_into'),
   },
   (table) => [index('plans_board').on(table.boardId)],
 );
@@ -293,6 +377,34 @@ export const cards = sqliteTable(
      * read, and would leave the operator unable to tell whether theirs landed.
      */
     retryNote: text('retry_note'),
+    /**
+     * The account the agent gave of its own work, as JSON (the completion
+     * contract).
+     *
+     * Stored on the card rather than derived from the worktree, because the
+     * worktree is removed after a merge and this is the part of the run an
+     * operator reads afterwards. What the board saw for itself - the diff, the
+     * verify result - is recorded separately and is what this is checked
+     * against; the two are deliberately not merged into one record.
+     */
+    completionReport: text('completion_report'),
+    /**
+     * When this card's branch was merged onto its plan's integration branch.
+     *
+     * Separate from `mergedAt`, which is the card reaching the project's own
+     * branch. A card can be integrated into a batch that has not landed, and
+     * the board has to be able to say which of the two happened.
+     */
+    integratedAt: integer('integrated_at'),
+    /**
+     * How many times the board has handed a routine failure back to this card.
+     *
+     * Distinct from `attempts`, which counts dispatches of any kind. A repair
+     * is a dispatch the board asked for on the operator's behalf, and counting
+     * it separately is what lets the bound be "one repair" rather than "one
+     * run".
+     */
+    repairs: integer('repairs').notNull().default(0),
     /**
      * The ledger entry this card was raised to address (T38).
      *

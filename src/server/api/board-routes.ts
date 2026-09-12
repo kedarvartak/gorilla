@@ -9,6 +9,7 @@ import { blockersFor, dispatchableCards, dispatchStanding } from '../cards/eligi
 import { executionOrder } from '../cards/order.js';
 import { proposeInvariants } from '../cards/invariant-proposals.js';
 import { resync } from '../cards/resync.js';
+import { parsePolicy, PolicyError, readPolicy, writePolicy } from '../cards/policy.js';
 import { searchCards } from '../cards/search.js';
 import { buildPlan, describePlan } from '../cards/plan.js';
 import { describeMetrics, readMetrics } from '../metrics.js';
@@ -295,6 +296,37 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
    * dispatched card, marked as project rules so the agent can tell them from the
    * card's own peculiarities.
    */
+  /**
+   * The project's execution policy.
+   *
+   * One place where it is decided which agent works this project, on what
+   * model, how a worktree is prepared and how the work is checked - so that
+   * readying a card is describing a task rather than configuring a runtime.
+   * Cards take a copy when they are created; see `cards/policy.ts` for why a
+   * copy rather than a lookup.
+   */
+  app.get<{ Params: { boardId: string } }>('/api/boards/:boardId/policy', (request) => {
+    return readPolicy(context.database, request.params.boardId);
+  });
+
+  app.put<{ Params: { boardId: string }; Body: Record<string, unknown> }>(
+    '/api/boards/:boardId/policy',
+    (request, reply) => {
+      try {
+        return writePolicy(
+          context.database,
+          request.params.boardId,
+          parsePolicy(request.body ?? {}),
+        );
+      } catch (cause) {
+        if (cause instanceof PolicyError) {
+          return reply.code(400).send({ error: cause.message, field: cause.field });
+        }
+        throw cause;
+      }
+    },
+  );
+
   app.get<{ Params: { boardId: string } }>('/api/boards/:boardId/invariants', (request) => {
     return context.database.db
       .select()

@@ -68,10 +68,7 @@ export function CommandPalette({
     },
   ];
 
-  const items = [
-    ...cardItems,
-    ...(query.length === 0 ? actionItems : []),
-  ];
+  const items = [...cardItems, ...(query.length === 0 ? actionItems : [])];
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

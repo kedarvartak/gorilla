@@ -108,6 +108,8 @@ export interface RunningLaunch {
   readonly result: Promise<LaunchResult>;
   /** SIGTERM: aborts the turn, runs SessionEnd hooks, exits 143. */
   cancel(): void;
+  /** Stops a provider that has left durable completion evidence behind. */
+  finishAsCompleted(): void;
   readonly pid: number | undefined;
 }
 
@@ -184,6 +186,7 @@ export function launch(options: LaunchOptions): RunningLaunch {
   let sessionId: string | null = options.sessionId ?? null;
   let retries = 0;
   let cancelled = false;
+  let completedByEvidence = false;
   let stderr = '';
 
   const stdout = createInterface({ input: child.stdout, crlfDelay: Infinity });
@@ -228,7 +231,9 @@ export function launch(options: LaunchOptions): RunningLaunch {
       // 143 is SIGTERM's conventional exit code and is what a cancelled run
       // looks like, so it is reported as cancelled rather than as a failure.
       const outcome: LaunchOutcome =
-        cancelled || signal === 'SIGTERM' || exitCode === 143
+        completedByEvidence
+          ? 'completed'
+          : cancelled || signal === 'SIGTERM' || exitCode === 143
           ? 'cancelled'
           : exitCode === 0
             ? 'completed'
@@ -247,6 +252,17 @@ export function launch(options: LaunchOptions): RunningLaunch {
   return {
     result,
     pid: child.pid,
+    finishAsCompleted: () => {
+      completedByEvidence = true;
+      if (child.exitCode !== null || child.signalCode !== null) return;
+      const pid = child.pid;
+      try {
+        if (pid !== undefined) process.kill(-pid, 'SIGTERM');
+        else child.kill('SIGTERM');
+      } catch {
+        child.kill('SIGTERM');
+      }
+    },
     cancel: () => {
       cancelled = true;
       if (child.exitCode !== null || child.signalCode !== null) return;

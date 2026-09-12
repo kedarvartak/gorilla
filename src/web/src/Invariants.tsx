@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { X } from '@phosphor-icons/react';
 
 import { Panel } from './Panel.js';
+import { ExecutionPolicy } from './ExecutionPolicy.js';
 
 import { api } from './api.js';
 
@@ -112,10 +113,12 @@ export function Invariants({
   }
 
   return (
-    <Panel title="Project rules" onClose={onClose}>
+    <Panel title="Project settings" onClose={onClose}>
       <header className="flex items-baseline gap-3 border-b border-line bg-surface px-4 py-2.5">
-        <h2 className="text-[14.5px] font-semibold tracking-tight text-ink">Project rules</h2>
-        <span className="text-[12.5px] text-dim">Handed to every card this board dispatches</span>
+        <h2 className="text-[14.5px] font-semibold tracking-tight text-ink">Project settings</h2>
+        <span className="text-[12.5px] text-dim">
+          How this board runs work, and the rules every card is handed
+        </span>
         <button
           type="button"
           aria-label="Close"
@@ -129,6 +132,21 @@ export function Invariants({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
         <div className="mx-auto w-full max-w-3xl">
+          {/* Execution first: it is the half that decides what happens when a
+              card is dispatched, and the half an operator sets once and stops
+              thinking about. The rules below it are edited far more often. */}
+          <h3 className="mb-1 font-semibold text-ink">Execution</h3>
+          <p className="mb-3 t-small text-dim">
+            What a new card inherits. A card can still override any of it under its own advanced
+            settings.
+          </p>
+          <ExecutionPolicy boardId={boardId} />
+
+          <h3 className="mb-1 mt-8 border-t border-line pt-6 font-semibold text-ink">Rules</h3>
+          <p className="mb-3 t-small text-dim">
+            Handed to every card this board dispatches, marked as project rules rather than as one
+            card&apos;s peculiarity.
+          </p>
           <div className="mb-3 flex gap-2">
             <input
               className="flex-1 rounded border border-line bg-well px-2 py-1 text-ink placeholder:text-dim"

@@ -58,8 +58,8 @@ const VIEWS: readonly {
   },
   {
     id: 'rules',
-    label: 'Rules',
-    hint: 'Rules handed to every card this board dispatches',
+    label: 'Project',
+    hint: 'How this board runs work, and the rules every card is handed',
     Icon: Scales,
   },
 ];

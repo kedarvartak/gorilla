@@ -161,6 +161,18 @@ describe('what a board answers with', () => {
       'dispatchToHour',
       'id',
       'name',
+      // The project's execution policy, which a card is stamped with when it
+      // is created rather than looking up at dispatch.
+      'policyEffort',
+      'policyModel',
+      'policyPermissionMode',
+      'policyProvider',
+      // How many times a failure the board can describe is handed back to the
+      // agent before it asks a person.
+      'policyRepairAttempts',
+      'policySetup',
+      'policyTokenCeiling',
+      'policyVerify',
     ]);
   });
 

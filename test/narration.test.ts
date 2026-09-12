@@ -135,6 +135,7 @@ describe('reading a Claude run', () => {
 
     const { entries } = narrationFor(database, CARD);
     expect(entries.map((entry) => entry.text)).toEqual(['npm run lint', '/repo/a.ts']);
+    expect(entries[0]?.detail).toBe(JSON.stringify({ command: 'npm run lint' }, null, 2));
   });
 
   it('counts thinking the harness recorded without its words', () => {
@@ -159,9 +160,7 @@ describe('reading a Claude run', () => {
     expect(narration.note).toContain('withheld by the harness');
   });
 
-  it('leaves tool results out, which is what keeps this readable', () => {
-    // A tool result arrives as a user record carrying no text block. Included,
-    // this becomes a dump of every byte the tools returned.
+  it('keeps tool output distinct from user instructions so it can be expanded', () => {
     addRun({
       transcriptPath: transcript([
         { type: 'user', message: { content: [{ type: 'tool_result', content: 'x'.repeat(500) }] } },
@@ -170,12 +169,34 @@ describe('reading a Claude run', () => {
     });
 
     const { entries } = narrationFor(database, CARD);
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.kind).toBe('asked');
+    expect(entries).toHaveLength(2);
+    expect(entries[0]?.kind).toBe('output');
+    expect(entries[0]?.text).toBe('x'.repeat(500));
+    expect(entries[1]?.kind).toBe('asked');
   });
 });
 
 describe('reading a Codex run', () => {
+  it('keeps command code and output from the CLI item stream', () => {
+    const run = addRun({});
+    codexEvent(run, 1, {
+      type: 'item.completed',
+      item: {
+        type: 'command_execution',
+        command: 'node -e "inspectRepo()"',
+        aggregated_output: 'Found 14 modules',
+      },
+    });
+    codexEvent(run, 2, {
+      type: 'item.completed',
+      item: { type: 'agent_message', text: 'Exploration complete.' },
+    });
+    const { entries } = narrationFor(database, CARD);
+    expect(entries[0]?.tool).toBe('shell');
+    expect(entries[0]?.text).toContain('inspectRepo()');
+    expect(entries[0]?.text).toContain('Found 14 modules');
+    expect(entries[1]?.text).toBe('Exploration complete.');
+  });
   it('maps what it says and does out of the envelope', () => {
     const run = addRun({});
     codexEvent(run, 1, {

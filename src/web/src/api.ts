@@ -13,7 +13,7 @@ export interface GuardrailDetail {
   readonly because: string;
 }
 
-export type NarrationKind = 'thinking' | 'said' | 'did' | 'asked';
+export type NarrationKind = 'thinking' | 'said' | 'did' | 'asked' | 'output';
 
 export interface NarrationEntry {
   readonly runId: string;
@@ -22,6 +22,7 @@ export interface NarrationEntry {
   readonly kind: NarrationKind;
   readonly text: string;
   readonly tool: string | null;
+  readonly detail?: string;
 }
 
 /** The agent's own account of a run. */
@@ -465,6 +466,21 @@ export const api = {
 
   removeInvariant: (boardId: string, invariantId: string) =>
     request<void>(`/api/boards/${boardId}/invariants/${invariantId}`, { method: 'DELETE' }),
+
+  /**
+   * The project's execution policy: which agent works this board, on what
+   * model, how a worktree is prepared and how the work is checked.
+   *
+   * Through `request` rather than `optional`, because a refusal here carries
+   * the reason the setting was rejected and the operator needs to read it.
+   */
+  policy: <T>(boardId: string) => request<T>(`/api/boards/${boardId}/policy`),
+
+  savePolicy: <T>(boardId: string, policy: Record<string, unknown>) =>
+    request<T>(`/api/boards/${boardId}/policy`, {
+      method: 'PUT',
+      body: JSON.stringify(policy),
+    }),
 
   /* Everything below loads alongside something else. A failure here removes a
      section, never the screen. */

@@ -38,6 +38,7 @@ export function FilterBar({
       <Select
         variant="bare"
         placeholder="All statuses"
+        label="Filter by status"
         value={filters.status ?? ''}
         onChange={(value) =>
           onFilterChange({ ...filters, status: (value as Card['status']) || null })
@@ -57,6 +58,7 @@ export function FilterBar({
       <Select
         variant="bare"
         placeholder="All priorities"
+        label="Filter by priority"
         value={filters.priority ?? ''}
         onChange={(value) =>
           onFilterChange({ ...filters, priority: (value as Card['priority']) || null })
@@ -72,6 +74,7 @@ export function FilterBar({
       <Select
         variant="bare"
         placeholder="All agents"
+        label="Filter by agent"
         value={filters.agent ?? ''}
         onChange={(value) =>
           onFilterChange({ ...filters, agent: (value as Card['agentProvider']) || null })

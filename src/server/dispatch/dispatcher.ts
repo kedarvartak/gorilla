@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { eq } from 'drizzle-orm';
 
-import { getCard, updateCard } from '../api/cards.js';
+import { getCard, moveCard, updateCard } from '../api/cards.js';
 import { canonicaliseCwd } from '../ingest/binding.js';
 import { dispatchableCards } from '../cards/eligibility.js';
 import { assembleBackground } from '../cards/background.js';
@@ -19,6 +19,9 @@ import { recordCardPaths } from '../cards/subsystems.js';
 import { mergedPaths } from '../cards/staleness.js';
 import { buildMechanicalLedger } from '../ledger/mechanical.js';
 import { WorktreeManager } from '../worktree/manager.js';
+import { describePrepare, prepareWorkspace } from '../worktree/prepare.js';
+import { describeVerdict, maySettle, readReport, type Verdict } from '../review/contract.js';
+import { integrateCard } from '../review/batch.js';
 import { commitWorkspace } from '../worktree/commit.js';
 import {
   launch,
@@ -62,6 +65,17 @@ export type HaltReason =
   | 'verify-failed'
   // The card could not be given an isolated worktree to work in.
   | 'no-workspace'
+  // The run ended without an account of its own work that meets the completion
+  // contract, and the board's repair budget for this card is spent.
+  | 'incomplete-report'
+  // The card finished and would not merge onto its batch branch. This stops
+  // the card, not the night: a conflict is between two cards, and the rest of
+  // the batch has no part in it.
+  | 'integration-failed'
+  // The worktree was created and the project's setup command failed in it, so
+  // the agent was never started: a workspace that cannot build produces an
+  // hour of work against a broken tree and a failure with a misleading cause.
+  | 'setup-failed'
   // The run stopped getting anywhere: refused calls, or silence.
   | 'stalled'
   // A finished card has surprises nobody has judged, so the queue stopped
@@ -122,6 +136,12 @@ export interface DispatcherEvents {
   readonly onHalted?: (boardId: string, halt: HaltState) => void;
   /** Fired when a card goes back in the queue rather than being blocked (T42). */
   readonly onRetried?: (boardId: string, cardId: string, why: string) => void;
+  /**
+   * Fired when the board hands a failure it can describe back to the agent
+   * rather than to a person (the bounded repair). Distinct from `onRetried`,
+   * which is a transient fault and implies nothing about the work.
+   */
+  readonly onRepaired?: (boardId: string, cardId: string, why: string) => void;
   /** Fired when a run continues an interrupted session rather than starting one (T46). */
   readonly onResumed?: (boardId: string, cardId: string, why: string) => void;
   /**
@@ -205,6 +225,7 @@ export class Dispatcher {
   readonly #lastVerify = new Map<string, VerifyResult>();
   readonly #worktrees = new Map<string, WorktreeManager>();
   readonly #pumping = new Set<string>();
+  readonly #completionWatchdogs = new Map<string, NodeJS.Timeout>();
   /**
    * Set by shutdown, so work already in flight stops touching the database.
    *
@@ -586,6 +607,56 @@ export class Dispatcher {
     return this.workspaceFor?.(cardId) ?? this.#worktreesFor(boardCwd).pathFor(cardId) ?? boardCwd;
   }
 
+  /**
+   * Providers sometimes leave their child process alive after committing. Once
+   * the report exists and the worktree is clean with a commit ahead, the
+   * deliverable is durable; waiting forever for a provider exit would leave a
+   * finished card visibly running. Stop that provider and let the ordinary
+   * settlement path perform the board's own verify and contract checks.
+   */
+  #watchCompletionEvidence(boardId: string, cardId: string, running: RunningLaunch): void {
+    const existing = this.#completionWatchdogs.get(cardId);
+    if (existing !== undefined) clearInterval(existing);
+
+    let checking = false;
+    const timer = setInterval(() => {
+      void (async () => {
+      if (checking || this.#stopped) return;
+      const state = this.#stateFor(boardId);
+      if (state.running.get(cardId) !== running) {
+        clearInterval(timer);
+        this.#completionWatchdogs.delete(cardId);
+        return;
+      }
+
+      const board = this.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
+      if (board === undefined) return;
+      const manager = this.#worktreesFor(board.cwd);
+      const workspace = manager.workspaceFor(cardId);
+      if (workspace === undefined || readReport(workspace.path) === null) return;
+
+      checking = true;
+      try {
+        const status = await manager.statusOf(cardId);
+        // `status.ahead` means ahead of a configured remote upstream, not
+        // ahead of the worktree's starting point. Local Gorilla branches have
+        // no upstream, so a valid report plus a clean worktree is the durable
+        // completion signal we can rely on.
+        if (status !== null && status.dirty === 0) {
+          clearInterval(timer);
+          this.#completionWatchdogs.delete(cardId);
+          running.finishAsCompleted();
+        }
+      } finally {
+        checking = false;
+      }
+      })();
+    }, 1_000);
+
+    timer.unref?.();
+    this.#completionWatchdogs.set(cardId, timer);
+  }
+
   async dispatchIsolated(boardId: string, cardId: string): Promise<RunningLaunch | null> {
     const board = this.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
     if (board === undefined) return null;
@@ -630,6 +701,31 @@ export class Dispatcher {
         });
         return null;
       }
+
+      /*
+       * The project's preparation, run by the board before the agent starts.
+       *
+       * Only for a worktree this dispatch just created. Resuming into an
+       * existing one would reinstall on every retry, which on a large project
+       * is minutes of nothing for a tree that is already prepared.
+       */
+      if (workspace.created) {
+        const prepared = await prepareWorkspace({
+          command: board.policySetup,
+          cwd: workspace.path,
+        });
+
+        if (!prepared.ok) {
+          this.#halt(boardId, {
+            reason: 'setup-failed',
+            cardId,
+            cardTitle: card.title,
+            detail: describePrepare(prepared, workspace.path),
+            at: Date.now(),
+          });
+          return null;
+        }
+      }
     }
 
     return this.#dispatchHoldingLease(boardId, cardId);
@@ -648,6 +744,26 @@ export class Dispatcher {
     const manager = this.#worktreesFor(boardCwd);
 
     for (const dependency of dependencies) {
+      /*
+       * The batch branch first, when the dependency is already on it.
+       *
+       * A dependency that has been integrated is no longer best represented
+       * by its own branch: the batch branch holds it *and* everything else
+       * that has landed since, so starting there is what makes a dependent
+       * card build on the batch rather than on one sibling's view of it.
+       * Falling back to the dependency's own branch covers the case that
+       * matters most - work that is finished but not yet integrated.
+       */
+      const integrated = this.database.sqlite
+        .prepare(
+          'SELECT p.integration_branch AS branch FROM cards c ' +
+            'JOIN plans p ON p.id = c.plan_id ' +
+            'WHERE c.id = ? AND c.integrated_at IS NOT NULL AND p.integration_branch IS NOT NULL',
+        )
+        .get(dependency.id) as { branch: string } | undefined;
+
+      if (integrated !== undefined) return integrated.branch;
+
       const workspace = manager.workspaceFor(dependency.id);
       if (workspace !== undefined) return workspace.branch;
     }
@@ -845,6 +961,7 @@ export class Dispatcher {
     }
 
     state.running.set(cardId, running);
+    this.#watchCompletionEvidence(boardId, cardId, running);
     if (providerSessionId !== null) this.events.onRunStarted?.(boardId, cardId, providerSessionId);
     this.#publish(boardId);
 
@@ -1016,6 +1133,155 @@ export class Dispatcher {
   }
 
   /**
+   * One more attempt at a failure the board can describe (the bounded repair).
+   *
+   * The distinction that matters is between a failure the board can state and
+   * a failure it can only report. A verify that failed and a completion report
+   * missing a term are both the first kind: the board knows exactly what is
+   * wrong and what would resolve it, and handing that back is cheaper for
+   * everybody than waking someone to read it. A product decision, a missing
+   * credential, or a scope the card cannot be done within is the second kind,
+   * and those go to a person unrepaired.
+   *
+   * Bounded by the project's policy, counted on the card, and separate from
+   * `attempts`: a repair is a dispatch the board asked for on the operator's
+   * behalf, and an unbounded one is how a card spends a night failing the same
+   * way at increasing expense.
+   *
+   * The note travels through `retryNote`, which is already the channel for an
+   * operator's correction and is already delivered once and then cleared. The
+   * agent therefore cannot tell a repair from being sent back by a person,
+   * which is correct: both are the same instruction.
+   */
+  #repairCard(boardId: string, cardId: string, why: string): boolean {
+    const state = this.#stateFor(boardId);
+    if (state.running.has(cardId)) return false;
+
+    const board = this.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
+    const budget = board?.policyRepairAttempts ?? 1;
+    const card = getCard(this.database, cardId);
+
+    if (budget <= 0 || card.repairs >= budget) return false;
+
+    this.database.db
+      .update(cards)
+      .set({
+        repairs: card.repairs + 1,
+        // Stated as what to do, not as a complaint. It is the first thing the
+        // next run reads.
+        retryNote: `The board sent this back. ${why}`,
+      })
+      .where(eq(cards.id, cardId))
+      .run();
+
+    /*
+     * A completed run has already entered the review column by the time its
+     * verification or completion contract is judged.  Merely making it idle
+     * here is not enough: `pump` deliberately only selects idle cards from a
+     * Ready column.  Put it back in that queue before waking it, otherwise a
+     * "repair" is only a note for the operator to discover and move by hand.
+     */
+    const ready = this.database.db
+      .select({ id: columns.id, isReady: columns.isReady })
+      .from(columns)
+      .where(eq(columns.boardId, boardId))
+      .all()
+      .find((column) => column.isReady);
+
+    if (ready === undefined) return false;
+
+    moveCard(this.database, cardId, ready.id, Number.MAX_SAFE_INTEGER);
+    updateCard(this.database, cardId, { status: 'idle' });
+    // This attempt did not settle. Keeping it in the surprise gate would make
+    // the pump halt on its provisional output before the repair can start.
+    state.awaitingAck.delete(cardId);
+    this.events.onRepaired?.(boardId, cardId, why);
+
+    if (state.halted?.cardId === cardId) state.halted = null;
+
+    this.#publish(boardId);
+    // A repair belongs to the dispatch that just finished. It must therefore
+    // run even when the board is in manual mode: manual controls whether the
+    // board starts *new* cards, not whether an already-dispatched card can
+    // correct a check the board gave it. Automatic boards still go through
+    // the queue so their concurrency and ordering rules remain authoritative.
+    if (state.mode === 'automatic') {
+      void this.pump(boardId).catch(() => undefined);
+    } else {
+      void this.dispatchIsolated(boardId, cardId).catch(() => undefined);
+    }
+    return true;
+  }
+
+  /**
+   * What the agent said about its own work, judged against what the board saw.
+   *
+   * The evidence is git's and the board's own: the paths in the branch diff,
+   * and the verify result this run produced. The report is checked for being
+   * a complete account of that work, never trusted as a substitute for it.
+   */
+  #judgeReport(boardId: string, cardId: string, verifyStatus: VerifyResult | null): Verdict {
+    const board = this.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
+    if (board === undefined) return maySettle(null, { changedPaths: [], verifyStatus: null });
+
+    // Where the agent actually worked, which is the worktree when the card was
+    // isolated and the board's own directory when it was not. Looking only in
+    // a worktree would fail every card on an un-isolated board for a report it
+    // had written exactly where it was told to.
+    const workspace = this.#workspacePath(board.cwd, cardId);
+
+    const changedPaths = this.database.sqlite
+      .prepare('SELECT DISTINCT path FROM card_paths WHERE card_id = ? AND source = ?')
+      .all(cardId, 'git') as { path: string }[];
+
+    return maySettle(readReport(workspace), {
+      changedPaths: changedPaths.map((row) => row.path),
+      verifyStatus: verifyStatus?.status ?? null,
+    });
+  }
+
+  /**
+   * Merging a finished card onto its plan's batch branch.
+   *
+   * Failures here are the card's, not the queue's: a conflict means this card
+   * and one of its siblings disagree, and the other cards in the batch have no
+   * part in it. So this blocks the one card and leaves the night running.
+   */
+  async #integrate(boardId: string, cardId: string, title: string): Promise<void> {
+    let report;
+    try {
+      report = await integrateCard(this.database, cardId);
+    } catch (cause) {
+      // Never leave a finished-looking card with an integration failure hidden
+      // behind it. The work is still on its branch, but a person needs the
+      // actual reason rather than a card that merely appears unintegrated.
+      updateCard(this.database, cardId, { status: 'blocked' });
+      this.#failCard(boardId, cardId, {
+        reason: 'integration-failed',
+        cardId,
+        cardTitle: title,
+        detail: `Could not integrate this card: ${cause instanceof Error ? cause.message : String(cause)}`,
+        at: Date.now(),
+      });
+      return;
+    }
+
+    if (report === null || report.clean) return;
+
+    updateCard(this.database, cardId, { status: 'blocked' });
+    this.#failCard(boardId, cardId, {
+      reason: 'integration-failed',
+      cardId,
+      cardTitle: title,
+      detail:
+        report.stoppedAt === null
+          ? `The card could not be merged onto ${report.into}.`
+          : `${report.stoppedAt.detail} (merging onto ${report.into})`,
+      at: Date.now(),
+    });
+  }
+
+  /**
    * How a card's failure is handled (T43).
    *
    * Under `review` the queue stops, which is right: someone is watching, and
@@ -1068,6 +1334,9 @@ export class Dispatcher {
     if (this.#stopped) return;
 
     const state = this.#stateFor(boardId);
+    const watchdog = this.#completionWatchdogs.get(cardId);
+    if (watchdog !== undefined) clearInterval(watchdog);
+    this.#completionWatchdogs.delete(cardId);
     state.running.delete(cardId);
     releaseLease(this.database.sqlite, cardId);
 
@@ -1194,6 +1463,13 @@ export class Dispatcher {
     state.awaitingAck.add(cardId);
 
     if (verify?.status === 'failed' || verify?.status === 'errored') {
+      // A failing check is the routine failure this board exists to work
+      // through: the board knows what was run and what it said, so the agent
+      // gets that back once before a person is asked to look at it.
+      if (this.#repairCard(boardId, cardId, `${describeVerify(verify)}\n\n${verify.output}`)) {
+        return;
+      }
+
       this.#failCard(boardId, cardId, {
         reason: 'verify-failed',
         cardId,
@@ -1203,6 +1479,66 @@ export class Dispatcher {
       });
       return;
     }
+
+    /*
+     * The completion contract.
+     *
+     * Last, because it is judged against everything above it: the commit, the
+     * paths git recorded, and the board's own verify result. A run that
+     * finished without an account of its own work has said only that its
+     * process exited, and a card that settles on that is the failure this
+     * whole gate exists to prevent - so the report is asked for again, once,
+     * and then it becomes a person's problem.
+     */
+    const verdict = this.#judgeReport(boardId, cardId, verify);
+
+    if (!verdict.ok) {
+      if (this.#repairCard(boardId, cardId, describeVerdict(verdict))) return;
+
+      // Out of the review column's status, not merely halted. The card was
+      // moved to `awaiting-review` when the process exited, which is the
+      // claim this gate exists to refuse: nobody can review a card whose
+      // account of itself is missing, and leaving it there presents it as
+      // ready for exactly the judgement it cannot support.
+      updateCard(this.database, cardId, { status: 'blocked' });
+
+      this.#failCard(boardId, cardId, {
+        reason: 'incomplete-report',
+        cardId,
+        cardTitle: card.title,
+        detail: describeVerdict(verdict),
+        at: Date.now(),
+      });
+      return;
+    }
+
+    // Kept on the card, because the worktree it was written in does not
+    // survive the merge and this is the part of the run an operator reads
+    // afterwards. The discrepancies travel with it: a file changed and not
+    // described is worth an eye, and is frequently the incidental edit that
+    // turns out to matter.
+    this.database.db
+      .update(cards)
+      .set({
+        completionReport: JSON.stringify({
+          ...verdict.report,
+          discrepancies: verdict.discrepancies,
+        }),
+      })
+      .where(eq(cards.id, cardId))
+      .run();
+
+    /*
+     * Onto the batch branch, if this card's plan has one.
+     *
+     * Automatic, because integrating is the half of the job the board can do
+     * without a judgement: the card is complete by the contract above and its
+     * check passed. A conflict here stops this card and nothing else - the
+     * batch and its siblings carry on - which is the point of integrating one
+     * card at a time rather than five at the end.
+     */
+    await this.#integrate(boardId, cardId, card.title);
+    if (this.#stopped) return;
 
     // A card got all the way through, so whatever the last failures had in
     // common is not stopping work now. The streak starts again from here.
@@ -1401,6 +1737,16 @@ export class Dispatcher {
     if (workspace === undefined) return;
 
     const result = await commitWorkspace({ cwd: workspace.path, cardId, cardTitle });
+    // The dispatcher created this branch, so it is authoritative even when a
+    // provider hook did not create a `runs` row (for example a Codex stream
+    // that ended before binding, or a recovered process). Batch integration
+    // must not make the operator rediscover and merge work that is already in
+    // the card's isolated checkout.
+    this.database.db
+      .update(cards)
+      .set({ mergedBranch: workspace.branch })
+      .where(eq(cards.id, cardId))
+      .run();
     if (result.committed) this.events.onCommitted?.(boardId, cardId, result.files);
   }
 
@@ -1431,6 +1777,8 @@ export class Dispatcher {
 
   async shutdown(): Promise<void> {
     this.#stopped = true;
+    for (const timer of this.#completionWatchdogs.values()) clearInterval(timer);
+    this.#completionWatchdogs.clear();
     // Cleared rather than left to expire. They are unreferenced, so they would
     // not hold the process open, but a timer firing into a closed database
     // after shutdown is a crash looking for a slow night to happen on.

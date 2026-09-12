@@ -85,7 +85,7 @@ describe('the collapsed rail', () => {
     // By accessible name, not by CSS. The labels are clipped rather than
     // removed precisely so this keeps working: a rail that swapped its text
     // out while narrow would be unreachable by screen reader and by voice.
-    for (const name of ['Board', 'Digest', 'Order', 'Numbers', 'Rules', 'Activity']) {
+    for (const name of ['Board', 'Digest', 'Order', 'Numbers', 'Project', 'Activity']) {
       const found = [...container.querySelectorAll('button')].some(
         (button) => button.textContent?.trim() === name,
       );

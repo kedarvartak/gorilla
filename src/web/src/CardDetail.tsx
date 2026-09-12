@@ -13,6 +13,7 @@ import {
 } from 'react';
 
 import { Select, type SelectOption } from './Select.js';
+import { CardSetup } from './CardSetup.js';
 import { Timeline } from './Timeline.js';
 
 import {
@@ -63,18 +64,6 @@ import {
  * Null everywhere means the board default, which is what most cards should say.
  */
 const CLAUDE_MODELS = ['haiku', 'sonnet', 'opus', 'fable'] as const;
-/* The ids the installed Codex CLI actually offers. The list before this one
-   was `gpt-5.3-codex`, `gpt-5.2-codex` and `o3`, none of which it recognises -
-   so every one of them was a card that would fail at dispatch. */
-const CODEX_MODELS = [
-  'gpt-5.4-mini',
-  'gpt-5.4',
-  'gpt-5.5',
-  'gpt-5.6-luna',
-  'gpt-5.6-sol',
-  'gpt-5.6-terra',
-] as const;
-const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 
 interface LedgerEntry {
   readonly kind: string;
@@ -360,12 +349,6 @@ const KIND_COLOUR: Record<string, string> = {
  * Empty entries are dropped rather than stored: a trailing comma is a typing
  * artefact, and an empty prohibition would render as a rule that forbids nothing.
  */
-function asList(raw: string): string[] {
-  return raw
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter((entry) => entry !== '');
-}
 
 /**
  * As tall as a field is allowed to grow before it starts scrolling after all.
@@ -947,14 +930,15 @@ function Narration({
   onMore: () => void;
 }): ReactElement {
   const foot = useRef<HTMLDivElement>(null);
+  const [following, setFollowing] = useState(true);
   const shown = narration?.entries?.length ?? 0;
 
   useEffect(() => {
     // Follows the run, which is the whole point while a card is live. Only
     // while running: yanking a reader to the bottom of a finished transcript
     // they were scrolling through would be a bug.
-    if (running) foot.current?.scrollIntoView({ block: 'nearest' });
-  }, [shown, running]);
+    if (running && following) foot.current?.scrollIntoView({ block: 'nearest' });
+  }, [shown, running, following]);
 
   if (narration === null) {
     return (
@@ -978,9 +962,21 @@ function Narration({
   return (
     <div className="section section--wide">
       <h4 className="mb-1 eyebrow">
-        Model thinking
+        Agent activity
         {narration.provider === null ? '' : ` · ${narration.provider}`}
       </h4>
+      <p className="mb-3 text-sm text-dim">
+        Messages, exploration, code and tool output, in run order. Expand a tool call to inspect it.
+      </p>
+      {running ? (
+        <button
+          type="button"
+          className="mb-3 rounded border border-line px-3 py-1 text-sm text-ink"
+          onClick={() => setFollowing(!following)}
+        >
+          {following ? 'Pause auto-scroll' : 'Follow latest'}
+        </button>
+      ) : null}
 
       {/* Said before the entries, not after. An operator who reads to the
           bottom looking for reasoning that was never handed over has already
@@ -1031,17 +1027,19 @@ function Narration({
 
 /** One line of the account, styled by what kind of thing it is. */
 function NarrationLine({ entry }: { entry: NarrationEntry }): ReactElement {
-  if (entry.kind === 'did') {
+  if (entry.kind === 'did' || entry.kind === 'output') {
     return (
-      <div className="flex items-baseline gap-2 t-small">
-        <span className="shrink-0 font-mono text-faint">did</span>
-        <span className="font-mono text-ink">{entry.tool ?? 'tool'}</span>
-        {entry.text === '' ? null : (
-          <span className="min-w-0 truncate text-dim" title={entry.text}>
-            {entry.text}
+      <details className="rounded-lg border border-line bg-well px-3 py-2 font-mono text-xs">
+        <summary className="cursor-pointer break-words text-dim">
+          <span className="mr-2 text-ink">
+            {entry.kind === 'output' ? 'Output' : (entry.tool ?? 'Tool')}
           </span>
-        )}
-      </div>
+          {entry.text.split('\n')[0]?.slice(0, 160)}
+        </summary>
+        <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap break-words border-t border-line pt-3 text-ink">
+          {entry.detail ?? entry.text}
+        </pre>
+      </details>
     );
   }
 
@@ -1108,7 +1106,8 @@ export function CardDetail({
   const [proposals, setProposals] = useState<readonly GuardrailProposal[]>([]);
   /** The context file an agent dispatched now would be handed, verbatim. */
   const [agentContext, setAgentContext] = useState<string | null>(null);
-  const [contextOpen, setContextOpen] = useState(false);
+  const [runBusy, setRunBusy] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
   /** The file whose diff is open, and its text. One at a time (T31). */
   const [openDiff, setOpenDiff] = useState<{ path: string; text: string } | null>(null);
   const [retrying, setRetrying] = useState(false);
@@ -1124,6 +1123,9 @@ export function CardDetail({
   // this pane, so opening detail should clarify a decision, not replace one
   // wall of cards with three smaller walls of text.
   const [activePane, setActivePane] = useState<Pane>('brief');
+  const openedCard = useRef<string | null>(null);
+  const liveStatus = useRef(detail?.card.status);
+  liveStatus.current = detail?.card.status;
   const [narration, setNarration] = useState<NarrationModel | null>(null);
   const [narrationError, setNarrationError] = useState<string | null>(null);
   /** How far back the operator has asked to see. */
@@ -1271,6 +1273,23 @@ export function CardDetail({
     }
   }, [cardId]);
 
+  async function runAgent(): Promise<void> {
+    if (detail === null) return;
+    setRunBusy(true);
+    setRunError(null);
+    try {
+      await api.dispatchCard(detail.card.boardId, cardId);
+      const next = await api.cardDetail<Detail>(cardId);
+      if (next !== null) setDetail(next);
+      setActivePane('thinking');
+    } catch (cause) {
+      setRunError((cause as Error).message);
+      throw cause;
+    } finally {
+      setRunBusy(false);
+    }
+  }
+
   /** Save a model choice, then re-read the card so the rail shows what is stored. */
   const patch = useCallback(
     (body: Parameters<typeof api.updateCard>[1]) => {
@@ -1337,7 +1356,10 @@ export function CardDetail({
     }
 
     void read();
-    if (!running) return;
+    if (!running)
+      return () => {
+        cancelled = true;
+      };
 
     const timer = setInterval(() => void read(), 2_000);
     return () => {
@@ -1350,6 +1372,7 @@ export function CardDetail({
     let cancelled = false;
 
     async function load(): Promise<void> {
+      const firstOpen = openedCard.current !== cardId;
       try {
         // Every one of these is shape-checked by the client and answers null
         // rather than throwing. Only the detail is load-bearing; the rest are
@@ -1376,22 +1399,35 @@ export function CardDetail({
 
         if (detail === null) throw new Error('Could not load this card.');
         setDetail(detail);
+        if (openedCard.current !== cardId) {
+          openedCard.current = cardId;
+          setActivePane(
+            detail.card.status === 'running'
+              ? 'thinking'
+              : detail.runs.length === 0
+                ? 'specification'
+                : 'brief',
+          );
+        }
 
         if (brief !== null) setBrief(brief);
 
         // Marked seen only after the brief has been computed. The other order
         // makes "since you last looked" permanently empty, because opening the
         // card would move the line the brief is measured against.
-        await api.markSeenQuietly(cardId);
+        if (firstOpen) await api.markSeenQuietly(cardId);
       } catch (cause) {
         if (!cancelled) setError((cause as Error).message);
       }
     }
 
     void load();
-
+    const timer = setInterval(() => {
+      if (liveStatus.current === 'running' || liveStatus.current === 'queued') void load();
+    }, 5_000);
     return () => {
       cancelled = true;
+      clearInterval(timer);
     };
   }, [cardId]);
 
@@ -1441,13 +1477,13 @@ export function CardDetail({
    * the pane cannot say while it is closed.
    */
   const panes: readonly (readonly [Pane, string])[] = [
-    ['brief', brief === null ? 'Brief' : `Brief · ${brief.unseenCount} new`],
-    ['specification', 'Specification'],
+    ['specification', 'Setup'],
+    ['brief', 'Summary'],
     [
       'thinking',
       narration === null || narration.total === 0
-        ? 'Model thinking'
-        : `Model thinking · ${String(narration.total)}`,
+        ? 'Agent activity'
+        : `Agent activity · ${String(narration.total)}`,
     ],
     ['review', detail.runs.length === 0 ? 'Review' : `Review · ${runsSummary(detail.runs)}`],
   ];
@@ -1455,7 +1491,7 @@ export function CardDetail({
   const paneLabel = panes.find(([pane]) => pane === activePane)?.[1] ?? 'Card';
 
   return (
-    <div className={`${FLAP} h-[80%]`} aria-label={detail.card.title}>
+    <div className={`${FLAP} h-[88%]`} aria-label={detail.card.title}>
       <header className="flex shrink-0 items-baseline gap-3 border-b border-line px-5 py-3">
         {/* First, and a close rather than a back: the board it would send you
             back to is on the screen already, behind this. */}
@@ -1485,66 +1521,112 @@ export function CardDetail({
             retry
           </button>
         )}
-        {/* The sweep asks about every suspect card on the board; this asks
+        <details className="relative ml-auto shrink-0 text-sm text-dim">
+          <summary className="cursor-pointer rounded-lg border border-line px-3 py-1.5">
+            More
+          </summary>
+          <div className="absolute right-0 top-full z-50 mt-2 flex w-52 flex-col items-start gap-2 rounded-lg border border-line bg-surface p-3 shadow-xl">
+            {/* The sweep asks about every suspect card on the board; this asks
             about the one already open. Pointing at a card is a better signal
             than any heuristic, so this one skips the filter entirely - it is
             the only way to ask about a card the sweep would never consider. */}
-        <button
-          type="button"
-          disabled={checking}
-          title="Ask a cheap agent to read the repository and say whether this card's work is already there."
-          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 t-small text-dim transition-colors hover:bg-well hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
-          onClick={() => {
-            setChecking(true);
-            setCheckedNote(null);
-            void api
-              .resync(detail.card.boardId, cardId)
-              .then((report) => {
-                setCheckedNote(report.error ?? report.findings[0]?.evidence ?? report.note);
-                return api.cardDetail<Detail>(cardId);
-              })
-              .then((refreshed) => {
-                if (refreshed !== null) setDetail(refreshed);
-              })
-              .catch((cause: Error) => setError(cause.message))
-              .finally(() => setChecking(false));
-          }}
-        >
-          <MagnifyingGlass size={13} aria-hidden />
-          {checking ? 'Reading the repo' : 'Already done?'}
-        </button>
+            <button
+              type="button"
+              disabled={checking}
+              title="Ask a cheap agent to read the repository and say whether this card's work is already there."
+              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 t-small text-dim transition-colors hover:bg-well hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => {
+                setChecking(true);
+                setCheckedNote(null);
+                void api
+                  .resync(detail.card.boardId, cardId)
+                  .then((report) => {
+                    setCheckedNote(report.error ?? report.findings[0]?.evidence ?? report.note);
+                    return api.cardDetail<Detail>(cardId);
+                  })
+                  .then((refreshed) => {
+                    if (refreshed !== null) setDetail(refreshed);
+                  })
+                  .catch((cause: Error) => setError(cause.message))
+                  .finally(() => setChecking(false));
+              }}
+            >
+              <MagnifyingGlass size={13} aria-hidden />
+              {checking ? 'Reading the repo' : 'Already done?'}
+            </button>
 
-        {/* The best template on a board is the card that worked last week, so
+            {/* The best template on a board is the card that worked last week, so
             there is no template store to keep - just this. */}
-        <button
-          type="button"
-          className={`${detail.card.status === 'blocked' || detail.card.status === 'abandoned' ? '' : 'ml-auto '}inline-flex items-center gap-1.5 rounded-md px-2 py-1 t-small text-dim transition-colors hover:bg-well hover:text-ink`}
-          title="A new card with this one's body, guardrails, goal and model. Nothing that happened to this card comes with it."
-          onClick={() => {
-            void api.cloneCard(cardId).catch((cause: Error) => setError(cause.message));
-          }}
-        >
-          <Copy size={13} aria-hidden />
-          Clone
-        </button>
-        {/* Put away, not deleted. Deleting takes the runs, the ledger and the
+            <button
+              type="button"
+              className={`${detail.card.status === 'blocked' || detail.card.status === 'abandoned' ? '' : 'ml-auto '}inline-flex items-center gap-1.5 rounded-md px-2 py-1 t-small text-dim transition-colors hover:bg-well hover:text-ink`}
+              title="A new card with this one's body, guardrails, goal and model. Nothing that happened to this card comes with it."
+              onClick={() => {
+                void api.cloneCard(cardId).catch((cause: Error) => setError(cause.message));
+              }}
+            >
+              <Copy size={13} aria-hidden />
+              Clone
+            </button>
+            {/* Put away, not deleted. Deleting takes the runs, the ledger and the
             judgements with it - the history this product exists to keep. */}
-        <button
-          type="button"
-          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 t-small text-dim transition-colors hover:bg-well hover:text-ink"
-          title="Takes this off the board and out of the queue. Its runs, ledger and judgements stay."
-          onClick={() => {
-            void api
-              .archiveCard(cardId, true)
-              .then(onClose)
-              .catch((cause: Error) => setError(cause.message));
-          }}
-        >
-          <Archive size={13} aria-hidden />
-          Archive
-        </button>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 t-small text-dim transition-colors hover:bg-well hover:text-ink"
+              title="Takes this off the board and out of the queue. Its runs, ledger and judgements stay."
+              onClick={() => {
+                void api
+                  .archiveCard(cardId, true)
+                  .then(onClose)
+                  .catch((cause: Error) => setError(cause.message));
+              }}
+            >
+              <Archive size={13} aria-hidden />
+              Archive
+            </button>
+          </div>
+        </details>
       </header>
 
+      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line bg-well px-6 py-2.5">
+        <span className="mr-auto text-sm text-dim">
+          {detail.card.agentProvider ?? 'claude'} · {detail.card.agentModel ?? 'Default model'} ·{' '}
+          {detail.card.agentEffort ?? 'Default effort'}
+        </span>
+        {detail.card.status === 'running' ? (
+          <button
+            type="button"
+            disabled={runBusy}
+            className="rounded-lg border border-danger/40 px-4 py-2 text-sm text-danger"
+            onClick={() => {
+              setRunBusy(true);
+              void api
+                .cancelCard(detail.card.boardId, cardId)
+                .then(() => api.cardDetail<Detail>(cardId))
+                .then((next) => {
+                  if (next !== null) setDetail(next);
+                })
+                .catch((cause: Error) => setRunError(cause.message))
+                .finally(() => setRunBusy(false));
+            }}
+          >
+            Stop agent
+          </button>
+        ) : activePane !== 'specification' && detail.card.status === 'idle' ? (
+          <button
+            type="button"
+            className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white"
+            onClick={() => setActivePane('specification')}
+          >
+            Set up & run
+          </button>
+        ) : null}
+        {runError === null ? null : (
+          <p role="alert" className="w-full text-sm text-danger">
+            {runError}
+          </p>
+        )}
+      </div>
       <nav
         role="tablist"
         className="flex shrink-0 items-center gap-5 border-b border-line bg-surface px-6"
@@ -1645,811 +1727,692 @@ export function CardDetail({
          */}
         <Rail title={paneLabel}>
           <>
-            {activePane !== 'specification' ? null : (
-              <SectionFlow>
-                <div className="section">
-                  <h4 className="mb-2 eyebrow">What this card is</h4>
-                  {detail.card.body === '' ? (
-                    <p className="text-dim">
-                      No description. An agent reads this before anything else, so a card with none
-                      is a card that starts from its title alone.
-                    </p>
-                  ) : (
-                    <p className="whitespace-pre-wrap text-ink">{detail.card.body}</p>
-                  )}
-                </div>
-
-                {/*
-                 * What the agent will actually be handed.
-                 *
-                 * The literal text of `card-context.md`, not a description of it.
-                 * A screen that paraphrased the context would be a second
-                 * description to keep in step with the first, and on the day the
-                 * two disagreed the operator would review against the wrong one.
-                 *
-                 * Wide, because it is preformatted and cannot reflow into a
-                 * column, and closed by default, because it is long and the
-                 * question it answers - "what does the agent know?" - is one an
-                 * operator asks occasionally rather than every time they open a
-                 * card. The summary line carries the answer for the other times.
-                 */}
+            {/* The pane's own height, handed to the form: `CardSetup` lays
+                itself out to the box rather than stacking into a scroll, and
+                the advanced strip stays a hairline at the foot of it. */}
+            <div
+              hidden={activePane !== 'specification'}
+              /* Conditional, not constant: a `display:flex` utility sits in a
+                 later cascade layer than preflight's `[hidden]` rule and would
+                 win it, putting the hidden pane back on screen. */
+              className={activePane === 'specification' ? 'flex h-full min-h-0 flex-col gap-3' : ''}
+            >
+              <CardSetup
+                key={cardId}
+                card={detail.card}
+                rails={rails}
+                enforcement={detail.guardrailDetail}
+                runDisabled={
+                  detail.blockers.length > 0
+                    ? 'Waiting for: ' + detail.blockers.map((b) => b.title).join(', ')
+                    : detail.card.status !== 'idle'
+                      ? 'This card is ' + detail.card.status + '. Use its review or retry controls.'
+                      : null
+                }
+                onSave={async (update) => {
+                  await api.updateCard(cardId, update);
+                  const next = await api.cardDetail<Detail>(cardId);
+                  if (next === null)
+                    throw new Error('Settings saved, but the card could not be refreshed.');
+                  setDetail(next);
+                }}
+                onRun={runAgent}
+              />
+              <details className="shrink-0 border-t border-line pt-2.5 t-small text-dim">
+                <summary className="cursor-pointer hover:text-ink">
+                  Advanced settings &amp; agent context
+                </summary>
+                <dl className="mt-3 grid grid-cols-[auto_1fr] items-start gap-x-4 gap-y-2 sm:grid-cols-[auto_1fr_auto_1fr]">
+                  <FieldSelect
+                    label="Priority"
+                    value={detail.card.priority}
+                    options={['normal', 'high', 'low']}
+                    title="Queue priority"
+                    onPick={(priority) =>
+                      patch({ priority: (priority ?? 'normal') as Card['priority'] })
+                    }
+                  />
+                  <FieldSelect
+                    label="Synthesis"
+                    value={detail.card.synthesisModel}
+                    options={CLAUDE_MODELS}
+                    title="Model used to summarize the work"
+                    onPick={(synthesisModel) => patch({ synthesisModel })}
+                  />
+                  <dt>Token ceiling</dt>
+                  <dd>
+                    <TextField
+                      label="token ceiling"
+                      value={
+                        detail.card.tokenCeiling === null || detail.card.tokenCeiling === undefined
+                          ? ''
+                          : String(detail.card.tokenCeiling)
+                      }
+                      placeholder="No ceiling"
+                      onSave={(value) =>
+                        patch({ tokenCeiling: value.trim() === '' ? null : Number(value) })
+                      }
+                    />
+                  </dd>
+                </dl>
                 {agentContext === null ? null : (
-                  <div className={`section ${contextOpen ? 'section--wide' : ''}`}>
-                    <h4 className="mb-2 eyebrow">What the agent will be told</h4>
-                    <p className="mb-2 text-dim">
-                      The context file handed to the session, as it would be written if this card
-                      were dispatched now. Not a record of what an earlier run received: the ledger,
-                      the dependencies and the subsystem map all move.
-                    </p>
-                    <p className="mb-3 t-small text-faint">
-                      {`${String(agentContext.split('\n').length)} lines, ${String(agentContext.length)} characters. Sections: ${
-                        agentContext
-                          .split('\n')
-                          .filter((line) => line.startsWith('## '))
-                          .map((line) => line.slice(3))
-                          .join(', ') || 'the card body alone'
-                      }.`}
-                    </p>
-                    <button
-                      type="button"
-                      className="rounded-md border border-line px-2.5 py-1 t-small text-ink transition-colors hover:border-dim"
-                      onClick={() => setContextOpen((open) => !open)}
-                      aria-expanded={contextOpen}
-                    >
-                      {contextOpen ? 'Hide it' : 'Read it'}
-                    </button>
-                    {!contextOpen ? null : (
-                      <pre className="mt-3 max-h-[420px] overflow-auto whitespace-pre-wrap rounded-md border border-line bg-well p-3 font-mono t-fine leading-[1.5] text-ink">
-                        {agentContext}
-                      </pre>
-                    )}
-                  </div>
-                )}
-
-                <div className="section">
-                  <h4 className="mb-3 eyebrow">How it will run</h4>
-                  {/* Labels to the top of their field, not the middle of it. The fields
-                      grow to fit their value now, so "Goal" beside a
-                      twenty-line condition sat two hundred pixels below the
-                      first line it names. */}
-                  <dl className="grid grid-cols-[auto_1fr] items-start gap-x-4 gap-y-2 t-small">
-                    <FieldSelect
-                      label="Priority"
-                      value={detail.card.priority === 'normal' ? null : detail.card.priority}
-                      options={['high', 'low']}
-                      title="Reorders the dispatch queue within this card's column."
-                      neutralLabel="normal"
-                      hints={{
-                        high: 'Dispatched before the rest of its column.',
-                        '': 'Dispatched in board order.',
-                        low: 'Dispatched after the rest of its column.',
-                      }}
-                      onPick={(priority) =>
-                        patch({ priority: (priority ?? 'normal') as Card['priority'] })
-                      }
-                    />
-                    <FieldSelect
-                      label="Agent"
-                      value={detail.card.agentProvider}
-                      options={['claude', 'codex']}
-                      title="The coding CLI dispatched for this card."
-                      neutralLabel="claude"
-                      hints={{
-                        claude: 'Observed through hooks, as it runs.',
-                        codex: 'Captured from its JSON stream.',
-                      }}
-                      onPick={(agentProvider) =>
-                        patch({
-                          agentProvider: (agentProvider ?? 'claude') as Card['agentProvider'],
-                        })
-                      }
-                    />
-                    <FieldSelect
-                      label="Model"
-                      value={detail.card.agentModel}
-                      options={detail.card.agentProvider === 'codex' ? CODEX_MODELS : CLAUDE_MODELS}
-                      title={`Reaches the selected ${detail.card.agentProvider} CLI for this card's run.`}
-                      onPick={(agentModel) => patch({ agentModel })}
-                    />
-                    <FieldSelect
-                      label="Effort"
-                      value={detail.card.agentEffort}
-                      options={EFFORTS}
-                      title="Reaches `claude --effort` for this card's run."
-                      onPick={(agentEffort) => patch({ agentEffort })}
-                    />
-                    <FieldSelect
-                      label="Synthesis"
-                      value={detail.card.synthesisModel}
-                      options={CLAUDE_MODELS}
-                      title="Used only for windows that escalate - compaction, and manual re-extraction. Not the model that does the work."
-                      onPick={(synthesisModel) => patch({ synthesisModel })}
-                    />
-                  </dl>
-                </div>
-
-                {/*
-                 * What the card has to satisfy, kept apart from who runs it.
-                 *
-                 * One box before this, and it was 934 pixels tall in a
-                 * 393-pixel column - one section setting the scroll length of
-                 * the whole pane while two columns beside it ended at 267 and
-                 * stayed blank the rest of the way down.
-                 *
-                 * The seam is not arbitrary. Everything above is a choice from
-                 * a list about how the work gets done, and everything here is
-                 * something written out that the finished work has to meet.
-                 * Splitting them was already the honest division; it is only
-                 * that nothing forced the question until the box got too tall.
-                 *
-                 * Two columns wide, because these are the long values - a goal
-                 * condition is a paragraph and a scope is a list of paths - and
-                 * a paragraph in a 393-pixel column is a ribbon.
-                 */}
-                <div className="section section--pair">
-                  <h4 className="mb-2 eyebrow">What it must satisfy</h4>
-                  <dl className="grid grid-cols-[auto_1fr] items-start gap-x-4 gap-y-2 t-small">
-                    <dt
-                      className="pt-1 text-dim"
-                      title="Tokens a run may spend before the board stops it. This one is enforced: the board terminates the session."
-                    >
-                      Ceiling
-                    </dt>
-                    <dd>
-                      {/* Named as a hard limit rather than a preference. The board
-                    kills the process when it is crossed, unlike the guardrails
-                    below, which are written into settings and can be argued
-                    with. */}
-                      <TextField
-                        label="token ceiling"
-                        value={
-                          detail.card.tokenCeiling === null ? '' : String(detail.card.tokenCeiling)
-                        }
-                        placeholder="no ceiling"
-                        onSave={(next) =>
-                          patch({ tokenCeiling: next.trim() === '' ? null : Number(next) })
-                        }
-                      />
-                    </dd>
-                    <dt
-                      className="pt-1 text-dim"
-                      title="What /goal is given. Without one, the card cannot be dispatched."
-                    >
-                      Goal
-                    </dt>
-                    <dd>
-                      {/* Editable, because a card added from the board header has no
-                    goal and therefore cannot be dispatched - the Add button led
-                    to a dead end, and every real card had to be made by curl. */}
-                      <TextField
-                        label="goal condition"
-                        value={detail.card.goalCondition ?? ''}
-                        placeholder="measurable end state, a stated check, and a turn bound"
-                        invalid={detail.card.goalCondition === null}
-                        invalidNote="Not set, so this card cannot be dispatched."
-                        onSave={(next) => patch({ goalCondition: next === '' ? null : next })}
-                      />
-                    </dd>
-                    <dt
-                      className="pt-1 text-dim"
-                      title="A command the board runs itself after the run. Hard: the card halts if it does not pass."
-                    >
-                      Verify
-                    </dt>
-                    <dd>
-                      <TextField
-                        label="verify command"
-                        value={detail.verifyCommand ?? ''}
-                        placeholder="npm test"
-                        onSave={(next) =>
-                          patch({
-                            guardrails: { ...rails, verify: next === '' ? null : next },
-                          })
-                        }
-                      />
-                    </dd>
-                    <dt
-                      className="pt-1 text-dim"
-                      title="Paths the agent should confine itself to. Advisory: it is prompt text, not a rule."
-                    >
-                      Scope
-                    </dt>
-                    <dd>
-                      <TextField
-                        label="scope paths"
-                        value={rails.scope.join(', ')}
-                        placeholder="src/server/, test/"
-                        onSave={(next) => patch({ guardrails: { ...rails, scope: asList(next) } })}
-                      />
-                    </dd>
-                    <dt
-                      className="pt-1 text-dim"
-                      title="Hard where a rule names a path or a command pattern, advisory otherwise. The list below says which."
-                    >
-                      Prohibit
-                    </dt>
-                    <dd>
-                      <TextField
-                        label="prohibitions"
-                        value={rails.prohibit.join(', ')}
-                        placeholder="src/db/schema.ts, Bash(git push *)"
-                        onSave={(next) =>
-                          patch({ guardrails: { ...rails, prohibit: asList(next) } })
-                        }
-                      />
-                    </dd>
-                  </dl>
-                </div>
-
-                <div className="section">
-                  <h4 className="mb-2 eyebrow">Guardrails</h4>
-                  {detail.guardrailDetail.length === 0 ? (
-                    <p className="text-dim">
-                      None. Nothing constrains what this card&rsquo;s run may touch.
-                    </p>
-                  ) : (
-                    <ul className="flex flex-col gap-2">
-                      {detail.guardrailDetail.map((rail) => (
-                        <li key={`${rail.kind}:${rail.text}`} className="leading-snug">
-                          {/* A guardrail the board enforces and one it merely asks
-                          for are different promises, so they are different
-                          chips rather than the same word in two greys (R10). */}
-                          <span
-                            className={`chip mr-1.5 ${rail.enforcement === 'hard' ? 'chip-ok' : ''}`}
-                            title={rail.because}
-                          >
-                            {rail.enforcement === 'hard' ? 'Enforced' : 'Asked for'}
-                          </span>
-                          <span className="text-ink">{rail.text}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-
-                {detail.staleness?.suspect !== true ? null : (
-                  /* A suspicion, never a verdict. The board says what it noticed and
-                 what to look at; archiving a card it believed was finished would
-                 eventually archive one that was not, and an operator burned that
-                 way stops trusting the surface. */
-                  <div className="mb-3 rounded border border-brand/50 bg-brand/5 px-2 py-1.5">
-                    <h4 className="mb-1 eyebrow text-attention">This card may already be done</h4>
-                    {detail.staleness.findings.map((finding) => (
-                      <p key={finding.signal} className="mb-1 leading-snug text-ink">
-                        {finding.detail}
-                        {finding.evidence.length === 0 ? null : (
-                          <span className="ml-1 t-fine text-dim">
-                            ({finding.evidence.slice(0, 4).join(', ')})
-                          </span>
-                        )}
-                      </p>
-                    ))}
-                    {detail.staleness.advice === null ? null : (
-                      <p className="t-fine text-dim">{detail.staleness.advice}</p>
-                    )}
-                  </div>
-                )}
-
-                {detail.blockers.length > 0 ? (
-                  <p className="mt-3 text-danger">
-                    Blocked by: {detail.blockers.map((blocker) => blocker.title).join(', ')}
-                  </p>
-                ) : (
-                  <></>
-                )}
-              </SectionFlow>
-            )}
-            {activePane !== 'brief' ? null : (
-              <SectionFlow>
-                {/* Verify output only when it did not pass. When it passed, the
-                brief's one line is enough and a green box is just noise. */}
-                {detail.verify === null || detail.verify.status === 'passed' ? null : (
-                  <div className="mb-3 rounded border border-danger/40 bg-danger/10 px-2 py-1.5 text-danger">
-                    {/* The board ran this. It does not depend on the agent
-                    reporting honestly, which is the whole point (R10). */}
-                    <div className="t-small">{detail.verifyNote}</div>
-                    <pre className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap font-mono t-fine text-dim">
-                      {detail.verify.output}
+                  <details className="mt-4">
+                    <summary className="cursor-pointer">Preview the agent's context</summary>
+                    <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap rounded bg-well p-3 text-xs">
+                      {agentContext}
                     </pre>
-                  </div>
+                  </details>
                 )}
-
-                {brief === null ? (
-                  <p className="text-dim">The brief could not be loaded.</p>
-                ) : (
-                  <>
-                    {brief.extraction.note === null ? null : (
-                      <p className="mb-3 rounded border border-danger/40 bg-danger/10 px-2 py-1.5 t-small text-danger">
-                        {brief.extraction.note}
-                      </p>
+              </details>
+            </div>
+            {activePane !== 'brief' ? null : (
+              <div className="mx-auto max-w-5xl">
+                <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                  <section>
+                    <h4 className="mb-3 text-lg font-semibold text-ink">What happened</h4>
+                    {brief === null ? (
+                      <p className="text-dim">The brief could not be loaded.</p>
+                    ) : (
+                      <ul className="space-y-3 text-sm text-ink">
+                        {brief.sections
+                          .filter((section) => !section.empty)
+                          .flatMap((section) => section.lines)
+                          .slice(0, 4)
+                          .map((line, index) => (
+                            <li key={index} className="line-clamp-3">
+                              {line}
+                            </li>
+                          ))}
+                      </ul>
+                    )}
+                    <p className="mt-4 rounded-lg border border-line p-3 text-sm text-dim">
+                      Verification: {detail.verify === null ? 'Not run yet' : detail.verify.status}
+                      {detail.verifyNote === null ? '' : ' · ' + detail.verifyNote}
+                    </p>
+                    {mergeBlocked ? (
+                      <button
+                        type="button"
+                        className="mt-3 text-sm text-danger underline"
+                        onClick={() =>
+                          document.getElementById('full-card-report')?.setAttribute('open', '')
+                        }
+                      >
+                        {outstanding} findings need your review
+                      </button>
+                    ) : null}
+                  </section>
+                  <section>
+                    <h4 className="mb-3 text-lg font-semibold text-ink">
+                      Blast radius · files changed
+                    </h4>
+                    {!detail.diff?.readable ? (
+                      <p className="text-sm text-dim">No readable branch diff yet.</p>
+                    ) : detail.diff.files.length === 0 ? (
+                      <p className="text-sm text-dim">No file changes in this branch.</p>
+                    ) : (
+                      <ul className="divide-y divide-line">
+                        {detail.diff.files.map((file) => (
+                          <li key={file.path} className="py-2">
+                            <button
+                              type="button"
+                              className="break-all text-left font-mono text-xs text-ink hover:underline"
+                              onClick={() => {
+                                void api
+                                  .cardDiff(cardId, file.path)
+                                  .then((text) => setOpenDiff({ path: file.path, text }))
+                                  .catch((cause: Error) => setRunError(cause.message));
+                              }}
+                            >
+                              {file.path}
+                            </button>
+                            <p className="mt-1 line-clamp-2 text-xs text-dim">
+                              {file.binary
+                                ? 'Binary file changed'
+                                : '+' + file.insertions + ' / −' + file.deletions + ' lines'}
+                              {entries.find((entry) => entry.statement.includes(file.path))
+                                ? ' · ' +
+                                  entries.find((entry) => entry.statement.includes(file.path))
+                                    ?.statement
+                                : ''}
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                </div>
+                {openDiff === null ? null : (
+                  <details open className="mt-5 rounded-lg border border-line p-3">
+                    <summary className="cursor-pointer font-mono text-sm">{openDiff.path}</summary>
+                    <pre className="mt-3 max-h-96 overflow-auto whitespace-pre font-mono text-xs text-dim">
+                      {openDiff.text}
+                    </pre>
+                  </details>
+                )}
+                <details id="full-card-report" className="mt-6 border-t border-line pt-4">
+                  <summary className="mb-4 cursor-pointer text-sm font-medium text-ink">
+                    Full report & review findings
+                  </summary>
+                  <SectionFlow>
+                    {/* Verify output only when it did not pass. When it passed, the
+                brief's one line is enough and a green box is just noise. */}
+                    {detail.verify === null || detail.verify.status === 'passed' ? null : (
+                      <div className="mb-3 rounded border border-danger/40 bg-danger/10 px-2 py-1.5 text-danger">
+                        {/* The board ran this. It does not depend on the agent
+                    reporting honestly, which is the whole point (R10). */}
+                        <div className="t-small">{detail.verifyNote}</div>
+                        <pre className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap font-mono t-fine text-dim">
+                          {detail.verify.output}
+                        </pre>
+                      </div>
                     )}
 
-                    {mergeRefusal === null && !mergeBlocked ? null : (
-                      <div className="mb-3 rounded border border-danger/50 bg-danger/10 px-2 py-1.5">
-                        <h4 className="mb-1 eyebrow text-danger">
-                          {mergeRefusal === null
-                            ? `Merge is blocked: ${String(outstanding)} to read`
-                            : 'The merge was refused'}
-                        </h4>
-                        <p className="mb-1 leading-snug text-ink">
-                          {mergeRefusal?.summary ??
-                            'These have not been read yet. Accept or reject each and the merge becomes available.'}
-                        </p>
-                        <p className="mb-2 t-fine text-dim">
-                          {mergeRefusal?.reach ??
-                            'This is the board declining to merge for you, not a lock on the repository. ' +
-                              'A `git merge` run in a terminal will merge this branch with nothing to stop it.'}
-                        </p>
+                    {brief === null ? (
+                      <p className="text-dim">The brief could not be loaded.</p>
+                    ) : (
+                      <>
+                        {brief.extraction.note === null ? null : (
+                          <p className="mb-3 rounded border border-danger/40 bg-danger/10 px-2 py-1.5 t-small text-danger">
+                            {brief.extraction.note}
+                          </p>
+                        )}
 
-                        {/* Shown when it is stopping something, and not otherwise.
+                        {mergeRefusal === null && !mergeBlocked ? null : (
+                          <div className="mb-3 rounded border border-danger/50 bg-danger/10 px-2 py-1.5">
+                            <h4 className="mb-1 eyebrow text-danger">
+                              {mergeRefusal === null
+                                ? `Merge is blocked: ${String(outstanding)} to read`
+                                : 'The merge was refused'}
+                            </h4>
+                            <p className="mb-1 leading-snug text-ink">
+                              {mergeRefusal?.summary ??
+                                'These have not been read yet. Accept or reject each and the merge becomes available.'}
+                            </p>
+                            <p className="mb-2 t-fine text-dim">
+                              {mergeRefusal?.reach ??
+                                'This is the board declining to merge for you, not a lock on the repository. ' +
+                                  'A `git merge` run in a terminal will merge this branch with nothing to stop it.'}
+                            </p>
+
+                            {/* Shown when it is stopping something, and not otherwise.
                         Asking on every card view is a standing request the
                         operator learns to scroll past; asking beside a disabled
                         button is a question with its reason attached - and
                         without it, the disabled button would be a wall. */}
-                        <ul className="flex flex-col gap-2">
-                          {brief.surprises.map((surprise) => (
-                            <li key={surprise.id} className="leading-snug">
-                              <div className="text-ink">{surprise.headline}</div>
-                              <div className="t-fine text-dim">{surprise.why}</div>
-                              {surprise.target.type === 'path' ? (
-                                <div className="t-fine text-dim">
-                                  Not an entry, so there is nothing to accept: open the file.
-                                </div>
-                              ) : (
-                                <div className="mt-0.5 flex gap-2">
-                                  <button
-                                    type="button"
-                                    className="rounded border border-ok/50 px-1.5 t-fine text-ok hover:bg-ok/10"
-                                    onClick={() => judge(surprise.target, 'accepted')}
-                                  >
-                                    accept
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="rounded border border-danger/50 px-1.5 t-fine text-danger hover:bg-danger/10"
-                                    title="Kept on the card, but no longer stated as fact in the brief."
-                                    onClick={() => judge(surprise.target, 'rejected')}
-                                  >
-                                    reject
-                                  </button>
-                                  {/* Rejecting says the run got something wrong.
+                            <ul className="flex flex-col gap-2">
+                              {brief.surprises.map((surprise) => (
+                                <li key={surprise.id} className="leading-snug">
+                                  <div className="text-ink">{surprise.headline}</div>
+                                  <div className="t-fine text-dim">{surprise.why}</div>
+                                  {surprise.target.type === 'path' ? (
+                                    <div className="t-fine text-dim">
+                                      Not an entry, so there is nothing to accept: open the file.
+                                    </div>
+                                  ) : (
+                                    <div className="mt-0.5 flex gap-2">
+                                      <button
+                                        type="button"
+                                        className="rounded border border-ok/50 px-1.5 t-fine text-ok hover:bg-ok/10"
+                                        onClick={() => judge(surprise.target, 'accepted')}
+                                      >
+                                        accept
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="rounded border border-danger/50 px-1.5 t-fine text-danger hover:bg-danger/10"
+                                        title="Kept on the card, but no longer stated as fact in the brief."
+                                        onClick={() => judge(surprise.target, 'rejected')}
+                                      >
+                                        reject
+                                      </button>
+                                      {/* Rejecting says the run got something wrong.
                                   Without this the work that implies lives in
                                   the operator's head until they forget it. */}
-                                  <button
-                                    type="button"
-                                    className="rounded border border-line px-1.5 t-fine text-dim hover:text-ink"
-                                    title="Rejects this and raises a card to address it, linked back to here."
-                                    onClick={() => {
-                                      const entryId =
-                                        surprise.target.type === 'entry'
-                                          ? surprise.target.entryId
-                                          : null;
-                                      if (entryId === null) return;
+                                      <button
+                                        type="button"
+                                        className="rounded border border-line px-1.5 t-fine text-dim hover:text-ink"
+                                        title="Rejects this and raises a card to address it, linked back to here."
+                                        onClick={() => {
+                                          const entryId =
+                                            surprise.target.type === 'entry'
+                                              ? surprise.target.entryId
+                                              : null;
+                                          if (entryId === null) return;
 
-                                      judge(surprise.target, 'rejected');
-                                      void api
-                                        .followUp(entryId)
-                                        .catch((cause: Error) => setError(cause.message));
-                                    }}
-                                  >
-                                    reject and raise a card
-                                  </button>
+                                          judge(surprise.target, 'rejected');
+                                          void api
+                                            .followUp(entryId)
+                                            .catch((cause: Error) => setError(cause.message));
+                                        }}
+                                      >
+                                        reject and raise a card
+                                      </button>
+                                    </div>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {brief.sections
+                          .filter((section) => !section.empty)
+                          .map((section) => (
+                            <div key={section.title} className="section">
+                              <h4 className="mb-1 eyebrow">{section.title}</h4>
+                              {section.lines.map((line, index) => (
+                                <p
+                                  key={`${section.title}-${String(index)}`}
+                                  className={`whitespace-pre-wrap leading-snug ${
+                                    section.empty
+                                      ? 'text-dim'
+                                      : line.startsWith('REVERSED:')
+                                        ? 'text-danger'
+                                        : line.startsWith('Needs you:')
+                                          ? 'text-brand'
+                                          : 'text-ink'
+                                  }`}
+                                >
+                                  {line}
+                                </p>
+                              ))}
+                            </div>
+                          ))}
+                      </>
+                    )}
+
+                    {entries.length === 0 ? (
+                      <></>
+                    ) : (
+                      <div className="section">
+                        <button
+                          type="button"
+                          className="t-small text-info hover:underline"
+                          onClick={() => setShowEntries(!showEntries)}
+                        >
+                          {showEntries ? 'hide' : 'show'} the {entries.length} underlying entr
+                          {entries.length === 1 ? 'y' : 'ies'}
+                        </button>
+
+                        {!showEntries ? null : (
+                          <ul className="mt-2 flex flex-col gap-2">
+                            {entries.map((entry, index) => (
+                              <li
+                                key={`${entry.kind}-${index}`}
+                                className="border-l-2 border-line pl-2"
+                              >
+                                <span
+                                  className={`mr-1.5 t-fine uppercase ${
+                                    KIND_COLOUR[entry.kind] ?? 'text-dim'
+                                  }`}
+                                >
+                                  {entry.kind}
+                                </span>
+                                <span className="text-ink">{entry.statement}</span>
+                                {entry.detail === undefined ? null : (
+                                  <div className="mt-0.5 t-small text-dim">{entry.detail}</div>
+                                )}
+                                <div className="t-fine text-dim">
+                                  {/* Every entry names its evidence; nothing here is
+                              unfalsifiable (doc 08). */}
+                                  {entry.sourceEventIds.length} source event(s)
                                 </div>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+
+                    {detail.workspace === null || onCompare === undefined ? null : (
+                      <div className="section">
+                        {/* Most useful straight after cloning, which is why it sits on
+                    the card rather than behind a selection on the board. */}
+                        <div className="flex items-center gap-2">
+                          <span className="t-small text-dim">compare with</span>
+                          <Select
+                            className="min-w-0 flex-1"
+                            label="Compare this card with another"
+                            value={null}
+                            placeholder="another card"
+                            options={siblings.map((sibling) => ({
+                              value: sibling.id,
+                              label: sibling.title,
+                            }))}
+                            onOpen={() => {
+                              if (siblings.length > 0) return;
+                              void api
+                                .cards(detail.card.boardId)
+                                .then((cards) =>
+                                  setSiblings(cards.filter((card) => card.id !== cardId)),
+                                )
+                                .catch((cause: Error) => setError(cause.message));
+                            }}
+                            onChange={(other) => onCompare(other)}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {detail.workspace === null ? null : (
+                      <div className="section">
+                        {/* What it costs, before it is pressed. A button that quietly
+                    spends a model call is one an operator presses twice. */}
+                        <button
+                          type="button"
+                          className="rounded border border-line px-2 py-0.5 t-small text-dim hover:text-ink disabled:opacity-50"
+                          disabled={reviewing}
+                          title="Asks a session that did not write this branch to read it. One model call on your Claude Code quota. Anything it raises has to be judged before this merges."
+                          onClick={() => {
+                            setReviewing(true);
+                            setReviewNote(null);
+                            void api
+                              .secondOpinion(cardId)
+                              .then((result) => setReviewNote(result.note))
+                              .catch((cause: Error) => setError(cause.message))
+                              .finally(() => setReviewing(false));
+                          }}
+                        >
+                          {reviewing ? 'reading the branch…' : 'ask for a second opinion'}
+                        </button>
+                        {reviewNote === null ? null : (
+                          <p className="mt-1 t-small text-dim">{reviewNote}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {(detail.readiness?.checks ?? []).length === 0 ? null : (
+                      <div className="section">
+                        <h4 className="mb-1 eyebrow">Before you merge</h4>
+                        <ul className="flex flex-col gap-0.5 t-small">
+                          {(detail.readiness?.checks ?? []).map((check) => (
+                            <li key={check.name} className="flex items-start gap-2 text-dim">
+                              {/* Three states, not two. A check the board could not run
+                          and a check that passed are the two things this list
+                          exists to keep apart, so the third has its own mark
+                          rather than borrowing one of the others. */}
+                              {check.state === 'settled' ? (
+                                <CheckCircle
+                                  size={15}
+                                  className="mt-0.5 shrink-0 text-ok"
+                                  aria-label="Settled"
+                                />
+                              ) : check.state === 'needs-you' ? (
+                                <Warning
+                                  size={15}
+                                  className="mt-0.5 shrink-0 text-danger"
+                                  aria-label="Needs you"
+                                />
+                              ) : (
+                                <Question
+                                  size={15}
+                                  className="mt-0.5 shrink-0 text-faint"
+                                  aria-label="Not known"
+                                />
                               )}
+                              <span>
+                                <span className="text-ink">{check.name}</span> {check.detail}
+                              </span>
                             </li>
                           ))}
                         </ul>
                       </div>
                     )}
 
-                    {brief.sections.map((section) => (
-                      <div key={section.title} className="section">
-                        <h4 className="mb-1 eyebrow">{section.title}</h4>
-                        {section.lines.map((line, index) => (
-                          <p
-                            key={`${section.title}-${String(index)}`}
-                            className={`whitespace-pre-wrap leading-snug ${
-                              section.empty
-                                ? 'text-dim'
-                                : line.startsWith('REVERSED:')
-                                  ? 'text-danger'
-                                  : line.startsWith('Needs you:')
-                                    ? 'text-brand'
-                                    : 'text-ink'
-                            }`}
-                          >
-                            {line}
-                          </p>
-                        ))}
-                      </div>
-                    ))}
-                  </>
-                )}
-
-                {entries.length === 0 ? (
-                  <></>
-                ) : (
-                  <div className="section">
-                    <button
-                      type="button"
-                      className="t-small text-info hover:underline"
-                      onClick={() => setShowEntries(!showEntries)}
-                    >
-                      {showEntries ? 'hide' : 'show'} the {entries.length} underlying entr
-                      {entries.length === 1 ? 'y' : 'ies'}
-                    </button>
-
-                    {!showEntries ? null : (
-                      <ul className="mt-2 flex flex-col gap-2">
-                        {entries.map((entry, index) => (
-                          <li
-                            key={`${entry.kind}-${index}`}
-                            className="border-l-2 border-line pl-2"
-                          >
-                            <span
-                              className={`mr-1.5 t-fine uppercase ${
-                                KIND_COLOUR[entry.kind] ?? 'text-dim'
-                              }`}
-                            >
-                              {entry.kind}
-                            </span>
-                            <span className="text-ink">{entry.statement}</span>
-                            {entry.detail === undefined ? null : (
-                              <div className="mt-0.5 t-small text-dim">{entry.detail}</div>
-                            )}
-                            <div className="t-fine text-dim">
-                              {/* Every entry names its evidence; nothing here is
-                              unfalsifiable (doc 08). */}
-                              {entry.sourceEventIds.length} source event(s)
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
+                    {detail.mergeForecast === undefined || !detail.mergeForecast.readable ? null : (
+                      <p
+                        className={`mt-3 ${detail.mergeForecast.clean ? 'text-dim' : 'text-danger'}`}
+                        title="Asked with git merge-tree, which touches neither the working tree nor HEAD."
+                      >
+                        {detail.mergeForecast.note}
+                      </p>
                     )}
-                  </div>
-                )}
 
-                {detail.workspace === null || onCompare === undefined ? null : (
-                  <div className="section">
-                    {/* Most useful straight after cloning, which is why it sits on
-                    the card rather than behind a selection on the board. */}
-                    <div className="flex items-center gap-2">
-                      <span className="t-small text-dim">compare with</span>
-                      <Select
-                        className="min-w-0 flex-1"
-                        label="Compare this card with another"
-                        value={null}
-                        placeholder="another card"
-                        options={siblings.map((sibling) => ({
-                          value: sibling.id,
-                          label: sibling.title,
-                        }))}
-                        onOpen={() => {
-                          if (siblings.length > 0) return;
-                          void api
-                            .cards(detail.card.boardId)
-                            .then((cards) =>
-                              setSiblings(cards.filter((card) => card.id !== cardId)),
-                            )
-                            .catch((cause: Error) => setError(cause.message));
-                        }}
-                        onChange={(other) => onCompare(other)}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {detail.workspace === null ? null : (
-                  <div className="section">
-                    {/* What it costs, before it is pressed. A button that quietly
-                    spends a model call is one an operator presses twice. */}
-                    <button
-                      type="button"
-                      className="rounded border border-line px-2 py-0.5 t-small text-dim hover:text-ink disabled:opacity-50"
-                      disabled={reviewing}
-                      title="Asks a session that did not write this branch to read it. One model call on your Claude Code quota. Anything it raises has to be judged before this merges."
-                      onClick={() => {
-                        setReviewing(true);
-                        setReviewNote(null);
-                        void api
-                          .secondOpinion(cardId)
-                          .then((result) => setReviewNote(result.note))
-                          .catch((cause: Error) => setError(cause.message))
-                          .finally(() => setReviewing(false));
-                      }}
-                    >
-                      {reviewing ? 'reading the branch…' : 'ask for a second opinion'}
-                    </button>
-                    {reviewNote === null ? null : (
-                      <p className="mt-1 t-small text-dim">{reviewNote}</p>
-                    )}
-                  </div>
-                )}
-
-                {(detail.readiness?.checks ?? []).length === 0 ? null : (
-                  <div className="section">
-                    <h4 className="mb-1 eyebrow">Before you merge</h4>
-                    <ul className="flex flex-col gap-0.5 t-small">
-                      {(detail.readiness?.checks ?? []).map((check) => (
-                        <li key={check.name} className="flex items-start gap-2 text-dim">
-                          {/* Three states, not two. A check the board could not run
-                          and a check that passed are the two things this list
-                          exists to keep apart, so the third has its own mark
-                          rather than borrowing one of the others. */}
-                          {check.state === 'settled' ? (
-                            <CheckCircle
-                              size={15}
-                              className="mt-0.5 shrink-0 text-ok"
-                              aria-label="Settled"
-                            />
-                          ) : check.state === 'needs-you' ? (
-                            <Warning
-                              size={15}
-                              className="mt-0.5 shrink-0 text-danger"
-                              aria-label="Needs you"
-                            />
-                          ) : (
-                            <Question
-                              size={15}
-                              className="mt-0.5 shrink-0 text-faint"
-                              aria-label="Not known"
-                            />
-                          )}
-                          <span>
-                            <span className="text-ink">{check.name}</span> {check.detail}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {detail.mergeForecast === undefined || !detail.mergeForecast.readable ? null : (
-                  <p
-                    className={`mt-3 ${detail.mergeForecast.clean ? 'text-dim' : 'text-danger'}`}
-                    title="Asked with git merge-tree, which touches neither the working tree nor HEAD."
-                  >
-                    {detail.mergeForecast.note}
-                  </p>
-                )}
-
-                {detail.diff === undefined || !detail.diff.readable ? null : (
-                  <div className="section">
-                    <h4 className="mb-1 eyebrow">
-                      Diff ({detail.diff.files.length} file(s), +{detail.diff.insertions} −
-                      {detail.diff.deletions})
-                    </h4>
-                    {/* Reviewing used to mean leaving the board for a terminal,
+                    {detail.diff === undefined || !detail.diff.readable ? null : (
+                      <div className="section">
+                        <h4 className="mb-1 eyebrow">
+                          Files changed ({detail.diff.files.length} file(s), +
+                          {detail.diff.insertions} −{detail.diff.deletions})
+                        </h4>
+                        {/* Reviewing used to mean leaving the board for a terminal,
                     which is where the operator loses the context the board
                     exists to hold. */}
-                    <ul className="flex flex-col gap-0.5 t-small">
-                      {detail.diff.files.map((file) => (
-                        <li key={file.path}>
-                          <button
-                            type="button"
-                            className="text-left text-dim hover:text-ink"
-                            onClick={() => {
-                              void api
-                                .cardDiff(cardId, file.path)
-                                .then((text) => setOpenDiff({ path: file.path, text }))
-                                .catch((cause: Error) => setError(cause.message));
-                            }}
-                          >
-                            <span className="text-ink">{file.path}</span>{' '}
-                            {/* Git reports no line counts for a binary file.
+                        <ul className="flex flex-col gap-0.5 t-small">
+                          {detail.diff.files.map((file) => (
+                            <li key={file.path}>
+                              <button
+                                type="button"
+                                className="text-left text-dim hover:text-ink"
+                                onClick={() => {
+                                  void api
+                                    .cardDiff(cardId, file.path)
+                                    .then((text) => setOpenDiff({ path: file.path, text }))
+                                    .catch((cause: Error) => setError(cause.message));
+                                }}
+                              >
+                                <span className="text-ink">{file.path}</span>{' '}
+                                {/* Git reports no line counts for a binary file.
                             Printing zeroes would read as 'changed nothing'. */}
-                            {file.binary ? (
-                              'binary'
-                            ) : (
-                              <>
-                                <span className="text-ok">+{file.insertions}</span>{' '}
-                                <span className="text-danger">−{file.deletions}</span>
-                              </>
-                            )}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
+                                {file.binary ? (
+                                  'binary'
+                                ) : (
+                                  <>
+                                    <span className="text-ok">+{file.insertions}</span>{' '}
+                                    <span className="text-danger">−{file.deletions}</span>
+                                  </>
+                                )}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
 
-                    {openDiff === null ? null : (
-                      <div className="mt-2 border-t border-line pt-2">
-                        <div className="mb-1 flex items-baseline gap-2">
-                          <span className="font-mono t-small text-ink">{openDiff.path}</span>
-                          <button
-                            type="button"
-                            className="t-small text-dim hover:text-ink"
-                            onClick={() => setOpenDiff(null)}
-                          >
-                            close
-                          </button>
-                        </div>
-                        <pre className="max-h-96 overflow-auto whitespace-pre bg-well p-2 font-mono t-small text-dim">
-                          {openDiff.text}
-                        </pre>
+                        {openDiff === null ? null : (
+                          <div className="mt-2 border-t border-line pt-2">
+                            <div className="mb-1 flex items-baseline gap-2">
+                              <span className="font-mono t-small text-ink">{openDiff.path}</span>
+                              <button
+                                type="button"
+                                className="t-small text-dim hover:text-ink"
+                                onClick={() => setOpenDiff(null)}
+                              >
+                                close
+                              </button>
+                            </div>
+                            <pre className="max-h-96 overflow-auto whitespace-pre bg-well p-2 font-mono t-small text-dim">
+                              {openDiff.text}
+                            </pre>
+                          </div>
+                        )}
                       </div>
                     )}
-                  </div>
-                )}
 
-                {proposals.length === 0 ? null : (
-                  <div className="section">
-                    <h4 className="mb-1 eyebrow">Worth making a rule ({proposals.length})</h4>
-                    {/* Proposals, never applied on their own. An entry becoming a
+                    {proposals.length === 0 ? null : (
+                      <div className="section">
+                        <h4 className="mb-1 eyebrow">Worth making a rule ({proposals.length})</h4>
+                        {/* Proposals, never applied on their own. An entry becoming a
                     rule without a human reading it would let the ledger
                     constrain the agent by itself, which doc 12 never allows. */}
-                    <ul className="flex flex-col gap-2 t-small">
-                      {proposals.map((proposal) => (
-                        <li key={proposal.entryId} className="border-l-2 border-line pl-2">
-                          <div className="text-ink">{proposal.statement}</div>
-                          <div className="text-dim">
-                            {proposal.target}
-                            {' · '}
-                            {/* Stated before the operator commits, not after. */}
-                            <span
-                              className={
-                                proposal.enforcement === 'hard' ? 'text-ok' : 'text-danger'
-                              }
-                            >
-                              {proposal.enforcement}
-                            </span>
-                            {' · '}
-                            {proposal.why}
-                          </div>
-                          <button
-                            type="button"
-                            className="text-info hover:underline"
-                            onClick={() => {
-                              void api
-                                .promoteEntry(proposal.entryId, {
-                                  target: proposal.target,
-                                  rule: proposal.rule,
-                                })
-                                .then((result) => {
-                                  setProposals((current) =>
-                                    current.filter((entry) => entry.entryId !== proposal.entryId),
-                                  );
-                                  setDetail((current) =>
-                                    current === null ? current : { ...current, card: result.card },
-                                  );
-                                })
-                                .catch((cause: Error) => setError(cause.message));
-                            }}
-                          >
-                            make it a {proposal.target} rule
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+                        <ul className="flex flex-col gap-2 t-small">
+                          {proposals.map((proposal) => (
+                            <li key={proposal.entryId} className="border-l-2 border-line pl-2">
+                              <div className="text-ink">{proposal.statement}</div>
+                              <div className="text-dim">
+                                {proposal.target}
+                                {' · '}
+                                {/* Stated before the operator commits, not after. */}
+                                <span
+                                  className={
+                                    proposal.enforcement === 'hard' ? 'text-ok' : 'text-danger'
+                                  }
+                                >
+                                  {proposal.enforcement}
+                                </span>
+                                {' · '}
+                                {proposal.why}
+                              </div>
+                              <button
+                                type="button"
+                                className="text-info hover:underline"
+                                onClick={() => {
+                                  void api
+                                    .promoteEntry(proposal.entryId, {
+                                      target: proposal.target,
+                                      rule: proposal.rule,
+                                    })
+                                    .then((result) => {
+                                      setProposals((current) =>
+                                        current.filter(
+                                          (entry) => entry.entryId !== proposal.entryId,
+                                        ),
+                                      );
+                                      setDetail((current) =>
+                                        current === null
+                                          ? current
+                                          : { ...current, card: result.card },
+                                      );
+                                    })
+                                    .catch((cause: Error) => setError(cause.message));
+                                }}
+                              >
+                                make it a {proposal.target} rule
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
 
-                {(detail.contradictions ?? []).length === 0 ? null : (
-                  <div className="section">
-                    <h4 className="mb-1 eyebrow text-danger">Runs into a project rule</h4>
-                    <ul className="flex flex-col gap-1 t-small">
-                      {(detail.contradictions ?? []).map((entry) => (
-                        <li key={`${entry.invariant}-${entry.conflict}`} className="text-dim">
-                          {/* Scope is a claim about where the work will happen. A
+                    {(detail.contradictions ?? []).length === 0 ? null : (
+                      <div className="section">
+                        <h4 className="mb-1 eyebrow text-danger">Runs into a project rule</h4>
+                        <ul className="flex flex-col gap-1 t-small">
+                          {(detail.contradictions ?? []).map((entry) => (
+                            <li key={`${entry.invariant}-${entry.conflict}`} className="text-dim">
+                              {/* Scope is a claim about where the work will happen. A
                           mention in the body is weaker - a card can name a file
                           it intends to leave alone - so which it is gets said. */}
-                          {entry.where === 'scope' ? 'scoped to' : 'mentions'}{' '}
-                          <span className="text-ink">{entry.conflict}</span>, against “
-                          {entry.invariant}”
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+                              {entry.where === 'scope' ? 'scoped to' : 'mentions'}{' '}
+                              <span className="text-ink">{entry.conflict}</span>, against “
+                              {entry.invariant}”
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
 
-                {(detail.blastRadius?.paths ?? []).length === 0 ? null : (
-                  <div className="section">
-                    <h4 className="mb-1 eyebrow">Cards like this touched</h4>
-                    {/* A guess from similar wording, said as one. 'These files'
+                    {(detail.blastRadius?.paths ?? []).length === 0 ? null : (
+                      <div className="section">
+                        <h4 className="mb-1 eyebrow">Cards like this touched</h4>
+                        {/* A guess from similar wording, said as one. 'These files'
                     invites acceptance; 'these files, because these cards
                     touched them' invites checking, which is what an operator
                     should do with a guess. */}
-                    <ul className="flex flex-col gap-0.5 t-small">
-                      {(detail.blastRadius?.paths ?? []).slice(0, 8).map((entry) => (
-                        <li key={entry.path} className="text-dim">
-                          <span className="text-ink">{entry.path}</span> · {entry.cards} card(s)
-                        </li>
-                      ))}
-                    </ul>
-                    <p className="mt-1 text-dim">
-                      From{' '}
-                      {(detail.blastRadius?.from ?? []).map((card) => `“${card.title}”`).join(', ')}
-                      .
-                    </p>
-                  </div>
-                )}
+                        <ul className="flex flex-col gap-0.5 t-small">
+                          {(detail.blastRadius?.paths ?? []).slice(0, 8).map((entry) => (
+                            <li key={entry.path} className="text-dim">
+                              <span className="text-ink">{entry.path}</span> · {entry.cards} card(s)
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="mt-1 text-dim">
+                          From{' '}
+                          {(detail.blastRadius?.from ?? [])
+                            .map((card) => `“${card.title}”`)
+                            .join(', ')}
+                          .
+                        </p>
+                      </div>
+                    )}
 
-                {(detail.subsystems ?? []).length === 0 ? null : (
-                  <div className="section">
-                    <h4 className="mb-1 eyebrow">Touched</h4>
-                    <ul className="flex flex-col gap-0.5 t-small">
-                      {(detail.subsystems ?? []).map((entry) => (
-                        <li key={entry.subsystem} className="text-dim">
-                          <span className="text-ink">{entry.subsystem}</span> · {entry.paths}{' '}
-                          file(s)
-                        </li>
-                      ))}
-                    </ul>
+                    {(detail.subsystems ?? []).length === 0 ? null : (
+                      <div className="section">
+                        <h4 className="mb-1 eyebrow">Touched</h4>
+                        <ul className="flex flex-col gap-0.5 t-small">
+                          {(detail.subsystems ?? []).map((entry) => (
+                            <li key={entry.subsystem} className="text-dim">
+                              <span className="text-ink">{entry.subsystem}</span> · {entry.paths}{' '}
+                              file(s)
+                            </li>
+                          ))}
+                        </ul>
 
-                    {(detail.claimedNotInGit ?? []).length === 0 ? null : (
-                      <p className="mt-1 text-dim">
-                        {/* Phrased as a question. Work reverted before the commit
+                        {(detail.claimedNotInGit ?? []).length === 0 ? null : (
+                          <p className="mt-1 text-dim">
+                            {/* Phrased as a question. Work reverted before the commit
                         and files written outside the worktree both land here,
                         and neither is a run lying. */}
-                        {(detail.claimedNotInGit ?? []).length} path(s) the run mentioned are not in
-                        the branch: {(detail.claimedNotInGit ?? []).join(', ')}.
-                      </p>
+                            {(detail.claimedNotInGit ?? []).length} path(s) the run mentioned are
+                            not in the branch: {(detail.claimedNotInGit ?? []).join(', ')}.
+                          </p>
+                        )}
+                      </div>
                     )}
-                  </div>
-                )}
 
-                {(detail.relatedCards ?? []).length === 0 ? null : (
-                  <div className="section">
-                    <h4 className="mb-1 eyebrow">Also worked here</h4>
-                    {/* The point of the map: whatever an earlier card learned about
+                    {(detail.relatedCards ?? []).length === 0 ? null : (
+                      <div className="section">
+                        <h4 className="mb-1 eyebrow">Also worked here</h4>
+                        {/* The point of the map: whatever an earlier card learned about
                     these files was learned the expensive way. */}
-                    <ul className="flex flex-col gap-0.5 t-small">
-                      {(detail.relatedCards ?? []).map((related) => (
-                        <li key={related.cardId} className="text-dim">
-                          <span className="text-ink">{related.title}</span> ·{' '}
-                          {related.shared.length} shared file(s)
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+                        <ul className="flex flex-col gap-0.5 t-small">
+                          {(detail.relatedCards ?? []).map((related) => (
+                            <li key={related.cardId} className="text-dim">
+                              <span className="text-ink">{related.title}</span> ·{' '}
+                              {related.shared.length} shared file(s)
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
 
-                {detail.realityNotes.length > 0 ? (
-                  <div className="section">
-                    <h4 className="mb-1 eyebrow">Claim versus reality</h4>
-                    {detail.realityNotes.map((note) => (
-                      <p key={note} className="text-dim">
-                        {note}
-                      </p>
-                    ))}
-                  </div>
-                ) : (
-                  <></>
-                )}
+                    {detail.realityNotes.length > 0 ? (
+                      <div className="section">
+                        <h4 className="mb-1 eyebrow">Claim versus reality</h4>
+                        {detail.realityNotes.map((note) => (
+                          <p key={note} className="text-dim">
+                            {note}
+                          </p>
+                        ))}
+                      </div>
+                    ) : (
+                      <></>
+                    )}
 
-                {brief === null ? null : (
-                  // A brief that stays on this screen is a brief the rest of the
-                  // team never reads. The two exits are copy, for a pull request
-                  // body or a message, and download, for something kept.
-                  //
-                  // Wraps rather than squeezing: in a 320px column the label and
-                  // two buttons on one line broke "Export" across two lines and
-                  // left the buttons stacked mid-word.
-                  <div className="section flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="eyebrow mr-1 whitespace-nowrap">Export</span>
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 t-small text-dim transition-colors hover:bg-well hover:text-ink"
-                      onClick={() => void copyMarkdown()}
-                    >
-                      <Copy size={13} aria-hidden />
-                      <span className="whitespace-nowrap">
-                        {copied ? 'Copied' : 'Copy markdown'}
-                      </span>
-                    </button>
-                    <a
-                      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 t-small text-dim transition-colors hover:bg-well hover:text-ink"
-                      href={`/api/cards/${cardId}/brief.md`}
-                      download
-                    >
-                      <DownloadSimple size={13} aria-hidden />
-                      <span className="whitespace-nowrap">Download .md</span>
-                    </a>
-                  </div>
-                )}
-              </SectionFlow>
+                    {brief === null ? null : (
+                      // A brief that stays on this screen is a brief the rest of the
+                      // team never reads. The two exits are copy, for a pull request
+                      // body or a message, and download, for something kept.
+                      //
+                      // Wraps rather than squeezing: in a 320px column the label and
+                      // two buttons on one line broke "Export" across two lines and
+                      // left the buttons stacked mid-word.
+                      <div className="section flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="eyebrow mr-1 whitespace-nowrap">Export</span>
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 t-small text-dim transition-colors hover:bg-well hover:text-ink"
+                          onClick={() => void copyMarkdown()}
+                        >
+                          <Copy size={13} aria-hidden />
+                          <span className="whitespace-nowrap">
+                            {copied ? 'Copied' : 'Copy markdown'}
+                          </span>
+                        </button>
+                        <a
+                          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 t-small text-dim transition-colors hover:bg-well hover:text-ink"
+                          href={`/api/cards/${cardId}/brief.md`}
+                          download
+                        >
+                          <DownloadSimple size={13} aria-hidden />
+                          <span className="whitespace-nowrap">Download .md</span>
+                        </a>
+                      </div>
+                    )}
+                  </SectionFlow>
+                </details>
+              </div>
             )}
             {activePane !== 'thinking' ? null : (
-              <SectionFlow>
+              <div className="mx-auto max-w-5xl">
                 <Narration
                   narration={narration}
                   error={narrationError}
@@ -2457,7 +2420,7 @@ export function CardDetail({
                   limit={narrationLimit}
                   onMore={() => setNarrationLimit((current) => Math.min(current * 4, 5_000))}
                 />
-              </SectionFlow>
+              </div>
             )}
             {activePane !== 'review' ? null : (
               <SectionFlow>
