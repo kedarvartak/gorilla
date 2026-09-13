@@ -151,9 +151,14 @@ export class WorktreeManager {
    * than from HEAD, so declared work composes while undeclared work stays
    * isolated (doc 18).
    */
-  async create(cardId: string, title: string, baseRef?: string): Promise<WorktreeResult> {
+  async create(
+    cardId: string,
+    title: string,
+    baseRef?: string,
+    sourceBranch?: string,
+  ): Promise<WorktreeResult> {
     const path = workspacePathFor(this.boardCwd, cardId);
-    const branch = branchNameFor(cardId, title);
+    const branch = sourceBranch ?? branchNameFor(cardId, title);
 
     const existing = this.#known.get(cardId);
     if (existing !== undefined && existsSync(existing.path)) {

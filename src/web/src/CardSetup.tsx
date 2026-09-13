@@ -70,6 +70,8 @@ export function CardSetup({
   const [provider, setProvider] = useState(card.agentProvider ?? 'claude');
   const [model, setModel] = useState(card.agentModel ?? '');
   const [effort, setEffort] = useState(card.agentEffort ?? '');
+  const [baseBranch, setBaseBranch] = useState(card.baseBranch ?? '');
+  const [sourceBranch, setSourceBranch] = useState(card.sourceBranch ?? '');
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -153,6 +155,8 @@ export function CardSetup({
         agentProvider: provider,
         agentModel: model.trim() || null,
         agentEffort: effort || null,
+        baseBranch: baseBranch.trim() || null,
+        sourceBranch: sourceBranch.trim() || null,
         guardrails: {
           ...rails,
           scope: lines(scope),
@@ -353,6 +357,31 @@ export function CardSetup({
                 </label>
               </div>
             </Field>
+          </div>
+
+          <div className="mt-3 grid gap-3 border-t border-line pt-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="eyebrow">Base branch</span>
+              <input
+                aria-label="base branch"
+                className="mt-1 w-full rounded-md border border-line bg-surface px-2.5 py-1.5 font-mono t-small text-ink placeholder:text-faint focus:border-edge focus:outline-none"
+                value={baseBranch}
+                onChange={(event) => setBaseBranch(event.target.value)}
+                placeholder="Current project branch"
+              />
+              <span className="mt-1 block t-fine text-faint">The agent starts here; its PR targets it.</span>
+            </label>
+            <label className="block">
+              <span className="eyebrow">Source branch</span>
+              <input
+                aria-label="source branch"
+                className="mt-1 w-full rounded-md border border-line bg-surface px-2.5 py-1.5 font-mono t-small text-ink placeholder:text-faint focus:border-edge focus:outline-none"
+                value={sourceBranch}
+                onChange={(event) => setSourceBranch(event.target.value)}
+                placeholder="Generated for this card"
+              />
+              <span className="mt-1 block t-fine text-faint">The branch the agent publishes for review.</span>
+            </label>
           </div>
 
           {enforcement.length === 0 ? null : (

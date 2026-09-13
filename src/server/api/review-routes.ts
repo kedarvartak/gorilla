@@ -17,6 +17,7 @@ import { describeMergeReport, mergeBranches, mergeTargetFor } from '../review/me
 import { isMerging, resolveConflicts } from '../review/resolve.js';
 import { branchDiff } from '../worktree/diff.js';
 import { compareCards } from '../review/compare.js';
+import { openPullRequest, PullRequestError } from '../review/pull-request.js';
 import { fail, present, publish } from './shared.js';
 
 /**
@@ -27,6 +28,65 @@ import { fail, present, publish } from './shared.js';
  * is pushed.
  */
 export function registerReviewRoutes(app: FastifyInstance, context: AppContext): void {
+  /** Publish one finished card for review, without merging it locally. */
+  app.post<{ Params: { cardId: string } }>('/api/cards/:cardId/pull-request', async (request, reply) => {
+    try {
+      const card = getCard(context.database, request.params.cardId);
+      if (card.pullRequestUrl !== null) {
+        return reply.send({
+          url: card.pullRequestUrl,
+          source: card.sourceBranch ?? card.mergedBranch ?? '',
+          base: card.baseBranch ?? '',
+          existing: true,
+        });
+      }
+
+      const board = context.database.db
+        .select()
+        .from(boards)
+        .where(eq(boards.id, card.boardId))
+        .get();
+      if (board === undefined) return notFound(reply, 'No such board.');
+
+      const workspace = context.dispatcher.worktreesFor(board.cwd).workspaceFor(card.id);
+      const source = workspace?.branch ?? card.sourceBranch ?? card.mergedBranch;
+      if (source === null || source === undefined) {
+        return conflict(reply, 'This card has no branch to publish. Dispatch it before opening a pull request.');
+      }
+
+      const base = card.baseBranch ?? (await mergeTargetFor(board.cwd));
+      if (base === null) return conflict(reply, 'The board could not determine a base branch. Set one on the card.');
+      if (base === source) return conflict(reply, 'The source and base branch are the same. Change one before opening a pull request.');
+
+      const report = card.completionReport === null ? '' : `\n\n## Agent report\n\n${card.completionReport}`;
+      const pullRequest = await openPullRequest({
+        repoCwd: board.cwd,
+        source,
+        base,
+        title: card.title,
+        body: `${card.body.trim() || card.goalCondition || 'Work completed by Gorilla.'}${report}`,
+      });
+
+      const now = Date.now();
+      context.database.db
+        .update(cardsTable)
+        .set({
+          baseBranch: base,
+          sourceBranch: source,
+          pullRequestUrl: pullRequest.url,
+          updatedAt: now,
+        })
+        .where(eq(cardsTable.id, card.id))
+        .run();
+
+      publish(context, 'card-pull-request-opened', { cardId: card.id, ...pullRequest });
+      return reply.code(201).send(pullRequest);
+    } catch (cause) {
+      if (cause instanceof PullRequestError) return conflict(reply, cause.message);
+      return fail(reply, cause);
+    }
+  });
+
   app.post<{
     Params: { boardId: string };
     Body: { cardIds?: unknown; into?: string; verify?: string | null };

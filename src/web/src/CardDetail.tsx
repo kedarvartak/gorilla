@@ -1133,6 +1133,8 @@ export function CardDetail({
   const [error, setError] = useState<string | null>(null);
   const [timelineRunId, setTimelineRunId] = useState<string | null>(null);
   const [merging, setMerging] = useState(false);
+  const [openingPullRequest, setOpeningPullRequest] = useState(false);
+  const [pullRequestNote, setPullRequestNote] = useState<string | null>(null);
   const [mergeReport, setMergeReport] = useState<MergeReport | null>(null);
   /** Set only when the gate declined. Judgement is offered here and nowhere else. */
   const [mergeRefusal, setMergeRefusal] = useState<{ summary: string; reach: string } | null>(null);
@@ -1173,6 +1175,24 @@ export function CardDetail({
         else setError(cause.message);
       })
       .finally(() => setMerging(false));
+  }, [cardId, detail]);
+
+  /** Publishes the isolated branch for GitHub review; it never merges locally. */
+  const openPullRequest = useCallback(() => {
+    if (detail === null) return;
+    setOpeningPullRequest(true);
+    setPullRequestNote(null);
+    void api
+      .openPullRequest(detail.card.id)
+      .then((result) => {
+        setPullRequestNote(result.existing === true ? 'Pull request already open.' : 'Pull request opened.');
+        return api.cardDetail<Detail>(cardId);
+      })
+      .then((refreshed) => {
+        if (refreshed !== null) setDetail(refreshed);
+      })
+      .catch((cause: Error) => setError(cause.message))
+      .finally(() => setOpeningPullRequest(false));
   }, [cardId, detail]);
 
   /**
@@ -2541,6 +2561,26 @@ export function CardDetail({
                   )}
 
                   <div className="flex flex-wrap gap-2">
+                    {detail.card.mergedAt !== null || detail.workspace === null ? null : detail.card.pullRequestUrl === null ? (
+                      <button
+                        type="button"
+                        className="rounded border border-info/50 px-2 py-0.5 t-small text-info hover:bg-info/10 disabled:opacity-40"
+                        disabled={openingPullRequest || detail.card.status === 'running'}
+                        title={`Pushes ${detail.card.sourceBranch ?? detail.workspace.branch} and opens a pull request into ${detail.card.baseBranch ?? detail.mergeTarget ?? 'the current branch'}. It does not merge locally.`}
+                        onClick={openPullRequest}
+                      >
+                        {openingPullRequest ? 'opening pull request…' : 'open pull request'}
+                      </button>
+                    ) : (
+                      <a
+                        href={detail.card.pullRequestUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded border border-info/50 px-2 py-0.5 t-small text-info hover:bg-info/10"
+                      >
+                        view pull request
+                      </a>
+                    )}
                     {detail.workspace === null ||
                     detail.card.mergedAt !== null ? null : conflicted ? (
                       /* A conflict is the ordinary cost of two agents working in
@@ -2624,6 +2664,10 @@ export function CardDetail({
                       </button>
                     )}
                   </div>
+
+                  {pullRequestNote === null ? null : (
+                    <p className="mt-2 t-fine text-ok">{pullRequestNote}</p>
+                  )}
 
                   {mergeReport === null ? null : (
                     <pre

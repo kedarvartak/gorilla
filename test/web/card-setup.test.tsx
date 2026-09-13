@@ -18,10 +18,12 @@ afterEach(() => {
 });
 
 function edit(label: string, value: string): void {
-  const field = container.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${label}"]`);
+  const field = container.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+    `[aria-label="${label}"]`,
+  );
   if (!field) throw new Error(`Missing ${label}`);
   act(() => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(
+    Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), 'value')?.set?.call(
       field,
       value,
     );
@@ -52,6 +54,8 @@ it('saves the exact draft before dispatch, preserving other guardrail settings',
   edit('goal condition', 'The login tests pass');
   edit('prohibitions', 'Do not add dependencies, including test helpers\n.env');
   edit('verify command', 'npm test');
+  edit('base branch', 'release/next');
+  edit('source branch', 'feature/dom-harness');
   await act(async () => {
     buttons(container, 'Save & run agent')[0]?.click();
   });
@@ -59,6 +63,8 @@ it('saves the exact draft before dispatch, preserving other guardrail settings',
   expect(save).toHaveBeenCalledWith(
     expect.objectContaining({
       goalCondition: 'The login tests pass',
+      baseBranch: 'release/next',
+      sourceBranch: 'feature/dom-harness',
       guardrails: {
         ...rails,
         verify: 'npm test',

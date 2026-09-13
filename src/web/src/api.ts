@@ -88,6 +88,11 @@ export interface Card {
   readonly mergedAt: number | null;
   readonly mergedInto: string | null;
   readonly mergedBranch: string | null;
+  /** Where this card starts and where its pull request proposes to land. */
+  readonly baseBranch: string | null;
+  /** The branch the agent works on and publishes for review. */
+  readonly sourceBranch: string | null;
+  readonly pullRequestUrl: string | null;
   readonly updatedAt: number;
   readonly guardrailDetail: readonly GuardrailDetail[];
   /**
@@ -306,6 +311,8 @@ export const api = {
       status: Card['status'];
       /** Null clears it. The server refuses zero rather than reading it as none. */
       tokenCeiling: number | null;
+      baseBranch: string | null;
+      sourceBranch: string | null;
       /** Replaces the whole set: the server reparses it, so a partial would drop rules. */
       guardrails: {
         scope?: readonly string[];
@@ -369,6 +376,12 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  openPullRequest: (cardId: string) =>
+    request<{ url: string; source: string; base: string; existing?: boolean }>(
+      `/api/cards/${cardId}/pull-request`,
+      { method: 'POST' },
+    ),
 
   /**
    * Resolves the conflict the board is sitting in, then commits the merge.

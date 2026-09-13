@@ -681,12 +681,15 @@ export class Dispatcher {
 
     if (this.isolate && this.workspaceFor === undefined) {
       const card = getCard(this.database, cardId);
-      const base = this.#baseRefFor(board.cwd, cardId);
+      // An explicit base is an operator decision. Dependencies are the useful
+      // default only when nobody chose a branch for this card.
+      const base = card.baseBranch ?? this.#baseRefFor(board.cwd, cardId);
 
       const workspace = await this.#worktreesFor(board.cwd).create(
         cardId,
         card.title,
         base ?? undefined,
+        card.sourceBranch ?? undefined,
       );
 
       if (!workspace.ok) {
@@ -700,6 +703,17 @@ export class Dispatcher {
           at: Date.now(),
         });
         return null;
+      }
+
+      // Store the generated branch too. The PR screen can now name exactly
+      // where this card points, rather than making the operator infer it from
+      // a worktree path after the agent finishes.
+      if (card.sourceBranch !== workspace.branch || (card.baseBranch === null && base !== null)) {
+        this.database.db
+          .update(cards)
+          .set({ sourceBranch: workspace.branch, ...(card.baseBranch === null && base !== null ? { baseBranch: base } : {}) })
+          .where(eq(cards.id, cardId))
+          .run();
       }
 
       /*

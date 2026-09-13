@@ -157,6 +157,52 @@ describe('migration', () => {
   });
 });
 
+describe('card branches', () => {
+  it('keeps an explicit base and source branch on a card', () => {
+    board();
+    const created = createCard(handle, {
+      boardId: BOARD,
+      title: 'Publish an API change',
+      baseBranch: 'release/next',
+      sourceBranch: 'feature/publish-api',
+    });
+
+    expect(created.baseBranch).toBe('release/next');
+    expect(created.sourceBranch).toBe('feature/publish-api');
+    expect(created.pullRequestUrl).toBeNull();
+  });
+
+  it('refuses unsafe or identical branch choices', () => {
+    board();
+    expect(() =>
+      createCard(handle, {
+        boardId: BOARD,
+        title: 'Unsafe branch',
+        baseBranch: 'main',
+        sourceBranch: 'feature/has space',
+      }),
+    ).toThrow(/valid Git branch name/);
+    expect(() =>
+      createCard(handle, {
+        boardId: BOARD,
+        title: 'Same branch',
+        baseBranch: 'main',
+        sourceBranch: 'main',
+      }),
+    ).toThrow(/must differ/);
+  });
+
+  it('locks branch choices after dispatch has started', () => {
+    board();
+    const created = createCard(handle, { boardId: BOARD, title: 'Locked branch' });
+    handle.db.update(cards).set({ attempts: 1 }).where(eq(cards.id, created.id)).run();
+
+    expect(() => updateCard(handle, created.id, { baseBranch: 'release/next' })).toThrow(
+      /locked after the first dispatch/,
+    );
+  });
+});
+
 describe('default columns', () => {
   it('creates the doc 05 set with exactly one gate and one terminal', () => {
     board();
