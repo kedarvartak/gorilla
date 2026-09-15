@@ -19,9 +19,29 @@ let pending: PendingBindings;
 
 const BOARD = 'board-1';
 
-function fakeClaude(script: string): string {
+/**
+ * A stand-in for the coding CLI.
+ *
+ * Writes the completion report the board now requires before a card may
+ * settle, so a test about dispatch, budgets or windows is not also a test of
+ * the completion contract. A test that is about the contract writes its own
+ * report - or deliberately writes none - and passes `{ report: false }`.
+ */
+function fakeClaude(script: string, options: { report?: boolean } = {}): string {
   const path = join(dir, `fake-${Math.random().toString(36).slice(2)}.sh`);
-  writeFileSync(path, `#!/usr/bin/env bash\n${script}\n`, 'utf8');
+  const report =
+    options.report === false
+      ? ''
+      : `mkdir -p .gorilla && cat > .gorilla/report.json <<'GORILLA_JSON'\n` +
+        JSON.stringify({
+          summary: 'The fake agent did what the test asked.',
+          files: [{ path: 'app.txt', why: 'What the test had it change.' }],
+          verification: { how: 'the test harness', result: 'ok', evidence: null },
+          outstanding: [],
+        }) +
+        `\nGORILLA_JSON\n`;
+
+  writeFileSync(path, `#!/usr/bin/env bash\n${report}${script}\n`, 'utf8');
   chmodSync(path, 0o755);
   return path;
 }
@@ -157,9 +177,34 @@ describe('the verify gate', () => {
     });
   });
 
+  it('hands a failing check back to the agent once before it asks a person', async () => {
+    const repaired: string[] = [];
+    dispatcher.events.onRepaired = (_board, cardId) => repaired.push(cardId);
+    dispatcher.useExecutable(fakeClaude(DID_WORK));
+    const id = workedCard('breaks the tests once', 'echo 2 failures >&2; exit 1');
+
+    const first = dispatcher.dispatch(BOARD, id);
+    recordEffect(id);
+    await first?.result;
+
+    await vi.waitFor(() => expect(dispatcher.state(BOARD).halted?.reason).toBe('verify-failed'));
+
+    // It was genuinely retried, then reached a person only after its bounded
+    // repair attempt also failed. The one-shot instruction is consumed by the
+    // follow-up run rather than waiting for someone to move the card.
+    const card = getCard(handle, id);
+    expect(repaired).toContain(id);
+    expect(card.repairs).toBe(1);
+    expect(card.retryNote).toBeNull();
+  });
+
   it('halts with verify-failed when the command does not pass', async () => {
     dispatcher.useExecutable(fakeClaude(DID_WORK));
     const id = workedCard('breaks the tests', 'echo 2 failures >&2; exit 1');
+
+    // No repair budget, so this is the first failure reaching a person rather
+    // than the second. The repair path has a test of its own above.
+    handle.db.update(boards).set({ policyRepairAttempts: 0 }).where(eq(boards.id, BOARD)).run();
 
     const run = dispatcher.dispatch(BOARD, id);
     recordEffect(id);

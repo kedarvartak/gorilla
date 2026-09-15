@@ -5,6 +5,8 @@ import {
 } from '../cards/guardrails.js';
 import { isEmpty, type CardBackground } from '../cards/background.js';
 
+import { REPORT_PATH } from '../review/contract.js';
+
 /**
  * Translating a card into `claude -p` arguments (doc 07 section 3).
  *
@@ -113,7 +115,10 @@ export function buildArgs(spec: LaunchSpec): string[] {
 /** Arguments for the Codex CLI's non-interactive JSON stream. */
 export function buildCodexArgs(spec: LaunchSpec, context: string): string[] {
   const prompt = [composePrompt(spec), context].filter((part) => part.trim() !== '').join('\n\n');
-  const args = ['exec', '--json', '--full-auto'];
+  // `--full-auto` was removed from current Codex CLI releases. `exec` now
+  // exposes its unattended workspace-write mode as `--approve-for-me`; it
+  // automatically reviews approvals rather than pausing a headless card.
+  const args = ['exec', '--json', '--approve-for-me'];
   if (spec.agentModel !== null && spec.agentModel !== undefined && spec.agentModel !== '') {
     args.push('--model', spec.agentModel);
   }
@@ -335,6 +340,45 @@ export function renderCardContext(input: CardContextInput): string {
     for (const run of input.previousRuns) lines.push(`- ${run}`);
     lines.push('');
   }
+
+  /*
+   * The completion contract, stated last because it is the last thing done.
+   *
+   * Written as the terms of finishing rather than as a request, because the
+   * board enforces it: a run that ends without this is sent back once and then
+   * stops for a person. An agent that learns that from a rejection has spent a
+   * run finding out something it could have been told.
+   */
+  lines.push(
+    '## Before you finish',
+    '',
+    `Write \`${REPORT_PATH}\` in this worktree. The board reads it and will not`,
+    'accept this card as finished without it. Every field is required:',
+    '',
+    '```json',
+    '{',
+    '  "summary": "One short paragraph on what changed and why.",',
+    '  "files": [{ "path": "src/auth/session.ts", "why": "What this file\'s change does." }],',
+    '  "verification": {',
+    '    "how": "The command or check you ran.",',
+    '    "result": "What it said.",',
+    '    "evidence": "Where the output, screenshot or log lives. null if there is none."',
+    '  },',
+    '  "outstanding": []',
+    '}',
+    '```',
+    '',
+    '`outstanding` is the field to be careful with. It is anything incomplete,',
+    'anything you worked around, and anything that needs a person to decide.',
+    'Write it even when it is empty: an omitted field and nothing to report',
+    'look identical, so the empty list is how you say there is nothing.',
+    '',
+    'The board records the diff and runs the project check itself, so the',
+    'report is your account of the work and not a substitute for it. Say what',
+    'you did not finish - a card sent back for an honest gap costs less than',
+    'one that read as done and was not.',
+    '',
+  );
 
   return `${lines.join('\n').trimEnd()}\n`;
 }

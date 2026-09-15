@@ -230,6 +230,20 @@ sleep 30
     expect(result.sessionId).toBe('s');
   });
 
+  it('can finish as completed when durable evidence beats a stuck provider', async () => {
+    const executable = fakeClaude(`
+echo '{"type":"system","subtype":"init","session_id":"s"}'
+sleep 30
+`);
+
+    const running = launch({ ...baseOptions, executable });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    running.finishAsCompleted();
+
+    const result = await running.result;
+    expect(result.outcome).toBe('completed');
+  });
+
   it('terminates the child on cancellation rather than leaking it', async () => {
     const executable = fakeClaude(`echo '{"type":"system","session_id":"s"}'\nsleep 30`);
 

@@ -44,7 +44,11 @@ async function render(): Promise<void> {
 }
 
 function type(value: string): void {
-  const input = container.querySelector('input');
+  // By its label, not by being the first input on the panel: the panel also
+  // carries the project's execution policy now, and "the first input" was
+  // quietly the setup command - which typed the rule into the wrong box and
+  // then asserted against an empty one.
+  const input = container.querySelector<HTMLInputElement>('input[aria-label="New project rule"]');
   if (input === null) throw new Error('no input');
   act(() => {
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.bind(

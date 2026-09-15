@@ -4,6 +4,7 @@ import { and, asc, eq, isNull } from 'drizzle-orm';
 
 import { canMoveTo, wouldCycle } from '../cards/eligibility.js';
 import { parseGuardrails, serialiseGuardrails } from '../cards/guardrails.js';
+import { readPolicy, stamp, stampVerify } from '../cards/policy.js';
 import type { DatabaseHandle } from '../db/client.js';
 import { cardDependencies, cards, columns, type Card } from '../db/schema.js';
 import { needsRenumber, positionForIndex, renumber } from './positions.js';
@@ -44,6 +45,8 @@ export interface CreateCardInput {
   readonly synthesisModel?: string | null;
   readonly priority?: CardPriority;
   readonly planId?: string | null;
+  /** Tokens this card's run may spend. Inherited from the policy when unset. */
+  readonly tokenCeiling?: number | null;
 }
 
 export const PRIORITIES = ['high', 'normal', 'low'] as const;
@@ -95,6 +98,28 @@ export function createCard(handle: DatabaseHandle, input: CreateCardInput): Card
   const now = Date.now();
   const id = randomUUID();
 
+  /*
+   * The project's execution policy, stamped on.
+   *
+   * Read here rather than at dispatch so the card records what it will run
+   * with. What the caller asked for always wins - a plan that names a model
+   * for one card gets that model - so this only fills in what nobody stated.
+   */
+  const policy = readPolicy(handle, input.boardId);
+  const execution = stamp(policy, {
+    agentProvider: input.agentProvider,
+    agentModel: input.agentModel ?? undefined,
+    agentEffort: input.agentEffort ?? undefined,
+    permissionMode: input.permissionMode ?? undefined,
+    tokenCeiling: input.tokenCeiling ?? undefined,
+  });
+
+  // The project knows how it is tested. A card that named no check of its own
+  // takes the project's, which is the difference between a board where most
+  // cards are verified and one where most are not.
+  const guardrails = parseGuardrails(JSON.stringify(input.guardrails ?? {}));
+  const withVerify = { ...guardrails, verify: stampVerify(policy, guardrails.verify) };
+
   handle.db
     .insert(cards)
     .values({
@@ -109,12 +134,13 @@ export function createCard(handle: DatabaseHandle, input: CreateCardInput): Card
         input.index ?? Number.MAX_SAFE_INTEGER,
       ),
       goalCondition: input.goalCondition ?? null,
-      guardrails: serialiseGuardrails(parseGuardrails(JSON.stringify(input.guardrails ?? {}))),
+      guardrails: serialiseGuardrails(withVerify),
       fromEntryId: input.fromEntryId ?? null,
-      agentProvider: input.agentProvider ?? 'claude',
-      agentModel: input.agentModel ?? null,
-      agentEffort: input.agentEffort ?? null,
-      permissionMode: input.permissionMode ?? null,
+      agentProvider: execution.agentProvider,
+      agentModel: execution.agentModel,
+      agentEffort: execution.agentEffort,
+      permissionMode: execution.permissionMode,
+      tokenCeiling: execution.tokenCeiling,
       synthesisModel: input.synthesisModel ?? null,
       priority: input.priority ?? 'normal',
       createdAt: now,

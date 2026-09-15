@@ -23,7 +23,7 @@ describe('agent providers', () => {
     ).toEqual([
       'exec',
       '--json',
-      '--full-auto',
+      '--approve-for-me',
       '--model',
       'gpt-5.3-codex',
       '/goal the test passes\n\n# Card: Test\n\nKeep the change small.\n',

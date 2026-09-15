@@ -23,7 +23,7 @@ import { parseLine } from './records.js';
  * read once by a model, and never shown to the person the board is for.
  */
 
-export type NarrationKind = 'thinking' | 'said' | 'did' | 'asked';
+export type NarrationKind = 'thinking' | 'said' | 'did' | 'asked' | 'output';
 
 export interface NarrationEntry {
   readonly runId: string;
@@ -34,6 +34,7 @@ export interface NarrationEntry {
   readonly text: string;
   /** The tool, when the entry is something the agent did. */
   readonly tool: string | null;
+  readonly detail?: string;
 }
 
 export interface Narration {
@@ -139,13 +140,30 @@ function fromTranscript(path: string, runId: string): Parsed {
       if (record.text !== '') push(entries, runId, at, 'said', record.text, null);
       for (const tool of record.tools) {
         push(entries, runId, at, 'did', summarise(tool.input), tool.name);
+        const added = entries[entries.length - 1];
+        if (added !== undefined && tool.input !== null) {
+          entries[entries.length - 1] = { ...added, detail: JSON.stringify(tool.input, null, 2) };
+        }
       }
       continue;
     }
 
-    // A tool result arrives as a user record whose content holds no text
-    // block, so `parseContent` leaves it empty. Skipping those is what keeps
-    // this a narration rather than a dump of every byte the tools returned.
+    if (record.kind === 'user') {
+      try {
+        const raw = JSON.parse(line) as { message?: { content?: unknown } };
+        const content = raw.message?.content;
+        if (Array.isArray(content)) {
+          for (const block of content as Record<string, unknown>[]) {
+            if (block?.['type'] !== 'tool_result') continue;
+            const output = textOf(block['content']);
+            if (output !== '')
+              push(entries, runId, at, 'output', output, readString(block, 'tool_use_id') || null);
+          }
+        }
+      } catch {
+        /* The transcript may still be writing its last line. */
+      }
+    }
     if (record.kind === 'user' && record.text !== '') {
       push(entries, runId, at, 'asked', record.text, null);
     }
@@ -235,8 +253,29 @@ function fromCodexEvent(
     text === '' && tool === null ? null : { runId, at: seqAt, kind, text, tool };
 
   switch (type) {
+    case 'command_execution':
+      return entry(
+        'did',
+        [readString(body, 'command'), readString(body, 'aggregated_output')]
+          .filter(Boolean)
+          .join('\n\n'),
+        'shell',
+      );
+    case 'exec_command_begin':
+      return entry('did', textOf(body['command']), 'shell');
+    case 'exec_command_end':
+      return entry(
+        'output',
+        readString(body, 'aggregated_output') ||
+          readString(body, 'stdout') ||
+          readString(body, 'stderr'),
+        'shell',
+      );
+    case 'function_call_output':
+    case 'custom_tool_call_output':
+      return entry('output', textOf(body['output']), readString(body, 'call_id') || null);
     case 'agent_message':
-      return entry('said', readString(body, 'message'), null);
+      return entry('said', readString(body, 'message') || readString(body, 'text'), null);
 
     case 'agent_reasoning':
     case 'agent_reasoning_delta':
