@@ -187,9 +187,7 @@ describe('the verify gate', () => {
     recordEffect(id);
     await first?.result;
 
-    await vi.waitFor(() =>
-      expect(dispatcher.state(BOARD).halted?.reason).toBe('verify-failed'),
-    );
+    await vi.waitFor(() => expect(dispatcher.state(BOARD).halted?.reason).toBe('verify-failed'));
 
     // It was genuinely retried, then reached a person only after its bounded
     // repair attempt also failed. The one-shot instruction is consumed by the

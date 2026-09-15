@@ -230,10 +230,9 @@ export function launch(options: LaunchOptions): RunningLaunch {
 
       // 143 is SIGTERM's conventional exit code and is what a cancelled run
       // looks like, so it is reported as cancelled rather than as a failure.
-      const outcome: LaunchOutcome =
-        completedByEvidence
-          ? 'completed'
-          : cancelled || signal === 'SIGTERM' || exitCode === 143
+      const outcome: LaunchOutcome = completedByEvidence
+        ? 'completed'
+        : cancelled || signal === 'SIGTERM' || exitCode === 143
           ? 'cancelled'
           : exitCode === 0
             ? 'completed'
