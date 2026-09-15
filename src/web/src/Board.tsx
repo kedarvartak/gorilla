@@ -67,7 +67,6 @@ import {
   CaretRight,
   DotsSixVertical,
   ArrowsClockwise,
-  MagnifyingGlass,
   Plus,
 } from '@phosphor-icons/react';
 
@@ -390,7 +389,11 @@ export function Board(): ReactElement {
   const [staleBuild, setStaleBuild] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<readonly SearchHit[] | null>(null);
-  const [filters, setFilters] = useState<FilterState>({ status: null, priority: null, agent: null });
+  const [filters, setFilters] = useState<FilterState>({
+    status: null,
+    priority: null,
+    agent: null,
+  });
   const [title, setTitle] = useState('');
   const [newPriority, setNewPriority] = useState<Card['priority']>('normal');
   const [openCardId, setOpenCardId] = useState<string | null>(null);
@@ -728,7 +731,7 @@ export function Board(): ReactElement {
                 ? 0
                 : hits
                     .map((h) => cards.find((c) => c.id === h.cardId))
-                    .filter(Boolean)
+                    .filter((card): card is Card => card !== undefined)
                     .filter(
                       (card) =>
                         (filters.status === null || card.status === filters.status) &&
