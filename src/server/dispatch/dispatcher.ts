@@ -621,35 +621,35 @@ export class Dispatcher {
     let checking = false;
     const timer = setInterval(() => {
       void (async () => {
-      if (checking || this.#stopped) return;
-      const state = this.#stateFor(boardId);
-      if (state.running.get(cardId) !== running) {
-        clearInterval(timer);
-        this.#completionWatchdogs.delete(cardId);
-        return;
-      }
-
-      const board = this.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
-      if (board === undefined) return;
-      const manager = this.#worktreesFor(board.cwd);
-      const workspace = manager.workspaceFor(cardId);
-      if (workspace === undefined || readReport(workspace.path) === null) return;
-
-      checking = true;
-      try {
-        const status = await manager.statusOf(cardId);
-        // `status.ahead` means ahead of a configured remote upstream, not
-        // ahead of the worktree's starting point. Local Gorilla branches have
-        // no upstream, so a valid report plus a clean worktree is the durable
-        // completion signal we can rely on.
-        if (status !== null && status.dirty === 0) {
+        if (checking || this.#stopped) return;
+        const state = this.#stateFor(boardId);
+        if (state.running.get(cardId) !== running) {
           clearInterval(timer);
           this.#completionWatchdogs.delete(cardId);
-          running.finishAsCompleted();
+          return;
         }
-      } finally {
-        checking = false;
-      }
+
+        const board = this.database.db.select().from(boards).where(eq(boards.id, boardId)).get();
+        if (board === undefined) return;
+        const manager = this.#worktreesFor(board.cwd);
+        const workspace = manager.workspaceFor(cardId);
+        if (workspace === undefined || readReport(workspace.path) === null) return;
+
+        checking = true;
+        try {
+          const status = await manager.statusOf(cardId);
+          // `status.ahead` means ahead of a configured remote upstream, not
+          // ahead of the worktree's starting point. Local Gorilla branches have
+          // no upstream, so a valid report plus a clean worktree is the durable
+          // completion signal we can rely on.
+          if (status !== null && status.dirty === 0) {
+            clearInterval(timer);
+            this.#completionWatchdogs.delete(cardId);
+            running.finishAsCompleted();
+          }
+        } finally {
+          checking = false;
+        }
       })();
     }, 1_000);
 

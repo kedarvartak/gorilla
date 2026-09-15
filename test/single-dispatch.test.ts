@@ -86,12 +86,15 @@ describe('one task end-to-end', () => {
   it('goes from create → dispatch → batch merge clean', async () => {
     // 1. Create a card with a plan
     const planId = 'plan-1';
-    handle.db.insert(plans).values({
-      id: planId,
-      boardId: BOARD,
-      prompt: 'Fix the typo in app.txt',
-      createdAt: 1,
-    }).run();
+    handle.db
+      .insert(plans)
+      .values({
+        id: planId,
+        boardId: BOARD,
+        prompt: 'Fix the typo in app.txt',
+        createdAt: 1,
+      })
+      .run();
 
     const card = createCard(handle, {
       boardId: BOARD,
@@ -106,7 +109,6 @@ describe('one task end-to-end', () => {
 
     // 3. Approve the plan (cuts batch branch)
     const approved = await approvePlan(handle, planId);
-    console.log(`✓ Plan approved: ${approved.integrationBranch}`);
 
     // 4. The agent does work: edits app.txt and writes report
     dispatcher.useExecutable(fakeClaude('echo "corrected" > app.txt'));
@@ -128,21 +130,9 @@ describe('one task end-to-end', () => {
     );
 
     const settled = getCard(handle, card.id);
-    console.log(`✓ Card settled: status=${settled.status}, integrated=${settled.integratedAt !== null}`);
-
-    const runRows = handle.sqlite
-      .prepare('SELECT id, git_branch, ended_at FROM runs WHERE card_id = ?')
-      .all(card.id);
-    console.log('RUNS:', JSON.stringify(runRows));
-    console.log('mergedBranch:', settled.mergedBranch);
-    const wt = dispatcher.worktreesFor(repo).workspaceFor(card.id);
-    console.log('worktree branch:', wt?.branch);
 
     // 7. Check batch status
     const status = batchStatus(handle, planId);
-    console.log(
-      `✓ Batch: ${status.total} total, ${status.integrated} integrated, headline="${status.headline}"`,
-    );
 
     // 8. Verify: card is integrated, batch has the change, ready to merge
     expect(settled.status).toBe('awaiting-review');
@@ -152,6 +142,5 @@ describe('one task end-to-end', () => {
     // The batch branch has the change
     const batchLog = git('log', '--oneline', approved.integrationBranch);
     expect(batchLog).toContain('Fix typo');
-    console.log(`✓ Batch branch log:\n${batchLog}`);
   });
 });

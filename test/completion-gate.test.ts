@@ -158,7 +158,9 @@ echo '{"type":"system","session_id":"s-'$RANDOM'"}'
 
     dispatcher.setPolicy(BOARD, 'unattended');
     const id = card('fixes its failed check', { verify: 'grep -qx fixed app.txt' });
-    await (await dispatcher.dispatchIsolated(BOARD, id))?.result;
+    await (
+      await dispatcher.dispatchIsolated(BOARD, id)
+    )?.result;
 
     await vi.waitFor(() => {
       expect(getCard(handle, id).completionReport).not.toBeNull();
