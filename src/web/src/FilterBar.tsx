@@ -37,6 +37,7 @@ export function FilterBar({
 
       <Select
         variant="bare"
+        label="Filter by status"
         placeholder="All statuses"
         label="Filter by status"
         value={filters.status ?? ''}
@@ -57,6 +58,7 @@ export function FilterBar({
 
       <Select
         variant="bare"
+        label="Filter by priority"
         placeholder="All priorities"
         label="Filter by priority"
         value={filters.priority ?? ''}
@@ -73,6 +75,7 @@ export function FilterBar({
 
       <Select
         variant="bare"
+        label="Filter by agent"
         placeholder="All agents"
         label="Filter by agent"
         value={filters.agent ?? ''}
