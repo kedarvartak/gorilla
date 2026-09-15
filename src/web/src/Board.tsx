@@ -60,6 +60,7 @@ import { Activity } from './Activity.js';
 import { CardTile } from './CardTile.js';
 import { Sidebar, type View } from './Sidebar.js';
 import { FilterBar, type FilterState } from './FilterBar.js';
+import { CommandPalette } from './CommandPalette.js';
 import { ResyncReportView } from './ResyncReportView.js';
 import {
   CaretLeft,
@@ -702,6 +703,9 @@ export function Board(): ReactElement {
             the app including the ones that have no width problem of their
             own. */}
         <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-surface px-4 py-2.5">
+          {/* Search first and widest. On a board of sixty cards it is the
+              fastest route to any of them, and it was previously one control
+              among sixteen. */}
           <FilterBar
             filters={filters}
             onFilterChange={(next) => {
@@ -1055,6 +1059,24 @@ export function Board(): ReactElement {
             }}
           />
         )}
+
+        <CommandPalette
+          cards={cards}
+          onSelectCard={(card) => setOpenCardId(card.id)}
+          onCreateCard={() => {
+            setTitle('');
+            setNewPriority('normal');
+          }}
+          onResync={() => {
+            if (board === null) return;
+            setResyncing(true);
+            void api
+              .resync(board.id)
+              .then(setResyncReport)
+              .catch((cause: Error) => setError(cause.message))
+              .finally(() => setResyncing(false));
+          }}
+        />
       </main>
     </div>
   );
