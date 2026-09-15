@@ -47,13 +47,38 @@ export interface CreateCardInput {
   readonly planId?: string | null;
   /** Tokens this card's run may spend. Inherited from the policy when unset. */
   readonly tokenCeiling?: number | null;
+  /** The branch to start from and propose back into. */
+  readonly baseBranch?: string | null;
+  /** The branch the agent should publish. Null keeps the generated default. */
+  readonly sourceBranch?: string | null;
 }
 
 export const PRIORITIES = ['high', 'normal', 'low'] as const;
 export type CardPriority = (typeof PRIORITIES)[number];
+const FORBIDDEN_BRANCH_CHARACTERS = new Set(['~', '^', ':', '?', '*', '[', ']', '\\']);
 
 export function isPriority(value: unknown): value is CardPriority {
   return typeof value === 'string' && (PRIORITIES as readonly string[]).includes(value);
+}
+
+/** A conservative Git branch-name check, before a value reaches git or `gh`. */
+export function normaliseBranch(value: string | null | undefined, field: string): string | null {
+  if (value === null || value === undefined || value.trim() === '') return null;
+  const branch = value.trim();
+  const invalid =
+    branch.length > 240 ||
+    branch.startsWith('-') ||
+    branch.startsWith('/') ||
+    branch.endsWith('/') ||
+    branch.endsWith('.') ||
+    branch.includes('..') ||
+    branch.includes('//') ||
+    branch.includes('@{') ||
+    [...branch].some(
+      (character) => /\s/.test(character) || FORBIDDEN_BRANCH_CHARACTERS.has(character),
+    );
+  if (invalid) throw new CardError(`A ${field} must be a valid Git branch name.`, 400, field);
+  return branch;
 }
 
 function siblingsOf(handle: DatabaseHandle, columnId: string): { id: string; position: number }[] {
@@ -88,6 +113,11 @@ export function createCard(handle: DatabaseHandle, input: CreateCardInput): Card
   }
 
   const columnId = input.columnId ?? firstColumn(handle, input.boardId);
+  const baseBranch = normaliseBranch(input.baseBranch, 'baseBranch');
+  const sourceBranch = normaliseBranch(input.sourceBranch, 'sourceBranch');
+  if (baseBranch !== null && baseBranch === sourceBranch) {
+    throw new CardError('The source branch must differ from the base branch.', 400, 'sourceBranch');
+  }
 
   const column = handle.db.select().from(columns).where(eq(columns.id, columnId)).get();
   if (column === undefined) throw new CardError(`No such column: ${columnId}`, 404, 'columnId');
@@ -143,6 +173,8 @@ export function createCard(handle: DatabaseHandle, input: CreateCardInput): Card
       tokenCeiling: execution.tokenCeiling,
       synthesisModel: input.synthesisModel ?? null,
       priority: input.priority ?? 'normal',
+      baseBranch,
+      sourceBranch,
       createdAt: now,
       updatedAt: now,
     })
@@ -183,6 +215,8 @@ export interface UpdateCardInput {
   readonly status?: Card['status'];
   /** Null clears the ceiling. Zero and negatives are refused, not treated as none. */
   readonly tokenCeiling?: number | null;
+  readonly baseBranch?: string | null;
+  readonly sourceBranch?: string | null;
 }
 
 export function updateCard(handle: DatabaseHandle, cardId: string, input: UpdateCardInput): Card {
@@ -194,6 +228,25 @@ export function updateCard(handle: DatabaseHandle, cardId: string, input: Update
 
   if (input.agentProvider !== undefined && !isAgentProvider(input.agentProvider)) {
     throw new CardError('Agent must be either claude or codex.', 400, 'agentProvider');
+  }
+
+  const baseBranch =
+    input.baseBranch === undefined ? undefined : normaliseBranch(input.baseBranch, 'baseBranch');
+  const sourceBranch =
+    input.sourceBranch === undefined
+      ? undefined
+      : normaliseBranch(input.sourceBranch, 'sourceBranch');
+  const nextBase = baseBranch === undefined ? existing.baseBranch : baseBranch;
+  const nextSource = sourceBranch === undefined ? existing.sourceBranch : sourceBranch;
+  if (nextBase !== null && nextBase === nextSource) {
+    throw new CardError('The source branch must differ from the base branch.', 400, 'sourceBranch');
+  }
+  if ((baseBranch !== undefined || sourceBranch !== undefined) && existing.attempts > 0) {
+    throw new CardError(
+      'Branches are locked after the first dispatch so the card keeps pointing at its existing worktree.',
+      409,
+      baseBranch !== undefined ? 'baseBranch' : 'sourceBranch',
+    );
   }
 
   // A ceiling of zero would stop every run on its first message, which reads
@@ -228,6 +281,8 @@ export function updateCard(handle: DatabaseHandle, cardId: string, input: Update
       ...(input.priority === undefined ? {} : { priority: input.priority }),
       ...(input.status === undefined ? {} : { status: input.status }),
       ...(input.tokenCeiling === undefined ? {} : { tokenCeiling: input.tokenCeiling }),
+      ...(baseBranch === undefined ? {} : { baseBranch }),
+      ...(sourceBranch === undefined ? {} : { sourceBranch }),
       updatedAt: Date.now(),
     })
     .where(eq(cards.id, existing.id))

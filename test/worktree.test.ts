@@ -177,6 +177,16 @@ describe('WorktreeManager', () => {
     expect(existsSync(join(second.path, 'from-first.txt'))).toBe(true);
   });
 
+  it('honours a card chosen source branch', async () => {
+    const manager = new WorktreeManager(repo);
+    const result = await manager.create('card-1', 'Named branch', 'HEAD', 'feature/named-card');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.branch).toBe('feature/named-card');
+    expect(git('branch', '--list', 'feature/named-card')).toContain('feature/named-card');
+  });
+
   it('refuses outside a git repository rather than throwing', async () => {
     const notRepo = join(dir, 'plain');
     execFileSync('mkdir', ['-p', notRepo]);
@@ -330,6 +340,34 @@ describe('dispatching into a worktree', () => {
 
     // Declared work composes; undeclared work stays isolated.
     expect(secondWorkspace?.baseRef).toBe(firstWorkspace?.branch);
+  });
+
+  it('uses a card selected base and source branch', async () => {
+    const initialBranch = git('branch', '--show-current').trim();
+    git('checkout', '-qb', 'release/next');
+    writeFileSync(join(repo, 'release.txt'), 'base\n');
+    git('add', '.');
+    git('commit', '-qm', 'release base');
+    git('checkout', initialBranch);
+
+    dispatcher.useExecutable(fakeClaude(`echo '{"type":"system","session_id":"s"}'`));
+    const created = createCard(handle, {
+      boardId: BOARD,
+      title: 'card branch settings',
+      goalCondition: '`npm test` exits 0',
+      baseBranch: 'release/next',
+      sourceBranch: 'feature/card-branch-settings',
+    });
+    moveCard(handle, created.id, columnNamed('Ready'), 0);
+
+    await (
+      await dispatcher.dispatchIsolated(BOARD, created.id)
+    )?.result;
+    const workspace = dispatcher.worktreesFor(repo).workspaceFor(created.id);
+
+    expect(workspace?.branch).toBe('feature/card-branch-settings');
+    expect(workspace?.baseRef).toBe('release/next');
+    expect(existsSync(join(workspace?.path ?? '', 'release.txt'))).toBe(true);
   });
 });
 

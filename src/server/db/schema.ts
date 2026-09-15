@@ -466,6 +466,19 @@ export const cards = sqliteTable(
     /** The card's own branch, kept after the worktree is gone. */
     mergedBranch: text('merged_branch'),
 
+    /**
+     * The branch this card starts from and proposes to merge into.
+     *
+     * Null means the board checkout's current branch when the card is first
+     * dispatched. Keeping the explicit choice on the card means a PR is not
+     * silently retargeted just because somebody changed branches meanwhile.
+     */
+    baseBranch: text('base_branch'),
+    /** The published branch for this card. Null chooses Gorilla's safe default. */
+    sourceBranch: text('source_branch'),
+    /** The GitHub PR created for this card, if the operator opened one. */
+    pullRequestUrl: text('pull_request_url'),
+
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },

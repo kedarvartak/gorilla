@@ -68,6 +68,8 @@ const EDITABLE_CARD_FIELDS: ReadonlySet<string> = new Set([
   'priority',
   'status',
   'tokenCeiling',
+  'baseBranch',
+  'sourceBranch',
 ]);
 
 export function registerApiRoutes(app: FastifyInstance, context: AppContext): void {
@@ -494,6 +496,12 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
             ? {}
             : { agentEffort: body['agentEffort'] as string | null }),
           ...(body['priority'] === undefined ? {} : { priority: readPriority(body['priority']) }),
+          ...(body['baseBranch'] === undefined
+            ? {}
+            : { baseBranch: body['baseBranch'] as string | null }),
+          ...(body['sourceBranch'] === undefined
+            ? {}
+            : { sourceBranch: body['sourceBranch'] as string | null }),
         });
 
         publish('card-created', present(card));
@@ -586,6 +594,12 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
           ...(body['tokenCeiling'] === undefined
             ? {}
             : { tokenCeiling: body['tokenCeiling'] as number | null }),
+          ...(body['baseBranch'] === undefined
+            ? {}
+            : { baseBranch: body['baseBranch'] as string | null }),
+          ...(body['sourceBranch'] === undefined
+            ? {}
+            : { sourceBranch: body['sourceBranch'] as string | null }),
         });
 
         publish('card-updated', present(card));
@@ -680,6 +694,7 @@ export function registerApiRoutes(app: FastifyInstance, context: AppContext): vo
           agentEffort: source.agentEffort,
           synthesisModel: source.synthesisModel,
           priority: source.priority,
+          baseBranch: source.baseBranch,
         });
 
         publish('card-created', present(card));
