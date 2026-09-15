@@ -1185,7 +1185,9 @@ export function CardDetail({
     void api
       .openPullRequest(detail.card.id)
       .then((result) => {
-        setPullRequestNote(result.existing === true ? 'Pull request already open.' : 'Pull request opened.');
+        setPullRequestNote(
+          result.existing === true ? 'Pull request already open.' : 'Pull request opened.',
+        );
         return api.cardDetail<Detail>(cardId);
       })
       .then((refreshed) => {
@@ -2561,7 +2563,8 @@ export function CardDetail({
                   )}
 
                   <div className="flex flex-wrap gap-2">
-                    {detail.card.mergedAt !== null || detail.workspace === null ? null : detail.card.pullRequestUrl === null ? (
+                    {detail.card.mergedAt !== null || detail.workspace === null ? null : detail.card
+                        .pullRequestUrl === null ? (
                       <button
                         type="button"
                         className="rounded border border-info/50 px-2 py-0.5 t-small text-info hover:bg-info/10 disabled:opacity-40"

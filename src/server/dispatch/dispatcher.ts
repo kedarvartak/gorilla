@@ -711,7 +711,10 @@ export class Dispatcher {
       if (card.sourceBranch !== workspace.branch || (card.baseBranch === null && base !== null)) {
         this.database.db
           .update(cards)
-          .set({ sourceBranch: workspace.branch, ...(card.baseBranch === null && base !== null ? { baseBranch: base } : {}) })
+          .set({
+            sourceBranch: workspace.branch,
+            ...(card.baseBranch === null && base !== null ? { baseBranch: base } : {}),
+          })
           .where(eq(cards.id, cardId))
           .run();
       }

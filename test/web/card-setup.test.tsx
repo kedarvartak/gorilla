@@ -23,10 +23,7 @@ function edit(label: string, value: string): void {
   );
   if (!field) throw new Error(`Missing ${label}`);
   act(() => {
-    Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), 'value')?.set?.call(
-      field,
-      value,
-    );
+    Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), 'value')?.set?.call(field, value);
     field.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }

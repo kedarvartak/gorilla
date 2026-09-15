@@ -360,7 +360,9 @@ describe('dispatching into a worktree', () => {
     });
     moveCard(handle, created.id, columnNamed('Ready'), 0);
 
-    await (await dispatcher.dispatchIsolated(BOARD, created.id))?.result;
+    await (
+      await dispatcher.dispatchIsolated(BOARD, created.id)
+    )?.result;
     const workspace = dispatcher.worktreesFor(repo).workspaceFor(created.id);
 
     expect(workspace?.branch).toBe('feature/card-branch-settings');

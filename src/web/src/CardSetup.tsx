@@ -369,7 +369,9 @@ export function CardSetup({
                 onChange={(event) => setBaseBranch(event.target.value)}
                 placeholder="Current project branch"
               />
-              <span className="mt-1 block t-fine text-faint">The agent starts here; its PR targets it.</span>
+              <span className="mt-1 block t-fine text-faint">
+                The agent starts here; its PR targets it.
+              </span>
             </label>
             <label className="block">
               <span className="eyebrow">Source branch</span>
@@ -380,7 +382,9 @@ export function CardSetup({
                 onChange={(event) => setSourceBranch(event.target.value)}
                 placeholder="Generated for this card"
               />
-              <span className="mt-1 block t-fine text-faint">The branch the agent publishes for review.</span>
+              <span className="mt-1 block t-fine text-faint">
+                The branch the agent publishes for review.
+              </span>
             </label>
           </div>
 

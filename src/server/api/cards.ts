@@ -74,7 +74,9 @@ export function normaliseBranch(value: string | null | undefined, field: string)
     branch.includes('..') ||
     branch.includes('//') ||
     branch.includes('@{') ||
-    [...branch].some((character) => /\s/.test(character) || FORBIDDEN_BRANCH_CHARACTERS.has(character));
+    [...branch].some(
+      (character) => /\s/.test(character) || FORBIDDEN_BRANCH_CHARACTERS.has(character),
+    );
   if (invalid) throw new CardError(`A ${field} must be a valid Git branch name.`, 400, field);
   return branch;
 }
@@ -231,7 +233,9 @@ export function updateCard(handle: DatabaseHandle, cardId: string, input: Update
   const baseBranch =
     input.baseBranch === undefined ? undefined : normaliseBranch(input.baseBranch, 'baseBranch');
   const sourceBranch =
-    input.sourceBranch === undefined ? undefined : normaliseBranch(input.sourceBranch, 'sourceBranch');
+    input.sourceBranch === undefined
+      ? undefined
+      : normaliseBranch(input.sourceBranch, 'sourceBranch');
   const nextBase = baseBranch === undefined ? existing.baseBranch : baseBranch;
   const nextSource = sourceBranch === undefined ? existing.sourceBranch : sourceBranch;
   if (nextBase !== null && nextBase === nextSource) {
