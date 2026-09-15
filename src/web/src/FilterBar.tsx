@@ -37,6 +37,7 @@ export function FilterBar({
 
       <Select
         variant="bare"
+        label="Filter by status"
         placeholder="All statuses"
         value={filters.status ?? ''}
         onChange={(value) =>
@@ -56,6 +57,7 @@ export function FilterBar({
 
       <Select
         variant="bare"
+        label="Filter by priority"
         placeholder="All priorities"
         value={filters.priority ?? ''}
         onChange={(value) =>
@@ -71,6 +73,7 @@ export function FilterBar({
 
       <Select
         variant="bare"
+        label="Filter by agent"
         placeholder="All agents"
         value={filters.agent ?? ''}
         onChange={(value) =>
