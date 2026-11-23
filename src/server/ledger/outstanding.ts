@@ -4,7 +4,7 @@ import type { DatabaseHandle } from '../db/client.js';
 import { runs } from '../db/schema.js';
 import { acknowledgedPaths } from '../review/gate.js';
 import { buildMechanicalLedger } from './mechanical.js';
-import { checkReality } from './reality.js';
+import { checkReality, rangeFor } from './reality.js';
 import { storedEntriesFor } from './store.js';
 import { surprisesFor, type Surprise } from './surprises.js';
 
@@ -60,7 +60,7 @@ export async function outstandingSurprises(input: OutstandingInput): Promise<Sur
       ? null
       : await checkReality({
           cwd: input.cwd,
-          headShaAtStart: cardRuns[0]?.headShaAtStart ?? null,
+          ...rangeFor(cardRuns, input.cwd),
           claimedPaths,
         });
 

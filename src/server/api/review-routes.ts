@@ -26,6 +26,43 @@ import { fail, present, publish } from './shared.js';
  * The operator names the cards; nothing is merged automatically, and nothing
  * is pushed.
  */
+/**
+ * Records a card as merged and moves it to the terminal column.
+ *
+ * The merged facts are written before the move and independently of it. A
+ * card that cannot change column - usually an unfinished dependency - has
+ * still been merged, and losing that would leave it reading as merely `done`.
+ */
+function markMerged(
+  context: AppContext,
+  boardId: string,
+  cardId: string,
+  into: string,
+  branch: string,
+  mergedAt: number,
+): void {
+  context.database.db
+    .update(cardsTable)
+    .set({ mergedAt, mergedInto: into, mergedBranch: branch, updatedAt: mergedAt })
+    .where(eq(cardsTable.id, cardId))
+    .run();
+
+  const terminal = context.database.db
+    .select()
+    .from(columns)
+    .where(eq(columns.boardId, boardId))
+    .all()
+    .find((column) => column.isTerminal);
+  if (terminal === undefined) return;
+
+  try {
+    moveCard(context.database, cardId, terminal.id, 0);
+    updateCard(context.database, cardId, { status: 'done' });
+  } catch {
+    // The report is the record; the column is a convenience.
+  }
+}
+
 export function registerReviewRoutes(app: FastifyInstance, context: AppContext): void {
   app.post<{
     Params: { boardId: string };
@@ -119,41 +156,10 @@ export function registerReviewRoutes(app: FastifyInstance, context: AppContext):
     });
 
     // Merged cards move to the terminal column; the one that broke does not.
-    const terminal = context.database.db
-      .select()
-      .from(columns)
-      .where(eq(columns.boardId, board.id))
-      .all()
-      .find((column) => column.isTerminal);
-
     const mergedAt = Date.now();
-
     for (const step of report.steps) {
       if (step.outcome !== 'merged') continue;
-
-      // Recorded before the move, and independently of it. A card that cannot
-      // change column - usually an unfinished dependency - has still been
-      // merged, and losing that fact would leave it reading as merely `done`.
-      context.database.db
-        .update(cardsTable)
-        .set({
-          mergedAt,
-          mergedInto: report.into,
-          mergedBranch: step.branch,
-          updatedAt: mergedAt,
-        })
-        .where(eq(cardsTable.id, step.cardId))
-        .run();
-
-      if (terminal === undefined) continue;
-
-      try {
-        moveCard(context.database, step.cardId, terminal.id, 0);
-        updateCard(context.database, step.cardId, { status: 'done' });
-      } catch {
-        // The report is the record; the column is a convenience.
-        continue;
-      }
+      markMerged(context, board.id, step.cardId, report.into, step.branch, mergedAt);
     }
 
     publish(context, 'review-merged', { boardId: board.id, ...report });
@@ -175,7 +181,7 @@ export function registerReviewRoutes(app: FastifyInstance, context: AppContext):
    */
   app.post<{
     Params: { boardId: string };
-    Body: { branch?: string; into?: string; verify?: string | null };
+    Body: { branch?: string; into?: string; verify?: string | null; cardId?: string };
   }>('/api/boards/:boardId/review/resolve', async (request, reply) => {
     const board = context.database.db
       .select()
@@ -192,18 +198,44 @@ export function registerReviewRoutes(app: FastifyInstance, context: AppContext):
       );
     }
 
+    const into = request.body?.into ?? (await mergeTargetFor(board.cwd)) ?? 'HEAD';
     const result = await resolveConflicts({
       repoCwd: board.cwd,
       branch: request.body?.branch ?? 'the card branch',
-      into: request.body?.into ?? (await mergeTargetFor(board.cwd)) ?? 'HEAD',
+      into,
       verifyCommand: request.body?.verify ?? null,
     });
 
-    publish(context, 'review-resolved', { boardId: board.id, ...result });
+    // The card whose branch this merge was bringing in: named, or found by
+    // its branch. Case study 1: the resolver committed the merge and left the
+    // card in Needs Review, where the reviewer could no longer close it
+    // ("nothing to merge") and it had to be moved by hand.
+    let closedCardId: string | null = null;
+    if (result.outcome === 'resolved') {
+      const manager = context.dispatcher.worktreesFor(board.cwd);
+      const named = typeof request.body?.cardId === 'string' ? request.body.cardId : null;
+      const candidates = context.database.db
+        .select({ id: cardsTable.id })
+        .from(cardsTable)
+        .where(eq(cardsTable.boardId, board.id))
+        .all();
+      const match =
+        named ??
+        candidates.find((row) => manager.workspaceFor(row.id)?.branch === request.body?.branch)
+          ?.id ??
+        null;
+      if (match !== null && manager.workspaceFor(match) !== undefined) {
+        const branch = manager.workspaceFor(match)?.branch ?? request.body?.branch ?? '';
+        markMerged(context, board.id, match, into, branch, Date.now());
+        closedCardId = match;
+      }
+    }
+
+    publish(context, 'review-resolved', { boardId: board.id, ...result, closedCardId });
 
     // 409 for anything short of resolved: the caller asked for a merge to be
     // completed, and a report that it was not is not a success.
-    return reply.code(result.outcome === 'resolved' ? 200 : 409).send(result);
+    return reply.code(result.outcome === 'resolved' ? 200 : 409).send({ ...result, closedCardId });
   });
 
   /**

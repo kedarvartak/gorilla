@@ -117,6 +117,9 @@ export function buildApp(options: AppOptions): FastifyInstance {
       onStateChange: (boardId, state) => broadcaster.publish('dispatch-state', { boardId, state }),
       onRunStarted: (boardId, cardId, sessionId) =>
         broadcaster.publish('run-started', { boardId, cardId, sessionId }),
+      // The run's last window, for runs the board ended before they sent
+      // `Stop`. Deferred: `context` is still being built when this is wired.
+      onRunEnded: (runId) => void context.extraction.enqueue(runId, 'SessionEnd'),
       // A halt nobody hears about at 2am is indistinguishable from a queue
       // that ran all night. The command is the operator's own, from the
       // environment, so it survives a restart.

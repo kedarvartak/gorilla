@@ -4,6 +4,8 @@ import { randomUUID } from 'node:crypto';
 
 import type Database from 'better-sqlite3';
 
+import { gitHeadSync } from '../git-head.js';
+
 /**
  * Resolves an incoming event's `(session_id, cwd)` to a run (doc 05).
  *
@@ -73,7 +75,9 @@ export class BindingResolver {
   readonly #selectBoard: Database.Statement<[string], { id: string }>;
   readonly #insertBoard: Database.Statement<[string, string, string, number]>;
   readonly #selectRun: Database.Statement<[string], { id: string; board_id: string }>;
-  readonly #insertRun: Database.Statement<[string, string, string, string, number, string | null]>;
+  readonly #insertRun: Database.Statement<
+    [string, string, string, string, number, string | null, string | null]
+  >;
 
   /** Boards change rarely; caching avoids a query per event. */
   readonly #boardCache = new Map<string, string>();
@@ -85,7 +89,7 @@ export class BindingResolver {
     );
     this.#selectRun = sqlite.prepare('SELECT id, board_id FROM runs WHERE session_id = ?');
     this.#insertRun = sqlite.prepare(
-      'INSERT INTO runs (id, board_id, session_id, cwd, started_at, transcript_path) VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT INTO runs (id, board_id, session_id, cwd, started_at, transcript_path, head_sha_at_start) VALUES (?, ?, ?, ?, ?, ?, ?)',
     );
   }
 
@@ -125,6 +129,10 @@ export class BindingResolver {
       canonicaliseCwd(cwd),
       Date.now(),
       transcriptPath,
+      // The baseline the reality check diffs from. Never written before case
+      // study 1 found it null on every run, which left committed work
+      // invisible to the check.
+      gitHeadSync(cwd),
     );
 
     return { runId, boardId, created: true };

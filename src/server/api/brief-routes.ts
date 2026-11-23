@@ -10,7 +10,7 @@ import type { Database as DatabaseType } from 'better-sqlite3';
 import { createCard } from './cards.js';
 import { findContradictions } from '../cards/contradictions.js';
 import { buildMechanicalLedger } from '../ledger/mechanical.js';
-import { checkReality } from '../ledger/reality.js';
+import { checkReality, rangeFor } from '../ledger/reality.js';
 import { buildBrief, renderBrief, type Brief } from '../brief/brief.js';
 import { briefToMarkdown, exportFilename } from '../brief/markdown.js';
 import { durationOf, summariseSubagents } from '../agents/subagents.js';
@@ -377,7 +377,7 @@ export function registerBriefRoutes(app: FastifyInstance, context: AppContext): 
           ? null
           : await checkReality({
               cwd: workspacePath ?? board.cwd,
-              headShaAtStart: cardRuns[0]?.headShaAtStart ?? null,
+              ...rangeFor(cardRuns, workspacePath ?? board.cwd),
               claimedPaths: changed,
             });
 

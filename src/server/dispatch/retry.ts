@@ -1,4 +1,4 @@
-import type { LaunchResult } from '../launcher/launcher.js';
+import type { LaunchResult, StreamEventPayload } from '../launcher/launcher.js';
 
 /**
  * Whether a failure is worth trying again (T42).
@@ -13,12 +13,17 @@ import type { LaunchResult } from '../launcher/launcher.js';
  * card that fails for a real reason, every night.
  */
 
-export type FailureKind = 'transient' | 'stated';
+export type FailureKind = 'transient' | 'quota' | 'stated';
 
 export interface FailureVerdict {
   readonly kind: FailureKind;
   /** Said in the card's own terms, because it appears in the halt the operator reads. */
   readonly why: string;
+  /**
+   * When the provider says the quota resets, in epoch ms. Only for `quota`,
+   * and only when the stream said so.
+   */
+  readonly resetsAt?: number;
 }
 
 /**
@@ -54,6 +59,53 @@ const TRANSIENT_MARKERS: readonly RegExp[] = [
   /network (error|failure)/i,
 ];
 
+/**
+ * A usage or rate limit that will not clear by trying again now.
+ *
+ * Claude Code reports these inside the JSON stream, not on stderr: an
+ * assistant message carrying `error: "rate_limit"` and a `result` with
+ * `is_error`, the text saying the 5-hour limit was hit. Case study 1 had four
+ * cards fail that way and the classifier, reading stderr only, called each an
+ * ordinary failure and halted the queue on the streak.
+ */
+const QUOTA_MARKERS: readonly RegExp[] = [
+  /usage_limit_reached/i,
+  /rate_limit/i,
+  /out_of_credits/i,
+  /hit your [\w -]{0,20}limit/i,
+  /"apiErrorStatus":\s*429\b/,
+];
+
+/**
+ * Events that report an error rather than describe work.
+ *
+ * Only these are searched. The rest of the stream is the agent's own output,
+ * where "429" or "rate limit" is as likely to be the subject of the card as a
+ * fault in running it.
+ */
+function errorEvents(events: readonly StreamEventPayload[]): StreamEventPayload[] {
+  return events.filter(
+    (event) =>
+      event.is_error === true ||
+      event.isApiErrorMessage === true ||
+      (event['error'] !== undefined && event['error'] !== null) ||
+      event.type === 'rate_limit_event' ||
+      (event.type === 'system' && event.subtype === 'api_retry'),
+  );
+}
+
+/** A reset time in epoch ms from anything shaped like `resetsAt`, if present. */
+function resetsAtIn(events: readonly StreamEventPayload[]): number | undefined {
+  for (const event of events) {
+    const match = /"resets_?[aA]t"\s*:\s*(\d{9,13})/.exec(JSON.stringify(event));
+    if (match?.[1] === undefined) continue;
+    const raw = Number(match[1]);
+    // Seconds from the API; milliseconds if someone already converted it.
+    return raw < 1e12 ? raw * 1000 : raw;
+  }
+  return undefined;
+}
+
 export function classifyLaunchFailure(result: LaunchResult | null): FailureVerdict {
   // Null is the supervisor failing, not the agent: the process could not be
   // watched, so nothing is known about what it did or whether it would fail
@@ -62,7 +114,35 @@ export function classifyLaunchFailure(result: LaunchResult | null): FailureVerdi
     return { kind: 'transient', why: 'the session could not be supervised' };
   }
 
-  const marker = TRANSIENT_MARKERS.find((pattern) => pattern.test(result.stderr));
+  const errors = errorEvents(result.events ?? []);
+  const quotaEvents = errors.filter((event) => {
+    if (event.type === 'system' && event.subtype === 'api_retry') return false;
+    if (event.type === 'rate_limit_event') {
+      // Informational unless the request was actually refused.
+      return /"status"\s*:\s*"rejected"/.test(JSON.stringify(event));
+    }
+    const text = JSON.stringify(event);
+    return QUOTA_MARKERS.some((pattern) => pattern.test(text));
+  });
+  const quotaInStderr = /usage_limit_reached|out_of_credits|hit your [\w -]{0,20}limit/i.test(
+    result.stderr,
+  );
+
+  if (quotaEvents.length > 0 || quotaInStderr) {
+    const resetsAt = resetsAtIn(quotaEvents.length > 0 ? quotaEvents : errors);
+    return {
+      kind: 'quota',
+      why:
+        'the provider refused the request on a usage limit' +
+        (resetsAt === undefined ? '' : `, which resets at ${new Date(resetsAt).toISOString()}`),
+      ...(resetsAt === undefined ? {} : { resetsAt }),
+    };
+  }
+
+  const streamErrors = errors.map((event) => JSON.stringify(event)).join('\n');
+  const marker = TRANSIENT_MARKERS.find(
+    (pattern) => pattern.test(result.stderr) || pattern.test(streamErrors),
+  );
   if (marker !== undefined) {
     return { kind: 'transient', why: 'the run hit a fault outside the card: ' + describe(marker) };
   }
@@ -98,6 +178,12 @@ export function decideRetry(
 ): RetryDecision {
   if (verdict.kind === 'stated') {
     return { retry: false, why: `Not retried: ${verdict.why}.` };
+  }
+
+  // Not now, and not counted against the card: retrying before the reset
+  // spends nothing and proves nothing. The dispatcher holds the queue instead.
+  if (verdict.kind === 'quota') {
+    return { retry: false, why: `Held, not retried: ${verdict.why}.` };
   }
 
   if (attempts >= maxAttempts) {

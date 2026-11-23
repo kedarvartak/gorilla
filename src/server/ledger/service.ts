@@ -35,6 +35,11 @@ const TRIGGERS: Readonly<Record<string, WindowTrigger>> = {
   Stop: 'Stop',
   SubagentStop: 'SubagentStop',
   PreCompact: 'PreCompact',
+  // Dispatched runs are ended by the board once their report is in, so they
+  // never send `Stop` and, before this, were never extracted at all (case
+  // study 1). A run that did stop has its window covered already, and the
+  // cursor makes this a no-op for it.
+  SessionEnd: 'SessionEnd',
 };
 
 export function triggerFor(eventName: string): WindowTrigger | null {

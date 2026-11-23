@@ -163,6 +163,12 @@ describe('which events open a window', () => {
     expect(triggerFor('PreCompact')).toBe('PreCompact');
   });
 
+  it('treats the end of a session as a boundary too', () => {
+    // Dispatched runs are ended by the board once their report is in, so they
+    // never send Stop. In case study 1 no dispatched card was ever extracted.
+    expect(triggerFor('SessionEnd')).toBe('SessionEnd');
+  });
+
   it('ignores everything else, including every tool event', () => {
     for (const event of ['PreToolUse', 'PostToolUse', 'SessionStart', 'Notification']) {
       expect(triggerFor(event)).toBeNull();
@@ -195,6 +201,51 @@ describe('the cursor', () => {
     const cursor = cursorFor(database, runId);
     expect(cursor.throughSeq).toBe(12);
     expect(cursor.tokensSpent).toBe(900);
+  });
+});
+
+describe('a run that ends without Stop', () => {
+  it('is extracted from its SessionEnd on the hook path', async () => {
+    // The real app, with a model: the hook path itself must enqueue it.
+    const model = fakeModel([DECISION]);
+    const withModel = buildApp({ database, logger: false, extractionModel: model });
+    await withModel.ready();
+    try {
+      await hook('SessionStart', 'session-end-only', { source: 'startup' });
+      claim(database, 'session-end-only', cardId);
+      await aTurnOfWork('session-end-only');
+
+      await withModel.inject({
+        method: 'POST',
+        url: '/hooks/SessionEnd',
+        payload: {
+          session_id: 'session-end-only',
+          cwd: CWD(),
+          hook_event_name: 'SessionEnd',
+          transcript_path: join(CWD(), 'session-end-only.jsonl'),
+          reason: 'other',
+        },
+      });
+      await contextOf(withModel)?.extraction.drain();
+
+      expect(model.calls.length).toBeGreaterThan(0);
+      expect(storedEntriesFor(database, cardId).some((e) => e.origin === 'model')).toBe(true);
+    } finally {
+      await withModel.close();
+    }
+  });
+
+  it('is not extracted twice when Stop already covered the window', async () => {
+    const runId = await boundRun();
+    await aTurnOfWork('session-1');
+    await hook('Stop', 'session-1');
+
+    const model = fakeModel([DECISION]);
+    const service = serviceWith(model);
+    await service.enqueue(runId, 'Stop');
+    await service.enqueue(runId, 'SessionEnd');
+
+    expect(model.calls).toHaveLength(1);
   });
 });
 

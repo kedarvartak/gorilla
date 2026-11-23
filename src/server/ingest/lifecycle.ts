@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 
+import { gitHeadSync } from '../git-head.js';
 import { readString } from '../json.js';
 
 /**
@@ -41,9 +42,27 @@ export function applyRunLifecycle(
   input: { runId: string; eventName: string; receivedAt: number; payload: unknown },
 ): RunLifecycleResult {
   if (input.eventName === 'SessionEnd') {
+    const run = sqlite.prepare('SELECT cwd FROM runs WHERE id = ?').get(input.runId) as
+      { cwd: string } | undefined;
+
+    // A reason the dispatcher already wrote is kept. It knows how the run
+    // ended - completed, failed, cancelled - whereas a session the board
+    // stopped reports only `other`, which is what every dispatched run read
+    // in case study 1.
     sqlite
-      .prepare('UPDATE runs SET ended_at = ?, end_reason = ? WHERE id = ?')
-      .run(input.receivedAt, readString(input.payload, 'reason') ?? 'session ended', input.runId);
+      .prepare(
+        'UPDATE runs SET ' +
+          'ended_at = CASE WHEN ended_at IS NULL OR end_reason = @interrupted THEN @at ELSE ended_at END, ' +
+          'end_reason = CASE WHEN end_reason IS NULL OR end_reason = @interrupted THEN @reason ELSE end_reason END, ' +
+          'head_sha_at_end = COALESCE(@head, head_sha_at_end) WHERE id = @id',
+      )
+      .run({
+        interrupted: INTERRUPTED,
+        at: input.receivedAt,
+        reason: readString(input.payload, 'reason') ?? 'session ended',
+        head: run === undefined ? null : gitHeadSync(run.cwd),
+        id: input.runId,
+      });
 
     return { closed: true, reopened: false };
   }

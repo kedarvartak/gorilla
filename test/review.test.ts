@@ -242,8 +242,30 @@ describe('refusing a merge that would land nothing', () => {
 
     expect(report.merged).toBe(0);
     expect(report.clean).toBe(false);
-    expect(report.stoppedAt?.outcome).toBe('nothing-to-merge');
-    expect(report.stoppedAt?.detail).toContain('never committed');
+    expect(report.steps[0]?.outcome).toBe('nothing-to-merge');
+    expect(report.steps[0]?.detail).toContain('never committed');
+  });
+
+  it('does not stop the batch on a branch that has nothing to merge', async () => {
+    // Case study 1: a card whose branch had already landed through the
+    // conflict resolver stopped every card queued after it.
+    git(repo, 'branch', 'gorilla/empty', 'main');
+    git(repo, 'checkout', '-q', '-b', 'gorilla/real', 'main');
+    writeFileSync(join(repo, 'real.txt'), 'work\n');
+    git(repo, 'add', 'real.txt');
+    git(repo, 'commit', '-q', '-m', 'real work');
+    git(repo, 'checkout', '-q', 'main');
+
+    const report = await mergeBranches({
+      repoCwd: repo,
+      cards: [card('empty', 'gorilla/empty'), card('real', 'gorilla/real')],
+      into: 'main',
+    });
+
+    expect(report.stoppedAt).toBeNull();
+    expect(report.steps.map((step) => step.outcome)).toEqual(['nothing-to-merge', 'merged']);
+    expect(report.merged).toBe(1);
+    expect(report.clean).toBe(false);
   });
 
   it('refuses when the work is uncommitted in the worktree', async () => {
@@ -285,7 +307,9 @@ describe('refusing a merge that would land nothing', () => {
     expect(readFileSync(join(repo, 'real.txt'), 'utf8')).toBe('work\n');
   });
 
-  it('does not attempt later cards once one is refused', async () => {
+  it('still merges later cards after one with nothing to merge', async () => {
+    // Nothing-to-merge changes nothing in the target, so there is no culprit
+    // to isolate by stopping (case study 1). Uncommitted work still stops.
     git(repo, 'branch', 'gorilla/empty', 'main');
     branchWith('gorilla/good', 'good.txt', 'fine\n');
 
@@ -295,6 +319,6 @@ describe('refusing a merge that would land nothing', () => {
       into: 'main',
     });
 
-    expect(report.steps[1]?.outcome).toBe('skipped');
+    expect(report.steps[1]?.outcome).toBe('merged');
   });
 });
