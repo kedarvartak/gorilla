@@ -14,7 +14,7 @@ export default defineConfig({
     // Sets IS_REACT_ACT_ENVIRONMENT. Without it React declines to run act() and
     // only warns, so a component test can pass while asserting on a tree that
     // was never committed.
-    setupFiles: ['test/web/setup.ts'],
+    setupFiles: ['test/setup-env.ts', 'test/web/setup.ts'],
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],

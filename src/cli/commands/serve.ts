@@ -55,6 +55,17 @@ async function occupiedBy(port: number): Promise<string> {
 export const serveCommand: Command = {
   name: 'serve',
   summary: 'Run the board server and receive hook events',
+  usage: [
+    'Usage: gorilla serve [options]',
+    '',
+    'Options:',
+    `  --port <n>        Port to serve on (default ${String(DEFAULT_PORT)})`,
+    '  --record <path>   Record received hook events as a fixture',
+    '  --no-redact       Do not redact the recorded fixture',
+    '  --quiet           No request logging',
+    '',
+    'The database is GORILLA_DB_PATH, or ~/.gorilla/gorilla.db when unset.',
+  ].join('\n'),
   async run(args: readonly string[]): Promise<CommandResult> {
     let port: number;
     try {

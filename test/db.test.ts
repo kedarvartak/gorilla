@@ -304,6 +304,11 @@ describe('resolveDatabasePath', () => {
     delete process.env['GORILLA_DB_PATH'];
     expect(resolveDatabasePath()).toMatch(/\.gorilla[/\\]gorilla\.db$/);
   });
+  it('refuses to open the default database under the test harness', () => {
+    delete process.env['GORILLA_DB_PATH'];
+    expect(process.env['GORILLA_REFUSE_DEFAULT_DB']).toBe('1');
+    expect(() => openDatabase()).toThrow(/Refusing to open the default database/);
+  });
 });
 
 describe('in-memory databases', () => {
