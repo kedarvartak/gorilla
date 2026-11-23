@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 
 import { getCard, moveCard, updateCard } from '../api/cards.js';
 import { canonicaliseCwd } from '../ingest/binding.js';
+import { gitHeadSync } from '../git-head.js';
 import { dispatchableCards } from '../cards/eligibility.js';
 import { assembleBackground } from '../cards/background.js';
 import { previousRunsFor } from '../cards/card-context.js';
@@ -88,7 +89,10 @@ export type HaltReason =
   | 'day-budget-spent'
   // Several cards failed in a row, so the problem is unlikely to be any one of
   // them and the queue stopped rather than working through the rest (T43).
-  | 'repeated-failures';
+  | 'repeated-failures'
+  // The provider refused the run on a usage limit. Nothing the card did; the
+  // queue waits for the reset instead of spending attempts proving it again.
+  | 'quota-exhausted';
 
 export interface HaltState {
   readonly reason: HaltReason;
@@ -124,6 +128,8 @@ export interface BoardDispatchState {
 export interface DispatcherEvents {
   readonly onStateChange?: (boardId: string, state: BoardDispatchState) => void;
   readonly onRunStarted?: (boardId: string, cardId: string, sessionId: string | null) => void;
+  /** A launched run's process has exited and its row is closed. */
+  readonly onRunEnded?: (runId: string) => void;
   readonly onRunFinished?: (boardId: string, cardId: string, result: LaunchResult) => void;
   readonly onVerified?: (boardId: string, cardId: string, result: VerifyResult) => void;
   /** Files the board committed on the card's behalf when its run ended. */
@@ -633,7 +639,12 @@ export class Dispatcher {
         if (board === undefined) return;
         const manager = this.#worktreesFor(board.cwd);
         const workspace = manager.workspaceFor(cardId);
-        if (workspace === undefined || readReport(workspace.path) === null) return;
+        if (
+          workspace === undefined ||
+          readReport(workspace.path, this.#launchedAt.get(cardId)) === null
+        ) {
+          return;
+        }
 
         checking = true;
         try {
@@ -864,6 +875,9 @@ export class Dispatcher {
       this.events.onResumed?.(boardId, cardId, describeResume(resumable));
     }
 
+    // Before the child exists, so nothing it writes can predate this.
+    this.#launchedAt.set(cardId, Date.now());
+
     const meter = new CostMeter();
     const providerSessionId = card.agentProvider === 'codex' ? randomUUID() : null;
 
@@ -882,6 +896,7 @@ export class Dispatcher {
           startedAt: Date.now(),
           cwd: workspace,
           gitBranch: this.#worktreesFor(board.cwd).workspaceFor(cardId)?.branch ?? null,
+          headShaAtStart: gitHeadSync(workspace),
         })
         .run();
     }
@@ -986,6 +1001,54 @@ export class Dispatcher {
    * cannot be found, and is left unrecorded rather than guessed at: attaching
    * one run's bill to another card is worse than recording no bill at all.
    */
+  /**
+   * How a launched run ended, and the commit it left the checkout on.
+   *
+   * The board is the one party that knows: a session it stopped because the
+   * work was finished reports only `other` through `SessionEnd`, which is
+   * what every dispatched run's `end_reason` said in case study 1. Written
+   * unconditionally for that reason, and `SessionEnd` keeps a reason already
+   * here rather than replacing it. The end commit bounds the reality check
+   * once the card's worktree is gone.
+   */
+  #recordEnding(cardId: string, result: LaunchResult): void {
+    if (result.sessionId === null) return;
+    const run = this.database.db
+      .select({ id: runs.id, cwd: runs.cwd, endedAt: runs.endedAt })
+      .from(runs)
+      .where(eq(runs.sessionId, result.sessionId))
+      .get();
+    if (run === undefined) return;
+
+    const reason =
+      result.outcome === 'cancelled' && this.#overBudget.has(cardId)
+        ? 'over-budget'
+        : result.outcome;
+    const head = gitHeadSync(run.cwd);
+
+    this.database.db
+      .update(runs)
+      .set({
+        endedAt: run.endedAt ?? Date.now(),
+        endReason: reason,
+        ...(head === null ? {} : { headShaAtEnd: head }),
+      })
+      .where(eq(runs.id, run.id))
+      .run();
+
+    // Extraction normally follows a `Stop` hook. A run the board ends once its
+    // report is in never sends one, so model extraction never ran for a single
+    // dispatched card in case study 1. The service skips a window it has
+    // already covered, so a run that did stop normally costs nothing extra.
+    this.events.onRunEnded?.(run.id);
+  }
+
+  /**
+   * When each card's current run was launched. A completion report older than
+   * this belongs to an earlier run and does not count as this one's.
+   */
+  readonly #launchedAt = new Map<string, number>();
+
   /**
    * Cards stopped for spending, and what they had spent when stopped.
    *
@@ -1094,7 +1157,28 @@ export class Dispatcher {
       .where(eq(cards.id, cardId))
       .run();
 
+    // Into Ready, wherever it was. `pump` only starts idle cards from a Ready
+    // column, so a card sent back from Needs Review used to become idle where
+    // it stood and never run - the retry silently did nothing (case study 1).
+    const ready = this.database.db
+      .select({ id: columns.id, isReady: columns.isReady })
+      .from(columns)
+      .where(eq(columns.boardId, boardId))
+      .all()
+      .find((column) => column.isReady);
+    const current = getCard(this.database, cardId);
+    if (ready !== undefined && current.columnId !== ready.id) {
+      try {
+        moveCard(this.database, cardId, ready.id, Number.MAX_SAFE_INTEGER);
+      } catch {
+        // A move the board refuses (an unfinished dependency) leaves the card
+        // where it is; the retry note and idle status still stand.
+      }
+    }
+
     updateCard(this.database, cardId, { status: 'idle' });
+    // Sent back means this attempt is not the one being judged.
+    state.awaitingAck.delete(cardId);
 
     // A card sent back is a reason for the queue to try again, so the halt
     // that stopped it is cleared. Leaving it would mean the operator's retry
@@ -1103,6 +1187,75 @@ export class Dispatcher {
 
     this.#publish(boardId);
     void this.pump(boardId).catch(() => undefined);
+    return true;
+  }
+
+  /**
+   * A run refused on a usage limit (case study 1).
+   *
+   * Not a failure of the card and not worth an immediate retry: until the
+   * limit resets every launch fails the same way within seconds. So the card
+   * goes back to Ready untouched - no attempt spent, no failure streak - and
+   * the queue halts with the reason and the reset time. When the stream named
+   * a reset time the halt lifts itself a minute after it; otherwise the
+   * operator resumes it.
+   */
+  #holdForQuota(boardId: string, cardId: string, result: LaunchResult): boolean {
+    const verdict = classifyLaunchFailure(result);
+    if (verdict.kind !== 'quota') return false;
+
+    const card = getCard(this.database, cardId);
+    const ready = this.database.db
+      .select({ id: columns.id, isReady: columns.isReady })
+      .from(columns)
+      .where(eq(columns.boardId, boardId))
+      .all()
+      .find((column) => column.isReady);
+
+    if (ready !== undefined) {
+      try {
+        moveCard(this.database, cardId, ready.id, 0);
+      } catch {
+        /* left where it is; the halt still names it */
+      }
+    }
+    this.database.db
+      .update(cards)
+      .set({ attempts: Math.max(0, card.attempts - 1) })
+      .where(eq(cards.id, cardId))
+      .run();
+    updateCard(this.database, cardId, { status: 'idle' });
+
+    const halt: HaltState = {
+      reason: 'quota-exhausted',
+      cardId,
+      cardTitle: card.title,
+      detail:
+        `"${card.title}" was not attempted: ${verdict.why}. It is back in Ready and the queue ` +
+        (verdict.resetsAt === undefined
+          ? 'is held until you resume it.'
+          : 'resumes by itself a minute after the reset.'),
+      at: Date.now(),
+    };
+    this.#halt(boardId, halt);
+    this.#publish(boardId);
+
+    if (verdict.resetsAt !== undefined) {
+      const existing = this.#wakeups.get(boardId);
+      if (existing !== undefined) clearTimeout(existing);
+      const timer = setTimeout(
+        () => {
+          this.#wakeups.delete(boardId);
+          if (this.#stopped) return;
+          const state = this.#stateFor(boardId);
+          if (state.halted?.reason !== 'quota-exhausted') return;
+          this.resume(boardId);
+        },
+        Math.max(0, verdict.resetsAt - Date.now()) + 60_000,
+      );
+      timer.unref?.();
+      this.#wakeups.set(boardId, timer);
+    }
     return true;
   }
 
@@ -1234,7 +1387,9 @@ export class Dispatcher {
       .prepare('SELECT DISTINCT path FROM card_paths WHERE card_id = ? AND source = ?')
       .all(cardId, 'git') as { path: string }[];
 
-    return maySettle(readReport(workspace), {
+    // Only a report this run wrote. Judging the previous run's would settle
+    // a retry on work it never did.
+    return maySettle(readReport(workspace, this.#launchedAt.get(cardId)), {
       changedPaths: changedPaths.map((row) => row.path),
       verifyStatus: verifyStatus?.status ?? null,
     });
@@ -1363,13 +1518,7 @@ export class Dispatcher {
     }
 
     this.#recordCost(result);
-    if (card.agentProvider === 'codex' && result.sessionId !== null) {
-      this.database.db
-        .update(runs)
-        .set({ endedAt: Date.now(), endReason: result.outcome })
-        .where(eq(runs.sessionId, result.sessionId))
-        .run();
-    }
+    if (result.sessionId !== null) this.#recordEnding(cardId, result);
     this.events.onRunFinished?.(boardId, cardId, result);
 
     if (result.outcome === 'cancelled') {
@@ -1407,6 +1556,7 @@ export class Dispatcher {
     }
 
     if (result.outcome === 'failed') {
+      if (this.#holdForQuota(boardId, cardId, result)) return;
       if (this.#retryCard(boardId, cardId, result)) return;
 
       updateCard(this.database, cardId, { status: 'blocked' });

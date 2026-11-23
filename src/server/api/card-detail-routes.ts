@@ -19,7 +19,7 @@ import { cardContextInput } from '../cards/card-context.js';
 import { narrationFor } from '../transcript/narration.js';
 import { renderCardContext } from '../launcher/args.js';
 import { buildMechanicalLedger } from '../ledger/mechanical.js';
-import { checkReality, describeReality } from '../ledger/reality.js';
+import { checkReality, describeReality, rangeFor } from '../ledger/reality.js';
 import { describeVerify } from '../verify/run.js';
 import { mergeTargetFor } from '../review/merge.js';
 import { fail, present } from './shared.js';
@@ -173,11 +173,12 @@ export function registerCardDetailRoutes(app: FastifyInstance, context: AppConte
       const reality =
         board === undefined
           ? null
-          : await checkReality({
-              cwd: board.cwd,
-              headShaAtStart: cardRuns[0]?.headShaAtStart ?? null,
-              claimedPaths: claimed,
-            });
+          : await (async () => {
+              // The card's own checkout when it has one. The board's root
+              // holds every other card's merges, which are not this card's.
+              const cwd = context.dispatcher.worktreesFor(board.cwd).pathFor(card.id) ?? board.cwd;
+              return checkReality({ cwd, ...rangeFor(cardRuns, cwd), claimedPaths: claimed });
+            })();
 
       // Whether the card still describes work that needs doing. Read here
       // rather than on the board, because it costs a git call per merged card

@@ -210,14 +210,18 @@ export async function mergeBranches(request: MergeRequest): Promise<MergeReport>
     const ahead = await commitsAhead(git, into, card.branch);
 
     if (ahead === 0) {
-      stoppedAt = {
+      // Reported, never counted as merged - and not a stop. Nothing changed
+      // in the target, so there is no culprit to isolate and no broken state
+      // to leave for inspection; stopping here once made a card whose branch
+      // had already landed through the conflict resolver halt every card
+      // queued after it (case study 1).
+      steps.push({
         ...card,
         outcome: 'nothing-to-merge',
         detail:
           `${card.branch} has no commits that ${into} does not already have, so there is ` +
           'nothing to merge. Either the work was never committed, or it has already landed.',
-      };
-      steps.push(stoppedAt);
+      });
       continue;
     }
 
@@ -260,7 +264,10 @@ export async function mergeBranches(request: MergeRequest): Promise<MergeReport>
     steps.push(stoppedAt);
   }
 
-  return { into, steps, merged, stoppedAt, clean: stoppedAt === null };
+  // Not clean when a card the operator named landed nothing: "everything you
+  // asked for is merged" would be false. It just no longer stops the others.
+  const landedNothing = steps.some((step) => step.outcome === 'nothing-to-merge');
+  return { into, steps, merged, stoppedAt, clean: stoppedAt === null && !landedNothing };
 }
 
 export function describeMergeReport(report: MergeReport): string[] {

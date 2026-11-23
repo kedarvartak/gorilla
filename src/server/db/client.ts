@@ -36,8 +36,20 @@ export function resolveDatabasePath(explicit?: string): string {
   const fromEnv = process.env['GORILLA_DB_PATH'];
   if (fromEnv !== undefined && fromEnv !== '') return fromEnv;
 
+  return defaultDatabasePath();
+}
+
+/** The operator's own database. */
+export function defaultDatabasePath(): string {
   return join(homedir(), '.gorilla', 'gorilla.db');
 }
+
+/**
+ * Set by the test setup. A test that reaches the operator's real database has
+ * written stray boards into it before now (case study 1), so under the test
+ * harness opening the default path is an error rather than a side effect.
+ */
+const REFUSE_DEFAULT_ENV = 'GORILLA_REFUSE_DEFAULT_DB';
 
 /**
  * The migrations folder is SQL, so tsc does not copy it into dist. Try the
@@ -61,6 +73,13 @@ function resolveMigrationsDir(): string {
 
 export function openDatabase(options: OpenDatabaseOptions = {}): DatabaseHandle {
   const path = resolveDatabasePath(options.path);
+
+  if (process.env[REFUSE_DEFAULT_ENV] === '1' && resolve(path) === resolve(defaultDatabasePath())) {
+    throw new Error(
+      `Refusing to open the default database (${path}) with ${REFUSE_DEFAULT_ENV}=1. ` +
+        'Name a database with GORILLA_DB_PATH or an explicit path.',
+    );
+  }
 
   if (path !== ':memory:') {
     mkdirSync(dirname(path), { recursive: true });

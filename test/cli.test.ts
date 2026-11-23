@@ -1,13 +1,14 @@
 import { execFile } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { VERSION, helpText, runCli } from '../src/cli/cli.js';
+import { VERSION, commandHelpText, helpText, registeredCommands, runCli } from '../src/cli/cli.js';
+import { registerBuiltinCommands } from '../src/cli/register.js';
 import { serveCommand } from '../src/cli/commands/serve.js';
 import { startServer } from '../src/server/start.js';
 import { DEFAULT_HOST, DEFAULT_PORT } from '../src/server/index.js';
@@ -44,6 +45,46 @@ describe('runCli', () => {
   });
 });
 
+/**
+ * `gorilla <command> --help` answers before the command runs (case study 1:
+ * `serve --help` opened the real database, created a board and bound a port).
+ */
+describe('per-command help', () => {
+  registerBuiltinCommands();
+
+  it.each(registeredCommands().map((command) => command.name))(
+    '%s --help prints its usage and exits 0',
+    async (name) => {
+      for (const flag of ['--help', '-h']) {
+        const result = await runCli([name, flag]);
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain(`gorilla ${name}`);
+      }
+    },
+  );
+
+  it('serve --help names its options', () => {
+    expect(commandHelpText(serveCommand)).toContain('--port');
+  });
+
+  it('serve --help from the built binary neither opens a database nor serves', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gorilla-help-'));
+    const dbPath = join(dir, 'never.db');
+    try {
+      // A server would never exit; the timeout turns that into a failure.
+      const { stdout } = await run(process.execPath, [builtCli, 'serve', '--help'], {
+        cwd: dir,
+        env: { ...process.env, GORILLA_DB_PATH: dbPath },
+        timeout: 10_000,
+      });
+      expect(stdout).toContain('gorilla serve');
+      expect(existsSync(dbPath)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('server defaults', () => {
   it('binds to loopback only', () => {
     expect(DEFAULT_HOST).toBe('127.0.0.1');
@@ -59,6 +100,23 @@ describe('server defaults', () => {
  * command is only easy if its commonest failure is legible.
  */
 describe('serving on a port that is taken', () => {
+  // `serve` has no database option, so these name one through the
+  // environment. Without it they wrote boards into the operator's real
+  // database (case study 1); the shared setup also sets one, but a test that
+  // depends on it silently is how that happened the first time.
+  let previousDb: string | undefined;
+  let dbDir: string;
+  beforeEach(() => {
+    previousDb = process.env['GORILLA_DB_PATH'];
+    dbDir = mkdtempSync(join(tmpdir(), 'gorilla-busy-db-'));
+    process.env['GORILLA_DB_PATH'] = join(dbDir, 'serve.db');
+  });
+  afterEach(() => {
+    if (previousDb === undefined) delete process.env['GORILLA_DB_PATH'];
+    else process.env['GORILLA_DB_PATH'] = previousDb;
+    rmSync(dbDir, { recursive: true, force: true });
+  });
+
   it('says a board is already there, when one is', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'gorilla-serve-'));
     const server = await startServer({

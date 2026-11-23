@@ -17,6 +17,8 @@ export interface CommandResult {
 export interface Command {
   readonly name: string;
   readonly summary: string;
+  /** Options, one per line, printed by `gorilla <command> --help`. */
+  readonly usage?: string;
   run(args: readonly string[]): Promise<CommandResult> | CommandResult;
 }
 
@@ -59,6 +61,29 @@ export function helpText(): string {
   return lines.join('\n');
 }
 
+/**
+ * What `gorilla <command> --help` prints.
+ *
+ * Answered here, before the command body runs, because the body is where the
+ * side effects are: `serve --help` once opened the operator's database,
+ * created a board for the current directory and bound a port (case study 1).
+ */
+export function commandHelpText(command: Command): string {
+  const lines = [`gorilla ${command.name} - ${command.summary}`];
+  if (command.usage !== undefined && command.usage.trim() !== '') {
+    lines.push('', command.usage.trimEnd());
+  }
+  return lines.join('\n');
+}
+
+function asksForHelp(args: readonly string[]): boolean {
+  // Only before a bare `--`, so a value that happens to read `-h` after one is
+  // still the command's to interpret.
+  const end = args.indexOf('--');
+  const options = end === -1 ? args : args.slice(0, end);
+  return options.includes('--help') || options.includes('-h');
+}
+
 function ok(stdout: string): CommandResult {
   return { exitCode: 0, stdout, stderr: '' };
 }
@@ -82,6 +107,8 @@ export async function runCli(argv: readonly string[]): Promise<CommandResult> {
   if (command === undefined) {
     return fail(`Unknown command: ${first}\n\n${helpText()}`);
   }
+
+  if (asksForHelp(rest)) return ok(commandHelpText(command));
 
   return command.run(rest);
 }

@@ -11,6 +11,7 @@ import {
 import { isUpToDate, requiresBridge, type SettingsDocument } from '../../hooks/settings.js';
 import { openDatabase, resolveDatabasePath } from '../../server/db/client.js';
 import { DEFAULT_PORT, DEFAULT_HOST } from '../../server/index.js';
+import { configuredHookPort } from '../../hooks/warn.js';
 import { readTranscript } from '../../server/transcript/index.js';
 import { NOTIFY_ENV } from '../../server/notify/notify.js';
 import { isDeliverable, WEBHOOK_ENV } from '../../server/notify/webhook.js';
@@ -467,15 +468,18 @@ export const doctorCommand: Command = {
   name: 'doctor',
   summary: 'Check the installation and report what the board cannot see',
   async run(args: readonly string[]): Promise<CommandResult> {
+    const dirIndex = args.indexOf('--dir');
+    const cwd = dirIndex === -1 ? process.cwd() : (args[dirIndex + 1] ?? process.cwd());
+
+    // Without --port, the port this project's hooks name: probing 4300 for a
+    // board served on 4377 reports it "not running" (case study 1).
     const portIndex = args.indexOf('--port');
-    const port = portIndex === -1 ? DEFAULT_PORT : Number(args[portIndex + 1]);
+    const port =
+      portIndex === -1 ? (configuredHookPort(cwd) ?? DEFAULT_PORT) : Number(args[portIndex + 1]);
 
     if (!Number.isInteger(port) || port < 1 || port > 65_535) {
       return { exitCode: 1, stdout: '', stderr: '--port expects a port number' };
     }
-
-    const dirIndex = args.indexOf('--dir');
-    const cwd = dirIndex === -1 ? process.cwd() : (args[dirIndex + 1] ?? process.cwd());
 
     const report = await runDoctor({ cwd, port });
 

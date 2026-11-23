@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -86,13 +86,27 @@ function text(value: unknown): string | null {
  * both are answered by asking for it again rather than by an exception in the
  * dispatcher.
  */
-export function readReport(worktree: string): unknown {
+export function readReport(worktree: string, writtenSince?: number): unknown {
   try {
-    return JSON.parse(readFileSync(join(worktree, REPORT_PATH), 'utf8')) as unknown;
+    const path = join(worktree, REPORT_PATH);
+    // A report older than the run is the previous run's. Case study 1: a
+    // retry found its predecessor's report already in place, so the board
+    // ended it as finished in under a second, having done nothing. The slack
+    // covers filesystems whose timestamps are coarser than the clock.
+    if (
+      writtenSince !== undefined &&
+      statSync(path).mtimeMs < writtenSince - REPORT_CLOCK_SLACK_MS
+    ) {
+      return null;
+    }
+    return JSON.parse(readFileSync(path, 'utf8')) as unknown;
   } catch {
     return null;
   }
 }
+
+/** Filesystem timestamp granularity, at worst; a report is never this fast. */
+const REPORT_CLOCK_SLACK_MS = 2;
 
 /**
  * Whether this card may settle.

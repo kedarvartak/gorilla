@@ -1,3 +1,5 @@
+import { resolve } from 'node:path';
+
 import { simpleGit, type SimpleGit } from 'simple-git';
 
 /**
@@ -17,9 +19,61 @@ import { simpleGit, type SimpleGit } from 'simple-git';
 export interface RealityInput {
   readonly cwd: string;
   readonly headShaAtStart: string | null;
+  /**
+   * Where the committed half of the diff ends. Omitted means the checkout's
+   * current HEAD, which is right when `cwd` is the checkout the run worked in.
+   */
+  readonly headShaAtEnd?: string | null;
+  /**
+   * Whether uncommitted work in `cwd` counts. Only when `cwd` is the run's own
+   * checkout: another checkout's working tree is someone else's work.
+   */
+  readonly includeWorkingTree?: boolean;
   /** Files the agent touched according to the event stream. */
   readonly claimedPaths: readonly string[];
   readonly git?: SimpleGit;
+}
+
+export interface RunRange {
+  readonly cwd: string;
+  readonly startedAt: number;
+  readonly headShaAtStart: string | null;
+  readonly headShaAtEnd: string | null;
+}
+
+/**
+ * The commit range a card's work occupies, as seen from `cwd`.
+ *
+ * Starts at the first run's recorded HEAD. Before that column was written
+ * (case study 1: null on every run) the committed half of the diff was never
+ * taken, so an agent that committed its work - which is what agents are told
+ * to do - showed "no files changed" and could never produce a
+ * changed-but-unmentioned surprise.
+ *
+ * When `cwd` is the checkout the runs worked in, the range ends at its
+ * current HEAD and the working tree counts. When it is some other checkout -
+ * the board's own, after a card's worktree was removed - the range ends where
+ * the last run left HEAD, and that checkout's uncommitted files are not the
+ * card's. With no recorded end there is nothing honest to diff, so the
+ * committed half is left out rather than diffed against unrelated history.
+ */
+export function rangeFor(
+  runs: readonly RunRange[],
+  cwd: string,
+): Pick<RealityInput, 'headShaAtStart' | 'headShaAtEnd' | 'includeWorkingTree'> {
+  const ordered = [...runs].sort((a, b) => a.startedAt - b.startedAt);
+  const start = ordered.find((run) => run.headShaAtStart !== null)?.headShaAtStart ?? null;
+
+  const here = resolve(cwd);
+  const live = ordered.length === 0 || ordered.some((run) => resolve(run.cwd) === here);
+  if (live) return { headShaAtStart: start, includeWorkingTree: true };
+
+  const end = [...ordered].reverse().find((run) => run.headShaAtEnd !== null)?.headShaAtEnd ?? null;
+  return {
+    headShaAtStart: end === null ? null : start,
+    headShaAtEnd: end,
+    includeWorkingTree: false,
+  };
 }
 
 export interface RealityCheck {
@@ -67,23 +121,29 @@ export async function checkReality(input: RealityInput): Promise<RealityCheck> {
   }
 
   let headShaAtEnd: string | null = null;
-  try {
-    headShaAtEnd = (await git.revparse(['HEAD'])).trim();
-  } catch {
-    // A repository with no commits yet. Working-tree status still works.
-    headShaAtEnd = null;
+  if (input.headShaAtEnd !== undefined) {
+    headShaAtEnd = input.headShaAtEnd;
+  } else {
+    try {
+      headShaAtEnd = (await git.revparse(['HEAD'])).trim();
+    } catch {
+      // A repository with no commits yet. Working-tree status still works.
+      headShaAtEnd = null;
+    }
   }
 
   const changed = new Set<string>();
 
-  try {
-    // Uncommitted work, which is the usual state at the end of a run.
-    const status = await git.status();
-    for (const file of [...status.files.map((f) => f.path), ...status.not_added]) {
-      changed.add(normalise(file, input.cwd));
+  if (input.includeWorkingTree !== false) {
+    try {
+      // Uncommitted work, which is the usual state at the end of a run.
+      const status = await git.status();
+      for (const file of [...status.files.map((f) => f.path), ...status.not_added]) {
+        changed.add(normalise(file, input.cwd));
+      }
+    } catch (error) {
+      return { ...UNAVAILABLE, reason: `Could not read git status: ${(error as Error).message}` };
     }
-  } catch (error) {
-    return { ...UNAVAILABLE, reason: `Could not read git status: ${(error as Error).message}` };
   }
 
   if (input.headShaAtStart !== null && headShaAtEnd !== null) {

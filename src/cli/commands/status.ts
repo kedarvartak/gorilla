@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 
 import { openDatabase, resolveDatabasePath } from '../../server/db/client.js';
 import { DEFAULT_HOST, DEFAULT_PORT } from '../../server/index.js';
+import { configuredHookPort } from '../../hooks/warn.js';
 import type { Health } from '../../server/health.js';
 import type { Command, CommandResult } from '../cli.js';
 import { schemaTooOld } from './read-only.js';
@@ -162,7 +163,12 @@ export const statusCommand: Command = {
     const portIndex = args.indexOf('--port');
     const dbIndex = args.indexOf('--db');
 
-    const port = portIndex === -1 ? DEFAULT_PORT : Number(args[portIndex + 1]);
+    // Without --port, the port this project's hooks deliver to: a board served
+    // elsewhere than 4300 is otherwise reported as not running.
+    const port =
+      portIndex === -1
+        ? (configuredHookPort(process.cwd()) ?? DEFAULT_PORT)
+        : Number(args[portIndex + 1]);
     const url = `http://${DEFAULT_HOST}:${String(port)}`;
 
     try {

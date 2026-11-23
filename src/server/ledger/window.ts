@@ -16,7 +16,14 @@ import { parseObject, readString, toolInput, toolPath } from '../json.js';
  */
 
 export type WindowTrigger =
-  'Stop' | 'SubagentStop' | 'PreCompact' | 'PostToolUseFailure' | 'manual';
+  | 'Stop'
+  | 'SubagentStop'
+  | 'PreCompact'
+  | 'PostToolUseFailure'
+  // The session ended without a `Stop` - the board stopped it once its report
+  // was in - so this is the run's last chance to have its window read.
+  | 'SessionEnd'
+  | 'manual';
 
 /** Triggers whose content will not exist again, and so are never skipped or trimmed first. */
 const IRREPLACEABLE: ReadonlySet<WindowTrigger> = new Set<WindowTrigger>(['PreCompact', 'manual']);
